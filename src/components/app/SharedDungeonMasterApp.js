@@ -1,32 +1,75 @@
-import React, { useEffect } from 'react';
-import { useMutation } from '@apollo/client';
-import { CREATE_BATTLE, UPDATE_BATTLE } from '../../graphql/operations';
-import { share, handleShareError } from '../../state/SyncManager';
+import React, { useEffect, useState } from 'react';
+import { saveBattle, generateBattleId } from '../../firebase/BattleManager';
 import DungeonMasterApp from './DungeonMasterApp';
 
 export default function SharedDungeonMasterApp({ state, setState }) {
-  const [createBattleMutation, { error: createError }] = useMutation(CREATE_BATTLE);
-  const [updateBattleMutation, { error: updateError }] = useMutation(UPDATE_BATTLE);
+  const [error, setError] = useState(null);
 
-  const shareBattle = (shareState) => share(
-    shareState,
-    createBattleMutation,
-    updateBattleMutation,
-  );
+  const shareBattle = async (shareState) => {
+    try {
+      // Generar ID si no existe
+      const battleId = shareState.battleId || generateBattleId();
 
+      // Preparar datos
+      const battleData = {
+        battleId,
+        round: shareState.round,
+        creatures: shareState.creatures,
+        activeCreature: shareState.activeCreature,
+        timestamp: Date.now()
+      };
+
+      // Guardar en Firebase
+      await saveBattle(battleId, battleData);
+
+      return {
+        ...shareState,
+        battleId,
+        shareEnabled: true
+      };
+    } catch (err) {
+      console.error('Error sharing battle:', err);
+      setError(err);
+      return shareState;
+    }
+  };
+
+  // Inicializar batalla compartida
   useEffect(() => {
-    setState((prevState) => shareBattle(prevState));
+    if (state.shareEnabled && state.battleId) {
+      shareBattle(state);
+    }
   }, []);
 
+  // Auto-guardar cuando cambian datos importantes
   useEffect(() => {
-    setState((prevState) => handleShareError(prevState, createError, updateError));
-  }, [createError, updateError]);
+    if (state.shareEnabled && state.battleId) {
+      const saveData = async () => {
+        try {
+          await saveBattle(state.battleId, {
+            battleId: state.battleId,
+            round: state.round,
+            creatures: state.creatures,
+            activeCreature: state.activeCreature,
+            timestamp: Date.now(),
+          });
+        } catch (err) {
+          console.error('Error auto-saving:', err);
+        }
+      };
+
+      // Debounce para evitar demasiadas escrituras
+      const timeoutId = setTimeout(saveData, 1000);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [state.round, state.creatures, state.activeCreature, state.shareEnabled, state.battleId]);
 
   return (
     <DungeonMasterApp
       state={state}
       setState={setState}
       shareBattle={shareBattle}
+      onlineError={error}
     />
   );
 }

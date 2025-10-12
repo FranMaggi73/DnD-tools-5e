@@ -1,74 +1,44 @@
-import { nanoid } from 'nanoid';
-import { dismissErrors, updateErrors } from './ErrorManager';
-import now from '../util/date';
+import { saveBattle, generateBattleId } from '../firebase/BattleManager';
 
-function getSharedCreatures(creatures) {
-  return creatures.map((creature) => ({
-    ...creature,
-    statBlock: undefined,
-    armorClass: undefined,
-    totalSpellSlots: undefined,
-    usedSpellSlots: undefined,
-    initiativeRoll: undefined,
-    spells: undefined,
-  }));
-}
-
-export function share(state, createBattle, updateBattle) {
-  if (!state.shareEnabled) {
-    return state;
-  }
-
-  const battleId = state.battleId || nanoid(11);
-  const timestamp = now();
-
-  const input = {
-    variables: {
-      battleinput: {
-        battleId,
-        round: state.round,
-        creatures: getSharedCreatures(state.creatures),
-        activeCreature: state.activeCreature,
-        expdate: Math.floor(timestamp / 1000.0) + 86400,
-      },
-    },
+export async function share(state) {
+  const { battleId } = state;
+  
+  // Generar ID si no existe
+  const id = battleId || generateBattleId();
+  
+  // Preparar datos para Firebase
+  const battleData = {
+    battleId: id,
+    round: state.round,
+    creatures: state.creatures,
+    activeCreature: state.activeCreature,
+    timestamp: Date.now()
   };
-
-  const { battleCreated } = state;
-
-  if (battleCreated) {
-    updateBattle(input);
-    return state;
-  }
-
-  createBattle(input);
-
-  return {
-    ...state,
-    battleCreated: true,
-    battleId,
-    sharedTimestamp: timestamp,
-  };
-}
-
-export function handleShareError(state, createError, updateError) {
-  if (!createError && !updateError) return dismissErrors(state);
-
-  const error = state.loaded
-    ? 'Error rejoining previously shared battle. Try resharing the battle.'
-    : 'Error sharing battle with players. Try toggling share button.';
-  const stateWithErrors = updateErrors(state, error);
-
-  if (createError) return { ...stateWithErrors, battleCreated: false };
-
-  if (state.loaded) {
+  
+  try {
+    // Guardar en Firebase
+    await saveBattle(id, battleData);
+    
     return {
-      ...stateWithErrors,
-      battleCreated: false,
-      shareEnabled: false,
-      battleId: undefined,
+      ...state,
+      battleId: id,
+      shareEnabled: true
+    };
+  } catch (error) {
+    console.error('Error saving battle to Firebase:', error);
+    return {
+      ...state,
+      errors: [...(state.errors || []), 'Error sharing battle. Please try again.']
     };
   }
+}
 
-  return stateWithErrors;
+export function handleShareError(state, error) {
+  if (error) {
+    return {
+      ...state,
+      errors: [...(state.errors || []), 'Error sharing battle. Please check your connection.']
+    };
+  }
+  return state;
 }

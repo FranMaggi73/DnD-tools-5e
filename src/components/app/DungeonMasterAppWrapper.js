@@ -9,15 +9,6 @@ import {
   newBattleState,
 } from '../../state/BattleManager';
 import Loading from './Loading';
-import OfflineApolloProvider from '../../graphql/OfflineApolloProvider';
-
-const RefreshingApolloProvider = lazy(async () => {
-  try {
-    return await import('../../graphql/RefreshingApolloProvider');
-  } catch {
-    return { default: OfflineApolloProvider };
-  }
-});
 
 const SharedDungeonMasterApp = lazy(async () => {
   try {
@@ -30,21 +21,6 @@ const SharedDungeonMasterApp = lazy(async () => {
 export default function DungeonMasterAppWrapper() {
   const initialState = useMemo(() => (newBattleState()), []);
   const [state, setState] = useState(initialState);
-
-  if (state.shareEnabled) {
-    return (
-      <Suspense fallback={<Loading />}>
-        <RefreshingApolloProvider
-          online={state.shareEnabled}
-          OnlineView={SharedDungeonMasterApp}
-          OfflineView={DungeonMasterApp}
-          shareBattle={(sharedState) => sharedState}
-          state={state}
-          setState={setState}
-        />
-      </Suspense>
-    );
-  }
 
   return (
     <DungeonMasterApp

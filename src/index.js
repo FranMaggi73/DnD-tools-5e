@@ -1,11 +1,9 @@
-import React, { lazy, Suspense } from 'react';
+import React, { Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import DungeonMasterAppWrapper from './components/app/DungeonMasterAppWrapper';
 import ErrorBoundary from './components/error/ErrorBoundary';
 import featureFlags from './featureFlags';
 import Loading from './components/app/Loading';
-
-const PlayerAppWrapper = lazy(() => import('./components/app/PlayerAppWrapper'));
 
 function getUrlParameter(name) {
   const cleanName = name.replace(/[[]/, '\\[').replace(/[\]]/, '\\]');
@@ -19,16 +17,6 @@ function setFeatureFlags() {
     const value = getUrlParameter(flag);
     window[`FLAG_${flag}`] = value === 'true';
   });
-}
-
-function RenderPlayerApp({ battleId }) {
-  return (
-    <ErrorBoundary>
-      <Suspense fallback={<Loading />}>
-        <PlayerAppWrapper battleId={battleId} />
-      </Suspense>
-    </ErrorBoundary>
-  );
 }
 
 function RenderDmApp() {
