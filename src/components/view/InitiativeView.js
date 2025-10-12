@@ -1,6 +1,5 @@
 import React from 'react';
 import { handleCreateCreatureErrors } from '../../state/CreatureFormManager';
-import Footer from '../page/footer/Footer';
 import { addCreature } from '../../state/CreatureListManager';
 import CreateCreatureForm from '../page/create-creature-form/CreateCreatureForm';
 import Creatures from '../page/Creatures';
@@ -40,7 +39,7 @@ export default function InitiativeView({
           />
         )}
       </main>
-      <Footer />
+      <div className="main-footer-wrapper" />
     </>
   );
 }

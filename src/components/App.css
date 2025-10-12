@@ -1140,22 +1140,6 @@ label {
 .health-points--injured {
   color: #822000;
 }
-
-/* Footer */
-
-.footer-text {
-  font-size: 16px;
-  padding: 10px;
-  width: 80%;
-}
-
-
-@media only screen and (max-width: 825px) {
-  .footer-text {
-    width: auto;
-  }
-}
-
 /* Errors */
 
 .error-bar {
@@ -1494,22 +1478,6 @@ button[role=tab][aria-selected=true]:focus  {
   }
 }
 
-/* Buy me a coffee */
-
-.buymeacoffee__mobileonly {
-  display: none;
-}
-
-@media only screen and (max-width: 825px) {
-  .buymeacoffee__mobileonly {
-    display: block;
-  }
-
-  .buymeacoffee__desktoponly {
-    display: none;
-  }
-}
-
 /* View Switcher */
 
 .navigation {
@@ -1564,12 +1532,6 @@ button[role=tab][aria-selected=true]:focus  {
 .navigation-option__active:focus {
   border-bottom: 4px solid #822000;
 }
-
-.navigation-option__buymeacoffee {
-  margin-left: 24px;
-  margin-top: 4px;
-}
-
 /* DM Tips */
 .dmtips {
   padding: 10px;

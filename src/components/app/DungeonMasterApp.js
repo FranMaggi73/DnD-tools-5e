@@ -3,8 +3,7 @@ import React, {
   useRef,
   useMemo,
   useState,
-  Suspense,
-  lazy,
+
 } from 'react';
 import isHotkey from 'is-hotkey';
 import '../App.css';
@@ -62,18 +61,8 @@ import {
 } from '../../state/ErrorManager';
 import { getSpellList } from '../../domain/spellcasting';
 import SrdContext from './SrdContext';
-import Loading from './Loading';
 import ViewSwitcher from '../view/ViewSwitcher';
 import InitiativeView from '../view/InitiativeView';
-import ViewError from '../view/ViewError';
-
-const DungeonMasterTips = lazy(async () => {
-  try {
-    return await import('../view/DungeonMasterTips');
-  } catch {
-    return { default: ViewError };
-  }
-});
 
 function DungeonMasterApp({
   state, setState, shareBattle, onlineError,
@@ -203,15 +192,6 @@ function DungeonMasterApp({
         secondsElapsed={secondsElapsed}
         creatureManagement={creatureManagement}
       />,
-    },
-    {
-      id: 'dmtips',
-      title: 'DM Tips',
-      content: (
-        <Suspense fallback={<Loading />}>
-          <DungeonMasterTips />
-        </Suspense>
-      ),
     },
   ];
 

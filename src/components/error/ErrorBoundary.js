@@ -1,5 +1,4 @@
 import React from 'react';
-import Footer from '../page/footer/Footer';
 import Title from '../page/Title';
 
 export default class ErrorBoundary extends React.Component {
@@ -21,7 +20,6 @@ export default class ErrorBoundary extends React.Component {
           <main className="main main__error">
             <Title error />
           </main>
-          <Footer error />
         </div>
       );
     }
