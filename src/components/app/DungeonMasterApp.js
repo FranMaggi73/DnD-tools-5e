@@ -46,10 +46,6 @@ import {
   addSpellUses,
   addTieBreakerToCreature,
 } from '../../state/CreatureManager';
-import {
-  save,
-  load,
-} from '../../state/SaveManager';
 import Errors from '../error/Errors';
 import { hotkeys } from '../../hotkeys/hotkeys';
 import BattleManagerContext from './BattleManagerContext';
@@ -92,11 +88,6 @@ function DungeonMasterApp({
       e.preventDefault();
       updateBattle(toggleRulesSearch, false)();
     }
-  };
-
-  const loadBattle = async (file) => {
-    const newState = shareBattle(await load(state, file));
-    setState(newState);
   };
 
   const errors = battleHasErrors(state);
@@ -154,8 +145,6 @@ function DungeonMasterApp({
     toggleShare: updateBattle(toggleSync),
     toggleRulesSearch: updateBattle(toggleRulesSearch, false),
     resetBattle: updateBattle(resetBattle),
-    saveBattle: updateBattle(save, false),
-    loadBattle,
   }), [state]);
 
   const srd = useMemo(() => ({ spellList }));

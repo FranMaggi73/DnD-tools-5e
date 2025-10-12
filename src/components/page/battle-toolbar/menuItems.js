@@ -1,9 +1,7 @@
 import React from 'react';
-import SaveLoadIcon from '../../icons/SaveLoadIcon';
 import ShareIcon from '../../icons/ShareIcon';
 import RulesSearchMenuIcon from '../../icons/RulesSearchMenuIcon';
 import RemoveIcon from '../../icons/RemoveIcon';
-import { isSaveLoadSupported } from '../../../state/SaveManager';
 
 const searchRules = (onClick, rulesSearchOpen) => ({
   icon: <RulesSearchMenuIcon opened={rulesSearchOpen} />,
@@ -17,7 +15,6 @@ export const dmItems = (
   shareEnabled,
   rulesSearchOpen,
   toggleRulesSearch,
-  fileSelector,
 ) => {
   const menuItems1 = [
     searchRules(toggleRulesSearch, rulesSearchOpen),
@@ -28,23 +25,6 @@ export const dmItems = (
       onClick: battleManager.toggleShare,
     },
   ];
-
-  const saveLoadItems = isSaveLoadSupported()
-    ? [
-      {
-        icon: <SaveLoadIcon />,
-        label: 'Save battle',
-        ref: React.createRef(),
-        onClick: battleManager.saveBattle,
-      },
-      {
-        icon: <SaveLoadIcon load />,
-        label: 'Load battle',
-        ref: React.createRef(),
-        onClick: () => fileSelector.current.click(),
-      },
-    ]
-    : [];
 
   const menuItems2 = [
     {
@@ -63,7 +43,7 @@ export const dmItems = (
     },
   ];
 
-  return [...menuItems1, ...saveLoadItems, ...menuItems2];
+  return [...menuItems1, ...menuItems2];
 };
 
 export const playerItems = (rulesSearchOpen, toggleRulesSearch) => ([

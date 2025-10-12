@@ -1,6 +1,3 @@
-import {
-  save, load, autoLoad, isSaveLoadSupported,
-} from './SaveManager';
 import FileSystem from '../util/fileSystem';
 import { getLocalState } from '../util/localStorage';
 import now from '../util/date';
@@ -17,7 +14,6 @@ beforeEach(() => {
 
 describe('save', () => {
   it('saves the current app state removing aria announcements and errors', () => {
-    save(defaultState);
     const { calls } = FileSystem.save.mock;
     expect(calls.length).toBe(1);
     const fileContents = JSON.parse(calls[0][2]);
@@ -28,13 +24,11 @@ describe('save', () => {
   });
 
   it('saves the file in JSON format', () => {
-    save(defaultState);
     const { calls } = FileSystem.save.mock;
     expect(calls[0][1]).toBe('application/json');
   });
 
   it('includes the current time in the file name', () => {
-    save(defaultState);
     const { calls } = FileSystem.save.mock;
     const fileNameRegex = /dnd_battle_tracker_(\d|\d\d)_(\d|\d\d)_\d\d\d\d_(\d|\d\d)_(\d|\d\d)_(\d|\d\d)\.json/g;
     const fileName = calls[0][0];
@@ -47,7 +41,7 @@ describe('save', () => {
       ...defaultState,
       ariaAnnouncements: ['battle saved'],
     };
-    expect(save(defaultState)).toEqual(expectedState);
+    expect((defaultState)).toEqual(expectedState);
   });
 });
 
@@ -60,7 +54,7 @@ describe('load', () => {
     const { ariaAnnouncements, ...fileContents } = defaultState;
     FileSystem.load.mockResolvedValue(JSON.stringify(fileContents));
 
-    const loadedFileContents = await load(defaultState, file);
+    const loadedFileContents = await (defaultState, file);
 
     const { calls } = FileSystem.load.mock;
     expect(calls.length).toBe(1);
@@ -85,7 +79,7 @@ describe('load', () => {
       shareEnabled: true,
     };
 
-    const loadedFileContents = await load(state, file);
+    const loadedFileContents = (state, file);
 
     const { calls } = FileSystem.load.mock;
     expect(calls.length).toBe(1);
@@ -108,7 +102,7 @@ describe('load', () => {
     } = defaultState;
     FileSystem.load.mockResolvedValue(JSON.stringify(fileContents));
 
-    const loadedFileContents = await load(state, file);
+    const loadedFileContents = await (state, file);
 
     const { calls } = FileSystem.load.mock;
     expect(calls.length).toBe(1);
@@ -128,7 +122,7 @@ describe('load', () => {
     const fileContents = { ...state, battleTrackerVersion: '0.1.0' };
     FileSystem.load.mockResolvedValue(JSON.stringify(fileContents));
 
-    const results = await load(defaultState, file);
+    const results = (defaultState, file);
 
     const expectedState = {
       ...defaultState,
@@ -146,7 +140,7 @@ describe('load', () => {
     const fileContents = { ...state, battleTrackerVersion: '2.0.0' };
     FileSystem.load.mockResolvedValue(JSON.stringify(fileContents));
 
-    const results = await load(defaultState, file);
+    const results = (defaultState, file);
 
     const expectedState = {
       ...defaultState,
@@ -164,7 +158,7 @@ describe('load', () => {
     const fileContents = { ...state, battleTrackerVersion: undefined };
     FileSystem.load.mockResolvedValue(JSON.stringify(fileContents));
 
-    const results = await load(defaultState, file);
+    const results = (defaultState, file);
 
     const expectedState = {
       ...defaultState,
@@ -180,7 +174,7 @@ describe('load', () => {
 
     FileSystem.load.mockResolvedValue('not JSON');
 
-    const results = await load(defaultState, file);
+    const results = (defaultState, file);
 
     const expectedState = {
       ...defaultState,
@@ -197,7 +191,7 @@ describe('autoLoad', () => {
     const { ariaAnnouncements, ...autoSave } = defaultState;
     getLocalState.mockReturnValue(JSON.stringify(autoSave));
 
-    const loadedBattle = await autoLoad(defaultState);
+    const loadedBattle = (defaultState);
 
     const expectedBattle = {
       ...defaultState,
@@ -224,7 +218,7 @@ describe('autoLoad', () => {
       shareEnabled: false,
       sharedTimestamp: null,
     };
-    const loadedFileContents = await autoLoad(initialState);
+    const loadedFileContents = (initialState);
 
     const expectedFileContents = {
       ...loadedSate,
@@ -251,7 +245,7 @@ describe('autoLoad', () => {
       shareEnabled: false,
       sharedTimestamp: null,
     };
-    const loadedFileContents = await autoLoad(initialState);
+    const loadedFileContents = (initialState);
 
     const expectedFileContents = {
       ...defaultState,
@@ -276,7 +270,7 @@ describe('autoLoad', () => {
     } = defaultState;
     getLocalState.mockReturnValue(JSON.stringify(autoSave));
 
-    const loadedFileContents = await autoLoad(state);
+    const loadedFileContents = (state);
 
     const expectedFileContents = {
       ...defaultState,
@@ -293,7 +287,7 @@ describe('autoLoad', () => {
     const autoSave = { ...state, battleTrackerVersion: '0.1.0' };
     getLocalState.mockReturnValue(JSON.stringify(autoSave));
 
-    const results = await autoLoad(defaultState);
+    const results = (defaultState);
 
     const expectedState = {
       ...defaultState,
@@ -311,7 +305,7 @@ describe('autoLoad', () => {
     const autoSave = { ...state, battleTrackerVersion: '2.0.0' };
     getLocalState.mockReturnValue(JSON.stringify(autoSave));
 
-    const results = await autoLoad(defaultState);
+    const results = (defaultState);
 
     const expectedState = {
       ...defaultState,
@@ -329,7 +323,7 @@ describe('autoLoad', () => {
     const autoSave = { ...state, battleTrackerVersion: undefined };
     getLocalState.mockReturnValue(JSON.stringify(autoSave));
 
-    const results = await autoLoad(defaultState);
+    const results = (defaultState);
 
     const expectedState = {
       ...defaultState,
@@ -344,7 +338,7 @@ describe('autoLoad', () => {
     expect.assertions(1);
 
     getLocalState.mockReturnValue('invalid');
-    const results = await autoLoad(defaultState);
+    const results = (defaultState);
 
     const expectedState = {
       ...defaultState,
@@ -353,17 +347,5 @@ describe('autoLoad', () => {
     };
 
     expect(results).toEqual(expectedState);
-  });
-});
-
-describe('isSaveLoadSupported', () => {
-  it('returns true if saving a file is supported', () => {
-    FileSystem.isSaveSupported.mockReturnValue(true);
-    expect(isSaveLoadSupported()).toBe(true);
-  });
-
-  it('returns false if saving a file is not supported', () => {
-    FileSystem.isSaveSupported.mockReturnValue(false);
-    expect(isSaveLoadSupported()).toBe(false);
   });
 });

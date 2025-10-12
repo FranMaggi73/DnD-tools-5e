@@ -10,7 +10,6 @@ import {
 } from '../../state/BattleManager';
 import Loading from './Loading';
 import OfflineApolloProvider from '../../graphql/OfflineApolloProvider';
-import { autoLoad, useAutoSave } from '../../state/SaveManager';
 
 const RefreshingApolloProvider = lazy(async () => {
   try {
@@ -29,13 +28,8 @@ const SharedDungeonMasterApp = lazy(async () => {
 });
 
 export default function DungeonMasterAppWrapper() {
-  const initialState = useMemo(() => autoLoad(newBattleState()), []);
+  const initialState = useMemo(() => (newBattleState()), []);
   const [state, setState] = useState(initialState);
-
-  useAutoSave({
-    state,
-    setState,
-  });
 
   if (state.shareEnabled) {
     return (
