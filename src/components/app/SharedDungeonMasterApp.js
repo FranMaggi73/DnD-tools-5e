@@ -22,23 +22,11 @@ export default function SharedDungeonMasterApp({ state, setState }) {
       // Guardar en Firebase
       await saveBattle(battleId, battleData);
 
-      // Generar link público
-      const battleLink = `https://dnd5etools.netlify.app/battle/${battleId}`;
-
-      const newState = {
+      return {
         ...shareState,
         battleId,
-        shareEnabled: true,
-        battleLink
+        shareEnabled: true
       };
-
-      // IMPORTANTE: actualizamos el estado global para que el UI muestre el link
-      setState(newState);
-
-      // Log para debug rápido
-      console.log('Shared battle created:', battleId, 'link:', battleLink);
-
-      return newState;
     } catch (err) {
       console.error('Error sharing battle:', err);
       setError(err);
@@ -46,13 +34,12 @@ export default function SharedDungeonMasterApp({ state, setState }) {
     }
   };
 
-  // Si shareEnabled o battleId cambian, aseguramos que haya link guardado
+  // Inicializar batalla compartida
   useEffect(() => {
-    if (state.shareEnabled && state.battleId && !state.battleLink) {
+    if (state.shareEnabled && state.battleId) {
       shareBattle(state);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.shareEnabled, state.battleId]);
+  }, []);
 
   // Auto-guardar cuando cambian datos importantes
   useEffect(() => {
@@ -71,6 +58,7 @@ export default function SharedDungeonMasterApp({ state, setState }) {
         }
       };
 
+      // Debounce para evitar demasiadas escrituras
       const timeoutId = setTimeout(saveData, 1000);
       return () => clearTimeout(timeoutId);
     }
