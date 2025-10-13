@@ -213,6 +213,7 @@ function DungeonMasterApp({
           <Title
             shareEnabled={shareEnabled}
             battleId={battleId}
+            battleLink={state.battleLink}
           />
           <ViewSwitcher views={views} />
         </div>

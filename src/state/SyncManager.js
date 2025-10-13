@@ -1,12 +1,12 @@
+// syncmanager.js
 import { saveBattle, generateBattleId } from '../firebase/BattleManager';
 
 export async function share(state) {
   const { battleId } = state;
-  
+
   // Generar ID si no existe
   const id = battleId || generateBattleId();
-  
-  // Preparar datos para Firebase
+
   const battleData = {
     battleId: id,
     round: state.round,
@@ -14,15 +14,19 @@ export async function share(state) {
     activeCreature: state.activeCreature,
     timestamp: Date.now()
   };
-  
+
   try {
     // Guardar en Firebase
     await saveBattle(id, battleData);
-    
+
+    // Generar link público
+    const battleLink = `https://dnd5etools.netlify.app/battle/${id}`;
+
     return {
       ...state,
       battleId: id,
-      shareEnabled: true
+      shareEnabled: true,
+      battleLink
     };
   } catch (error) {
     console.error('Error saving battle to Firebase:', error);
