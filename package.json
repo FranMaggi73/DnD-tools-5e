@@ -3,6 +3,7 @@
   "version": "5.122.1",
   "private": true,
   "dependencies": {
+    "@capacitor/app": "^5.0.8",
     "dotenv": "^17.2.3",
     "file-saver": "^2.0.5",
     "firebase": "^10.7.1",

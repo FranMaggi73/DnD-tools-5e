@@ -5,8 +5,8 @@ import ErrorBoundary from './components/error/ErrorBoundary';
 import featureFlags from './featureFlags';
 import Loading from './components/app/Loading';
 import { initializeDeepLinking, extractBattleId } from './util/deepLinking';
-import PlayerApp from './components/app/PlayerApp';
 
+const PlayerAppWrapper = lazy(() => import('./components/app/PlayerAppWrapper'));
 
 function getUrlParameter(name) {
   const cleanName = name.replace(/[[]/, '\\[').replace(/[\]]/, '\\]');
@@ -26,7 +26,7 @@ function RenderPlayerApp({ battleId }) {
   return (
     <ErrorBoundary>
       <Suspense fallback={<Loading />}>
-        <PlayerApp battleId={battleId} />
+        <PlayerAppWrapper battleId={battleId} />
       </Suspense>
     </ErrorBoundary>
   );
