@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import ExternalLink from './ExternalLink';
+import { generateDeepLink } from '../../util/deepLinking';
 
 function ErrorSubTitle() {
   return 'Something went wrong!';
@@ -10,22 +11,26 @@ function DungeonMasterSubTitle({ battleId }) {
 
   useEffect(() => {
     if (battleId) {
-      const { href } = window.location;
-      const url = `${href}?battle=${battleId}`;
+      // Generar link apropiado (deep link en Android, URL normal en web)
+      const url = generateDeepLink(battleId);
+      
       const copyPlayerLink = async () => {
         try {
           await window.navigator.clipboard.writeText(url);
           setPlayerLink({ url, copied: true });
         } catch {
+          // Si falla el clipboard, al menos mostrar el link
           setPlayerLink({ url, copied: false });
         }
       };
+      
       copyPlayerLink();
     }
   }, [battleId]);
 
   const { url, copied } = playerLink;
 
+  // Mostrar "..." mientras se genera el battleId
   if (!battleId || !url) {
     return (<>. . .</>);
   }

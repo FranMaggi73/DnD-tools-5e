@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { share } from '../../state/SyncManager';
 import { saveBattle, generateBattleId } from '../../firebase/BattleManager';
 import DungeonMasterApp from './DungeonMasterApp';
 
@@ -18,10 +19,10 @@ export default function SharedDungeonMasterApp({ state, setState }) {
         activeCreature: shareState.activeCreature,
         timestamp: Date.now()
       };
-
+      
       // Guardar en Firebase
       await saveBattle(battleId, battleData);
-
+      
       return {
         ...shareState,
         battleId,
@@ -34,12 +35,17 @@ export default function SharedDungeonMasterApp({ state, setState }) {
     }
   };
 
-  // Inicializar batalla compartida
+  // Inicializar batalla compartida al activar share
   useEffect(() => {
-    if (state.shareEnabled && state.battleId) {
-      shareBattle(state);
+    if (state.shareEnabled && !state.battleId) {
+      // Primera vez que se activa share, crear battleId
+      shareBattle(state).then(newState => {
+        if (newState.battleId !== state.battleId) {
+          setState(newState);
+        }
+      });
     }
-  }, []);
+  }, [state.shareEnabled]);
 
   // Auto-guardar cuando cambian datos importantes
   useEffect(() => {
@@ -51,13 +57,13 @@ export default function SharedDungeonMasterApp({ state, setState }) {
             round: state.round,
             creatures: state.creatures,
             activeCreature: state.activeCreature,
-            timestamp: Date.now(),
+            timestamp: Date.now()
           });
         } catch (err) {
           console.error('Error auto-saving:', err);
         }
       };
-
+      
       // Debounce para evitar demasiadas escrituras
       const timeoutId = setTimeout(saveData, 1000);
       return () => clearTimeout(timeoutId);
