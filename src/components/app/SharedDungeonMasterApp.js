@@ -14,43 +14,26 @@ export default function SharedDungeonMasterApp({ state, setState }) {
   // Un único effect que se encarga de crear localmente el battleId y
   // luego sincronizarlo con Firebase (sin race).
   useEffect(() => {
-    if (!state.shareEnabled) return;
+    if (!state?.shareEnabled || !state?.battleId) return;
 
-    // Si ya hay battleId, no hace nada
-    if (state.battleId) {
-      console.log('SharedDungeonMasterApp: already has battleId', state.battleId);
-      return;
-    }
-
-    // Generar ID localmente para mostrar link inmediatamente
-    const localBattleId = generateBattleId();
-    console.log('SharedDungeonMasterApp: generating localBattleId', localBattleId);
-
-    // Mergear el nuevo battleId en el state (usar updater funcional para evitar stale state)
-    setState((prev) => ({ ...(prev || {}), battleId: localBattleId, shareEnabled: true }));
-
-    // Guardar en Firebase sin bloquear la UI
-    (async () => {
+    const saveLater = async () => {
       try {
-        const s = stateRef.current || {};
-        const battleData = {
-          battleId: localBattleId,
-          round: s.round,
-          creatures: s.creatures,
-          activeCreature: s.activeCreature,
+        await saveBattle(state.battleId, {
+          battleId: state.battleId,
+          round: state.round,
+          creatures: state.creatures,
+          activeCreature: state.activeCreature,
           timestamp: Date.now(),
-        };
-        await saveBattle(localBattleId, battleData);
-
-        // Asegurarnos de que el state remoto esté aplicado (merge)
-        setState((prev) => ({ ...(prev || {}), battleId: localBattleId, shareEnabled: true }));
-        console.log('SharedDungeonMasterApp: saved to Firebase', localBattleId);
+        });
+        // opcional: console.log('auto-saved', state.battleId);
       } catch (err) {
-        console.error('SharedDungeonMasterApp: error saving to Firebase', err);
-        setError(err);
+        console.error('Auto-save error:', err);
       }
-    })();
-  }, [state.shareEnabled, setState]);
+    };
+
+    const id = setTimeout(saveLater, 1000); // debounce 1s
+    return () => clearTimeout(id);
+  }, [state.round, state.creatures, state.activeCreature, state.shareEnabled, state.battleId]);
 
   // DEBUG: Estado en cada render
   console.log('SharedDungeonMasterApp render state.battleId =', state.battleId);

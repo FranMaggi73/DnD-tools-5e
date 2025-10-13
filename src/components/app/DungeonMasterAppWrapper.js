@@ -1,20 +1,20 @@
+// src/components/app/DungeonMasterAppWrapper.js
 import React, {
   useState,
   Suspense,
   lazy,
   useMemo,
 } from 'react';
-import DungeonMasterApp from './DungeonMasterApp';
-import {
-  newBattleState,
-} from '../../state/BattleManager';
+import { newBattleState } from '../../state/BattleManager';
 import Loading from './Loading';
 
 const SharedDungeonMasterApp = lazy(async () => {
   try {
     return await import('./SharedDungeonMasterApp');
   } catch {
-    return { default: DungeonMasterApp };
+    // Si lazy falla por alguna razón, exportamos un fallback mínimo
+    // pero idealmente no debería pasar en dev.
+    return { default: (props) => <div>Unable to load shared DM app</div> };
   }
 });
 
@@ -23,10 +23,11 @@ export default function DungeonMasterAppWrapper() {
   const [state, setState] = useState(initialState);
 
   return (
-    <DungeonMasterApp
-      shareBattle={(sharedState) => sharedState}
-      state={state}
-      setState={setState}
-    />
+    <Suspense fallback={<Loading />}>
+      <SharedDungeonMasterApp
+        state={state}
+        setState={setState}
+      />
+    </Suspense>
   );
 }

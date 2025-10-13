@@ -74,7 +74,18 @@ function DungeonMasterApp({
   const updateBattle = (update, doShare = true) => (...args) => {
     setState((prevState) => {
       const newState = update(prevState, ...args);
-      if (doShare) return shareBattle(newState);
+
+      if (doShare) {
+        // llamar a shareBattle pero NO devolver su resultado
+        // (no queremos que setState reciba una Promise)
+        try {
+          shareBattle(newState);
+        } catch (err) {
+          // opcional: manejar error sin afectar el retorno
+          console.error('shareBattle error:', err);
+        }
+      }
+
       return newState;
     });
   };
