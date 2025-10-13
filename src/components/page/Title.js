@@ -13,7 +13,7 @@ function DungeonMasterSubTitle({ battleId }) {
     if (battleId) {
       // Generar link apropiado (deep link en Android, URL normal en web)
       const url = generateDeepLink(battleId);
-      
+
       const copyPlayerLink = async () => {
         try {
           await window.navigator.clipboard.writeText(url);
@@ -23,16 +23,17 @@ function DungeonMasterSubTitle({ battleId }) {
           setPlayerLink({ url, copied: false });
         }
       };
-      
+
       copyPlayerLink();
     }
+    console.log('battleId in Subtitle:', battleId);
   }, [battleId]);
 
   const { url, copied } = playerLink;
 
   // Mostrar "..." mientras se genera el battleId
   if (!battleId || !url) {
-    return (<>. . .</>);
+    return <>Generating link...</>;
   }
 
   return (
