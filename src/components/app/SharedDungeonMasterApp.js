@@ -6,15 +6,24 @@ export default function SharedDungeonMasterApp({ state, setState }) {
   const [error, setError] = useState(null);
   const stateRef = useRef(state);
 
-  // Mantener la referencia al state actual para usar dentro de async
+  // Mantener la referencia actualizada del state
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
 
-  // Un único effect que se encarga de crear localmente el battleId y
-  // luego sincronizarlo con Firebase (sin race).
+  // Generar battleId automáticamente si shareEnabled está activo y no hay battleId
   useEffect(() => {
-    if (!state?.shareEnabled || !state?.battleId) return;
+    if (!state.shareEnabled) return;
+
+    if (!state.battleId) {
+      const newId = generateBattleId();
+      setState((prev) => ({ ...prev, battleId: newId }));
+    }
+  }, [state.shareEnabled, setState]);
+
+  // Auto-guardar en Firebase cada vez que cambian datos importantes
+  useEffect(() => {
+    if (!state.shareEnabled || !state.battleId) return;
 
     const saveLater = async () => {
       try {
@@ -25,9 +34,9 @@ export default function SharedDungeonMasterApp({ state, setState }) {
           activeCreature: state.activeCreature,
           timestamp: Date.now(),
         });
-        // opcional: console.log('auto-saved', state.battleId);
       } catch (err) {
         console.error('Auto-save error:', err);
+        setError(err);
       }
     };
 
@@ -35,31 +44,35 @@ export default function SharedDungeonMasterApp({ state, setState }) {
     return () => clearTimeout(id);
   }, [state.round, state.creatures, state.activeCreature, state.shareEnabled, state.battleId]);
 
-  // DEBUG: Estado en cada render
+  // DEBUG: verificar battleId en cada render
   console.log('SharedDungeonMasterApp render state.battleId =', state.battleId);
+
+  // Wrapper de shareBattle para compatibilidad con DungeonMasterApp
+  const shareBattle = async (s) => {
+    const id = s.battleId || generateBattleId();
+    const toSave = {
+      battleId: id,
+      round: s.round,
+      creatures: s.creatures,
+      activeCreature: s.activeCreature,
+      timestamp: Date.now(),
+    };
+
+    try {
+      await saveBattle(id, toSave);
+      return { ...s, battleId: id, shareEnabled: true };
+    } catch (err) {
+      console.error('shareBattle wrapper error:', err);
+      setError(err);
+      return s;
+    }
+  };
 
   return (
     <DungeonMasterApp
       state={state}
       setState={setState}
-      shareBattle={async (s) => {
-        // wrapper ligero por compatibilidad con la interfaz anterior
-        const id = s.battleId || generateBattleId();
-        const toSave = {
-          battleId: id,
-          round: s.round,
-          creatures: s.creatures,
-          activeCreature: s.activeCreature,
-          timestamp: Date.now(),
-        };
-        try {
-          await saveBattle(id, toSave);
-          return { ...s, battleId: id, shareEnabled: true };
-        } catch (err) {
-          console.error('shareBattle wrapper error:', err);
-          return s;
-        }
-      }}
+      shareBattle={shareBattle}
       onlineError={error}
     />
   );

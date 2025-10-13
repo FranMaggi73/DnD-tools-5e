@@ -68,17 +68,14 @@ export function extractBattleId(url) {
 
 // Generar deep link para compartir
 export function generateDeepLink(battleId) {
-  // En Android con app instalada: usa deep link personalizado
-  // En web: usa URL normal
-  
-  const isNative = App && typeof window !== 'undefined' && window.Capacitor;
-  
+  // Detectar web de manera confiable
+  const isNative = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNative;
+
   if (isNative) {
-    // Deep link personalizado que abrirá la app
     return `dndbattle://battle/${battleId}`;
   }
-  
-  // URL web normal
+
+  // Siempre usar URL pública en web
   const baseUrl = process.env.REACT_APP_PUBLIC_URL || window.location.origin;
   return `${baseUrl}?battle=${battleId}`;
 }

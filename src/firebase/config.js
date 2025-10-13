@@ -12,16 +12,10 @@ const firebaseConfig = {
   appId: process.env.REACT_APP_FIREBASE_APP_ID
 };
 
-// Inicializar Firebase
 const app = initializeApp(firebaseConfig);
-
-// Exportar servicios
 export const database = getDatabase(app);
 export const auth = getAuth(app);
 
-// Autenticación anónima automática
-signInAnonymously(auth).catch((error) => {
-  console.error("Firebase auth error:", error);
-});
+signInAnonymously(auth).catch(console.error);
 
 export default app;
