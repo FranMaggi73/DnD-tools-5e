@@ -16,16 +16,16 @@ export default function SharedDungeonMasterApp({ state, setState }) {
         round: shareState.round,
         creatures: shareState.creatures,
         activeCreature: shareState.activeCreature,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
-      
+
       // Guardar en Firebase
       await saveBattle(battleId, battleData);
-      
+
       return {
         ...shareState,
         battleId,
-        shareEnabled: true
+        shareEnabled: true,
       };
     } catch (err) {
       console.error('Error sharing battle:', err);
@@ -38,7 +38,7 @@ export default function SharedDungeonMasterApp({ state, setState }) {
   useEffect(() => {
     if (state.shareEnabled && !state.battleId) {
       // Primera vez que se activa share, crear battleId
-      shareBattle(state).then(newState => {
+      shareBattle(state).then((newState) => {
         if (newState.battleId !== state.battleId) {
           setState(newState);
         }
@@ -48,26 +48,28 @@ export default function SharedDungeonMasterApp({ state, setState }) {
 
   // Auto-guardar cuando cambian datos importantes
   useEffect(() => {
-    if (state.shareEnabled && state.battleId) {
-      const saveData = async () => {
-        try {
-          await saveBattle(state.battleId, {
-            battleId: state.battleId,
-            round: state.round,
-            creatures: state.creatures,
-            activeCreature: state.activeCreature,
-            timestamp: Date.now()
-          });
-        } catch (err) {
-          console.error('Error auto-saving:', err);
-        }
-      };
-      
-      // Debounce para evitar demasiadas escrituras
-      const timeoutId = setTimeout(saveData, 1000);
-      return () => clearTimeout(timeoutId);
+    if (state.shareEnabled && !state.battleId) {
+      const localBattleId = generateBattleId();
+      const updatedState = { ...state, battleId: localBattleId };
+
+      // Setear inmediatamente para que el link aparezca en UI
+      setState(updatedState);
+
+      // Luego guardar en Firebase asincrónicamente
+      shareBattle(updatedState)
+        .then((savedState) => {
+          // Asegurarse de aplicar el nuevo estado si hay cambios
+          if (savedState.battleId !== state.battleId) {
+            setState(savedState);
+          }
+        })
+        .catch((err) => {
+          console.error('Error while sharing battle:', err);
+          setError(err);
+        });
     }
-  }, [state.round, state.creatures, state.activeCreature, state.shareEnabled, state.battleId]);
+    console.log('SharedDungeonMasterApp battleId:', state.battleId);
+  }, [state.shareEnabled]);
 
   return (
     <DungeonMasterApp
