@@ -6,6 +6,9 @@
 	"/dashboard": [
 		"src/routes/+layout.ts"
 	],
+	"/events/[id]": [
+		"src/routes/+layout.ts"
+	],
 	"/login": [
 		"src/routes/+layout.ts"
 	]

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"time"
 
@@ -9,6 +10,8 @@ import (
 	"firebase.google.com/go/v4/auth"
 	"github.com/gin-gonic/gin"
 	"google.golang.org/api/iterator"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/FranMaggi73/dm-events-backend/internal/models"
 )
@@ -28,6 +31,10 @@ func NewHandler(db *firestore.Client, auth *auth.Client) *Handler {
 
 func (h *Handler) GetCurrentUser(c *gin.Context) {
 	uid := c.GetString("uid")
+	if uid == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing uid (not authenticated)"})
+		return
+	}
 	ctx := context.Background()
 
 	doc, err := h.db.Collection("users").Doc(uid).Get(ctx)
@@ -51,24 +58,68 @@ func (h *Handler) GetCurrentUser(c *gin.Context) {
 
 func (h *Handler) CreateEvent(c *gin.Context) {
 	uid := c.GetString("uid")
+	if uid == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing uid (not authenticated)"})
+		return
+	}
 	ctx := context.Background()
 
+	// Bind request temprano (validación)
 	var req models.CreateEventRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Verificar límite de eventos
-	userDoc, err := h.db.Collection("users").Doc(uid).Get(ctx)
+	// Intentamos obtener el doc del usuario
+	userRef := h.db.Collection("users").Doc(uid)
+	userDoc, err := userRef.Get(ctx)
+	var user models.User
+
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error obteniendo usuario"})
-		return
+		// Si no existe, creamos el documento de usuario usando Firebase Auth
+		if status.Code(err) == codes.NotFound {
+			log.Printf("CreateEvent: users doc not found for uid=%s, creating from Auth", uid)
+
+			// obtener info desde Firebase Auth
+			fbUser, authErr := h.auth.GetUser(ctx, uid)
+			if authErr != nil {
+				log.Printf("CreateEvent: failed to GetUser from Auth for uid=%s: %v", uid, authErr)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error obteniendo usuario desde Auth"})
+				return
+			}
+
+			newUser := models.User{
+				UID:         uid,
+				Email:       fbUser.Email,
+				DisplayName: fbUser.DisplayName,
+				PhotoURL:    fbUser.PhotoURL,
+				CreatedAt:   time.Now(),
+				EventCount:  0,
+			}
+
+			if _, err := userRef.Set(ctx, newUser); err != nil {
+				log.Printf("CreateEvent: failed to create users doc for uid=%s: %v", uid, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creando usuario"})
+				return
+			}
+
+			user = newUser
+		} else {
+			log.Printf("CreateEvent: error getting users doc uid=%s: %v", uid, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error obteniendo usuario"})
+			return
+		}
+	} else {
+		// Si userDoc existe, parsearlo
+		if err := userDoc.DataTo(&user); err != nil {
+			log.Printf("CreateEvent: DataTo user failed uid=%s: %v", uid, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando usuario"})
+			return
+		}
 	}
 
-	var user models.User
-	userDoc.DataTo(&user)
-
+	// Revisar límite de eventos
 	if user.EventCount >= 3 {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Has alcanzado el límite de 3 eventos"})
 		return
@@ -87,7 +138,7 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 		PlayerIDs:   []string{},
 	}
 
-	// Transacción: crear evento + miembro DM + incrementar contador
+	// Transacción para crear evento + miembro DM + incrementar contador
 	err = h.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		if err := tx.Set(eventRef, event); err != nil {
 			return err
@@ -113,6 +164,7 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 	})
 
 	if err != nil {
+		log.Printf("CreateEvent: transaction failed uid=%s err=%v", uid, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creando evento"})
 		return
 	}
@@ -122,6 +174,10 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 
 func (h *Handler) GetUserEvents(c *gin.Context) {
 	uid := c.GetString("uid")
+	if uid == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing uid (not authenticated)"})
+		return
+	}
 	ctx := context.Background()
 
 	iter := h.db.Collection("events").
@@ -140,7 +196,10 @@ func (h *Handler) GetUserEvents(c *gin.Context) {
 		}
 
 		var e models.Event
-		doc.DataTo(&e)
+		if err := doc.DataTo(&e); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando evento"})
+			return
+		}
 		events = append(events, e)
 	}
 
@@ -158,12 +217,19 @@ func (h *Handler) GetEvent(c *gin.Context) {
 	}
 
 	var event models.Event
-	doc.DataTo(&event)
+	if err := doc.DataTo(&event); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando evento"})
+		return
+	}
 	c.JSON(http.StatusOK, event)
 }
 
 func (h *Handler) DeleteEvent(c *gin.Context) {
 	uid := c.GetString("uid")
+	if uid == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing uid (not authenticated)"})
+		return
+	}
 	eventID := c.Param("id")
 	ctx := context.Background()
 
@@ -174,7 +240,10 @@ func (h *Handler) DeleteEvent(c *gin.Context) {
 	}
 
 	var event models.Event
-	eventDoc.DataTo(&event)
+	if err := eventDoc.DataTo(&event); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando evento"})
+		return
+	}
 
 	if event.DmID != uid {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Solo el DM puede eliminar el evento"})
@@ -240,7 +309,10 @@ func (h *Handler) GetEventMembers(c *gin.Context) {
 			return
 		}
 		var member models.EventMember
-		doc.DataTo(&member)
+		if err := doc.DataTo(&member); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando miembro"})
+			return
+		}
 		members = append(members, member)
 	}
 
@@ -262,6 +334,10 @@ func (h *Handler) GetEventMembers(c *gin.Context) {
 
 func (h *Handler) InvitePlayer(c *gin.Context) {
 	uid := c.GetString("uid")
+	if uid == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing uid (not authenticated)"})
+		return
+	}
 	eventID := c.Param("id")
 	ctx := context.Background()
 
@@ -282,7 +358,10 @@ func (h *Handler) InvitePlayer(c *gin.Context) {
 	}
 
 	var event models.Event
-	eventDoc.DataTo(&event)
+	if err := eventDoc.DataTo(&event); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando evento"})
+		return
+	}
 
 	if event.DmID != uid {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Solo el DM puede invitar jugadores"})
@@ -305,15 +384,22 @@ func (h *Handler) InvitePlayer(c *gin.Context) {
 	}
 
 	// Actualizar playerIds en evento
-	h.db.Collection("events").Doc(eventID).Update(ctx, []firestore.Update{
+	if _, err := h.db.Collection("events").Doc(eventID).Update(ctx, []firestore.Update{
 		{Path: "playerIds", Value: firestore.ArrayUnion(req.UserID)},
-	})
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error actualizando playerIds"})
+		return
+	}
 
 	c.JSON(http.StatusOK, member)
 }
 
 func (h *Handler) RemovePlayer(c *gin.Context) {
 	uid := c.GetString("uid")
+	if uid == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing uid (not authenticated)"})
+		return
+	}
 	eventID := c.Param("id")
 	playerID := c.Param("userId")
 	ctx := context.Background()
@@ -325,7 +411,10 @@ func (h *Handler) RemovePlayer(c *gin.Context) {
 	}
 
 	var event models.Event
-	eventDoc.DataTo(&event)
+	if err := eventDoc.DataTo(&event); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando evento"})
+		return
+	}
 
 	if event.DmID != uid {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Solo el DM puede eliminar jugadores"})
@@ -357,9 +446,12 @@ func (h *Handler) RemovePlayer(c *gin.Context) {
 		return
 	}
 
-	h.db.Collection("events").Doc(eventID).Update(ctx, []firestore.Update{
+	if _, err := h.db.Collection("events").Doc(eventID).Update(ctx, []firestore.Update{
 		{Path: "playerIds", Value: firestore.ArrayRemove(playerID)},
-	})
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error actualizando playerIds"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Jugador eliminado"})
 }
