@@ -1,6 +1,13 @@
 import { get } from 'svelte/store';
 import { tokenStore } from '$lib/stores/authStore';
-import type { Campaign, CampaignMembers, Invitation } from '$lib/types';
+import type { 
+  Campaign, 
+  CampaignMembers, 
+  Invitation,
+  Character,
+  Encounter,
+  Combatant
+} from '$lib/types';
 
 const API_BASE_URL = 'http://localhost:8080/api';
 
@@ -64,5 +71,111 @@ export const api = {
     fetchWithAuth<{ message: string }>(`/invitations/${invitationId}/respond`, {
       method: 'POST',
       body: JSON.stringify({ action }),
+    }),
+
+  // ===========================
+  // PERSONAJES
+  // ===========================
+  createCharacter: (campaignId: string, data: {
+    name: string;
+    class: string;
+    level: number;
+    maxHp: number;
+    armorClass: number;
+    initiative: number;
+    imageUrl?: string;
+  }) =>
+    fetchWithAuth<Character>(`/campaigns/${campaignId}/characters`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getCampaignCharacters: (campaignId: string) => 
+    fetchWithAuth<Character[]>(`/campaigns/${campaignId}/characters`),
+
+  updateCharacter: (characterId: string, data: {
+    name: string;
+    class: string;
+    level: number;
+    maxHp: number;
+    armorClass: number;
+    initiative: number;
+    imageUrl?: string;
+  }) =>
+    fetchWithAuth<Character>(`/characters/${characterId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  deleteCharacter: (characterId: string) =>
+    fetchWithAuth<{ message: string }>(`/characters/${characterId}`, {
+      method: 'DELETE',
+    }),
+
+  // ===========================
+  // ENCUENTROS
+  // ===========================
+  createEncounter: (campaignId: string, name: string) =>
+    fetchWithAuth<Encounter>(`/campaigns/${campaignId}/encounters`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+
+  getActiveEncounter: (campaignId: string) =>
+    fetchWithAuth<Encounter>(`/campaigns/${campaignId}/encounters/active`),
+
+  endEncounter: (encounterId: string) =>
+    fetchWithAuth<{ message: string }>(`/encounters/${encounterId}`, {
+      method: 'DELETE',
+    }),
+
+  resetEncounter: (encounterId: string) =>
+    fetchWithAuth<{ message: string }>(`/encounters/${encounterId}/reset`, {
+      method: 'POST',
+    }),
+
+  // ===========================
+  // COMBATIENTES
+  // ===========================
+  addCombatant: (encounterId: string, data: {
+    type: 'character' | 'creature';
+    characterId?: string;
+    name?: string;
+    initiative: number;
+    maxHp: number;
+    currentHp?: number;
+    armorClass: number;
+    imageUrl?: string;
+    isNpc?: boolean;
+  }) =>
+    fetchWithAuth<Combatant>(`/encounters/${encounterId}/combatants`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getCombatants: (encounterId: string) =>
+    fetchWithAuth<Combatant[]>(`/encounters/${encounterId}/combatants`),
+
+  updateCombatant: (combatantId: string, data: {
+    currentHp?: number;
+    conditions?: string[];
+    initiative?: number;
+  }) =>
+    fetchWithAuth<Combatant>(`/combatants/${combatantId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  removeCombatant: (combatantId: string) =>
+    fetchWithAuth<{ message: string }>(`/combatants/${combatantId}`, {
+      method: 'DELETE',
+    }),
+
+  // ===========================
+  // TURNOS
+  // ===========================
+  nextTurn: (encounterId: string) =>
+    fetchWithAuth<Encounter>(`/encounters/${encounterId}/next-turn`, {
+      method: 'POST',
     }),
 };

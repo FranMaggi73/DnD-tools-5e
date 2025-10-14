@@ -44,3 +44,51 @@ export interface Invitation {
   createdAt: string;
   respondedAt?: string;
 }
+
+// ===========================
+// NUEVOS TIPOS PARA COMBATE
+// ===========================
+
+export interface Character {
+  id: string;
+  campaignId: string;
+  userId: string;
+  name: string;
+  class: string;
+  level: number;
+  maxHp: number;
+  currentHp: number;
+  armorClass: number;
+  initiative: number; // Bonus de iniciativa
+  imageUrl: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Encounter {
+  id: string;
+  campaignId: string;
+  name: string;
+  isActive: boolean;
+  round: number;
+  turnIndex: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Combatant {
+  id: string;
+  encounterId: string;
+  type: 'character' | 'creature';
+  characterId?: string;
+  name: string;
+  initiative: number; // Valor tirado
+  maxHp: number;
+  currentHp: number;
+  armorClass: number;
+  conditions: string[];
+  imageUrl: string;
+  isNpc: boolean;
+  creatureSource?: string;
+  createdAt: string;
+}
