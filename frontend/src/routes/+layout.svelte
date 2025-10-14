@@ -29,10 +29,12 @@
   });
 </script>
 
-<div class="min-h-screen bg-base-200">
+<div class="min-h-screen" data-theme="dnd">
   {#if $loadingStore}
-    <div class="flex items-center justify-center h-screen">
-      <span class="loading loading-spinner loading-lg"></span>
+    <div class="flex flex-col items-center justify-center h-screen gap-4">
+      <div class="text-6xl">🎲</div>
+      <span class="loading loading-spinner loading-lg text-secondary"></span>
+      <p class="font-medieval text-secondary">Cargando grimorio...</p>
     </div>
   {:else}
     <slot />

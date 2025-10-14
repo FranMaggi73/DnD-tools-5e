@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import { tokenStore } from '$lib/stores/authStore';
-import type { Event, EventMembers, Invitation } from '$lib/types';
+import type { Campaign, CampaignMembers, Invitation } from '$lib/types';
 
 const API_BASE_URL = 'http://localhost:8080/api';
 
@@ -30,30 +30,30 @@ async function fetchWithAuth<T>(url: string, options: RequestInit = {}): Promise
 }
 
 export const api = {
-  // Eventos
-  createEvent: (data: { name: string; description: string }) =>
-    fetchWithAuth<Event>('/events', {
+  // Campañas
+  createCampaign: (data: { name: string }) =>
+    fetchWithAuth<Campaign>('/campaigns', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
-  getEvents: () => fetchWithAuth<Event[]>('/events'),
+  getCampaigns: () => fetchWithAuth<Campaign[]>('/campaigns'),
 
-  getEvent: (id: string) => fetchWithAuth<Event>(`/events/${id}`),
+  getCampaign: (id: string) => fetchWithAuth<Campaign>(`/campaigns/${id}`),
 
-  deleteEvent: (id: string) =>
-    fetchWithAuth<{ message: string }>(`/events/${id}`, { method: 'DELETE' }),
+  deleteCampaign: (id: string) =>
+    fetchWithAuth<{ message: string }>(`/campaigns/${id}`, { method: 'DELETE' }),
 
-  getEventMembers: (id: string) => fetchWithAuth<EventMembers>(`/events/${id}/members`),
+  getCampaignMembers: (id: string) => fetchWithAuth<CampaignMembers>(`/campaigns/${id}/members`),
 
-  invitePlayer: (eventId: string, userEmail: string) =>
-    fetchWithAuth<{ message: string; invitation: Invitation }>(`/events/${eventId}/invite`, {
+  invitePlayer: (campaignId: string, userEmail: string) =>
+    fetchWithAuth<{ message: string; invitation: Invitation }>(`/campaigns/${campaignId}/invite`, {
       method: 'POST',
       body: JSON.stringify({ userEmail }),
     }),
 
-  removePlayer: (eventId: string, userId: string) =>
-    fetchWithAuth<{ message: string }>(`/events/${eventId}/players/${userId}`, {
+  removePlayer: (campaignId: string, userId: string) =>
+    fetchWithAuth<{ message: string }>(`/campaigns/${campaignId}/players/${userId}`, {
       method: 'DELETE',
     }),
 

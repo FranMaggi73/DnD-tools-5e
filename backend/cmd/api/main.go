@@ -80,15 +80,15 @@ func main() {
 		protected.GET("/users/me", h.GetCurrentUser)
 
 		// Eventos
-		protected.POST("/events", h.CreateEvent)
-		protected.GET("/events", h.GetUserEvents)
-		protected.GET("/events/:id", h.GetEvent)
-		protected.DELETE("/events/:id", h.DeleteEvent)
+		protected.POST("/campaigns", h.CreateEvent)
+		protected.GET("/campaigns", h.GetUserEvents)
+		protected.GET("/campaigns/:id", h.GetEvent)
+		protected.DELETE("/campaigns/:id", h.DeleteEvent)
 
 		// Miembros
-		protected.POST("/events/:id/invite", h.InvitePlayer)
-		protected.DELETE("/events/:id/players/:userId", h.RemovePlayer)
-		protected.GET("/events/:id/members", h.GetEventMembers)
+		protected.POST("/campaigns/:id/invite", h.InvitePlayer)
+		protected.DELETE("/campaigns/:id/players/:userId", h.RemovePlayer)
+		protected.GET("/campaigns/:id/members", h.GetEventMembers)
 
 		// Invitaciones (NUEVO)
 		protected.GET("/invitations", h.GetMyInvitations)

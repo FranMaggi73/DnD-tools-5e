@@ -53,7 +53,7 @@ func (h *Handler) GetCurrentUser(c *gin.Context) {
 }
 
 // ===========================
-// EVENTOS
+// CAMPAÑAS
 // ===========================
 
 func (h *Handler) CreateEvent(c *gin.Context) {
@@ -65,7 +65,7 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 	ctx := context.Background()
 
 	// Bind request temprano (validación)
-	var req models.CreateEventRequest
+	var req models.CreateCampaignRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -90,12 +90,12 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 			}
 
 			newUser := models.User{
-				UID:         uid,
-				Email:       fbUser.Email,
-				DisplayName: fbUser.DisplayName,
-				PhotoURL:    fbUser.PhotoURL,
-				CreatedAt:   time.Now(),
-				EventCount:  0,
+				UID:           uid,
+				Email:         fbUser.Email,
+				DisplayName:   fbUser.DisplayName,
+				PhotoURL:      fbUser.PhotoURL,
+				CreatedAt:     time.Now(),
+				CampaignCount: 0,
 			}
 
 			if _, err := userRef.Set(ctx, newUser); err != nil {
@@ -119,39 +119,38 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 		}
 	}
 
-	// Revisar límite de eventos
-	if user.EventCount >= 3 {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Has alcanzado el límite de 3 eventos"})
+	// Revisar límite de campañas
+	if user.CampaignCount >= 3 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Has alcanzado el límite de 3 campañas"})
 		return
 	}
 
-	// Crear evento
-	eventRef := h.db.Collection("events").NewDoc()
-	event := models.Event{
-		ID:          eventRef.ID,
-		Name:        req.Name,
-		Description: req.Description,
-		DmID:        uid,
-		DmName:      user.DisplayName,
-		DmPhoto:     user.PhotoURL,
-		CreatedAt:   time.Now(),
-		PlayerIDs:   []string{},
+	// Crear campaña
+	campaignRef := h.db.Collection("events").NewDoc()
+	campaign := models.Campaign{
+		ID:        campaignRef.ID,
+		Name:      req.Name,
+		DmID:      uid,
+		DmName:    user.DisplayName,
+		DmPhoto:   user.PhotoURL,
+		CreatedAt: time.Now(),
+		PlayerIDs: []string{},
 	}
 
-	// Transacción para crear evento + miembro DM + incrementar contador
+	// Transacción para crear campaña + miembro DM + incrementar contador
 	err = h.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		if err := tx.Set(eventRef, event); err != nil {
+		if err := tx.Set(campaignRef, campaign); err != nil {
 			return err
 		}
 
 		memberRef := h.db.Collection("event_members").NewDoc()
-		member := models.EventMember{
-			EventID:   event.ID,
-			UserID:    uid,
-			Role:      "dm",
-			UserName:  user.DisplayName,
-			UserPhoto: user.PhotoURL,
-			JoinedAt:  time.Now(),
+		member := models.CampaignMember{
+			CampaignID: campaign.ID,
+			UserID:     uid,
+			Role:       "dm",
+			UserName:   user.DisplayName,
+			UserPhoto:  user.PhotoURL,
+			JoinedAt:   time.Now(),
 		}
 		if err := tx.Set(memberRef, member); err != nil {
 			return err
@@ -159,17 +158,17 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 
 		userRef := h.db.Collection("users").Doc(uid)
 		return tx.Update(userRef, []firestore.Update{
-			{Path: "eventCount", Value: firestore.Increment(1)},
+			{Path: "campaignCount", Value: firestore.Increment(1)},
 		})
 	})
 
 	if err != nil {
 		log.Printf("CreateEvent: transaction failed uid=%s err=%v", uid, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creando evento"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creando campaña"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, event)
+	c.JSON(http.StatusCreated, campaign)
 }
 
 func (h *Handler) GetUserEvents(c *gin.Context) {
@@ -180,7 +179,7 @@ func (h *Handler) GetUserEvents(c *gin.Context) {
 	}
 	ctx := context.Background()
 
-	// Buscar eventos donde el usuario es miembro (DM o jugador)
+	// Buscar campañas donde el usuario es miembro (DM o jugador)
 	memberIter := h.db.Collection("event_members").
 		Where("userId", "==", uid).
 		Documents(ctx)
@@ -192,37 +191,37 @@ func (h *Handler) GetUserEvents(c *gin.Context) {
 			break
 		}
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error buscando eventos"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error buscando campañas"})
 			return
 		}
 
-		var member models.EventMember
+		var member models.CampaignMember
 		if err := doc.DataTo(&member); err != nil {
 			continue
 		}
-		eventIDs[member.EventID] = true
+		eventIDs[member.CampaignID] = true
 	}
 
-	// Obtener detalles de los eventos
-	var events []models.Event
+	// Obtener detalles de las campañas
+	var campaigns []models.Campaign
 	for eventID := range eventIDs {
 		eventDoc, err := h.db.Collection("events").Doc(eventID).Get(ctx)
 		if err != nil {
 			continue
 		}
 
-		var event models.Event
-		if err := eventDoc.DataTo(&event); err != nil {
+		var campaign models.Campaign
+		if err := eventDoc.DataTo(&campaign); err != nil {
 			continue
 		}
-		events = append(events, event)
+		campaigns = append(campaigns, campaign)
 	}
 
-	if events == nil {
-		events = []models.Event{}
+	if campaigns == nil {
+		campaigns = []models.Campaign{}
 	}
 
-	c.JSON(http.StatusOK, events)
+	c.JSON(http.StatusOK, campaigns)
 }
 
 func (h *Handler) GetEvent(c *gin.Context) {
@@ -231,16 +230,16 @@ func (h *Handler) GetEvent(c *gin.Context) {
 
 	doc, err := h.db.Collection("events").Doc(eventID).Get(ctx)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Evento no encontrado"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Campaña no encontrada"})
 		return
 	}
 
-	var event models.Event
-	if err := doc.DataTo(&event); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando evento"})
+	var campaign models.Campaign
+	if err := doc.DataTo(&campaign); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando campaña"})
 		return
 	}
-	c.JSON(http.StatusOK, event)
+	c.JSON(http.StatusOK, campaign)
 }
 
 func (h *Handler) DeleteEvent(c *gin.Context) {
@@ -254,29 +253,29 @@ func (h *Handler) DeleteEvent(c *gin.Context) {
 
 	eventDoc, err := h.db.Collection("events").Doc(eventID).Get(ctx)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Evento no encontrado"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Campaña no encontrada"})
 		return
 	}
 
-	var event models.Event
-	if err := eventDoc.DataTo(&event); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando evento"})
+	var campaign models.Campaign
+	if err := eventDoc.DataTo(&campaign); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando campaña"})
 		return
 	}
 
-	if event.DmID != uid {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Solo el DM puede eliminar el evento"})
+	if campaign.DmID != uid {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Solo el DM puede eliminar la campaña"})
 		return
 	}
 
-	// Transacción: eliminar evento + miembros + decrementar contador
+	// Transacción: eliminar campaña + miembros + decrementar contador
 	err = h.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		if err := tx.Delete(h.db.Collection("events").Doc(eventID)); err != nil {
 			return err
 		}
 
 		iter := h.db.Collection("event_members").
-			Where("eventId", "==", eventID).
+			Where("campaignId", "==", eventID).
 			Documents(ctx)
 		for {
 			doc, err := iter.Next()
@@ -293,16 +292,16 @@ func (h *Handler) DeleteEvent(c *gin.Context) {
 
 		userRef := h.db.Collection("users").Doc(uid)
 		return tx.Update(userRef, []firestore.Update{
-			{Path: "eventCount", Value: firestore.Increment(-1)},
+			{Path: "campaignCount", Value: firestore.Increment(-1)},
 		})
 	})
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error eliminando evento"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error eliminando campaña"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Evento eliminado"})
+	c.JSON(http.StatusOK, gin.H{"message": "Campaña eliminada"})
 }
 
 // ===========================
@@ -314,10 +313,10 @@ func (h *Handler) GetEventMembers(c *gin.Context) {
 	ctx := context.Background()
 
 	iter := h.db.Collection("event_members").
-		Where("eventId", "==", eventID).
+		Where("campaignId", "==", eventID).
 		Documents(ctx)
 
-	var members []models.EventMember
+	var members []models.CampaignMember
 	for {
 		doc, err := iter.Next()
 		if err == iterator.Done {
@@ -327,7 +326,7 @@ func (h *Handler) GetEventMembers(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error obteniendo miembros"})
 			return
 		}
-		var member models.EventMember
+		var member models.CampaignMember
 		if err := doc.DataTo(&member); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando miembro"})
 			return
@@ -335,8 +334,8 @@ func (h *Handler) GetEventMembers(c *gin.Context) {
 		members = append(members, member)
 	}
 
-	var dm *models.EventMember
-	var players []models.EventMember
+	var dm *models.CampaignMember
+	var players []models.CampaignMember
 	for _, m := range members {
 		if m.Role == "dm" {
 			dm = &m
@@ -368,20 +367,20 @@ func (h *Handler) InvitePlayer(c *gin.Context) {
 		return
 	}
 
-	// Verificar que el evento existe y el usuario es el DM
+	// Verificar que la campaña existe y el usuario es el DM
 	eventDoc, err := h.db.Collection("events").Doc(eventID).Get(ctx)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Evento no encontrado"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Campaña no encontrada"})
 		return
 	}
 
-	var event models.Event
-	if err := eventDoc.DataTo(&event); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando evento"})
+	var campaign models.Campaign
+	if err := eventDoc.DataTo(&campaign); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando campaña"})
 		return
 	}
 
-	if event.DmID != uid {
+	if campaign.DmID != uid {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Solo el DM puede invitar jugadores"})
 		return
 	}
@@ -400,22 +399,22 @@ func (h *Handler) InvitePlayer(c *gin.Context) {
 		return
 	}
 
-	// Verificar que no esté ya en el evento
+	// Verificar que no esté ya en la campaña
 	existingMember := h.db.Collection("event_members").
-		Where("eventId", "==", eventID).
+		Where("campaignId", "==", eventID).
 		Where("userId", "==", playerUID).
 		Limit(1).
 		Documents(ctx)
 
 	_, err = existingMember.Next()
 	if err != iterator.Done {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "El usuario ya es miembro del evento"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "El usuario ya es miembro de la campaña"})
 		return
 	}
 
 	// Verificar que no tenga invitación pendiente
 	existingInv := h.db.Collection("invitations").
-		Where("eventId", "==", eventID).
+		Where("campaignId", "==", eventID).
 		Where("toUserId", "==", playerUID).
 		Where("status", "==", "pending").
 		Limit(1).
@@ -443,17 +442,16 @@ func (h *Handler) InvitePlayer(c *gin.Context) {
 	// Crear invitación
 	invRef := h.db.Collection("invitations").NewDoc()
 	invitation := models.Invitation{
-		ID:         invRef.ID,
-		EventID:    eventID,
-		EventName:  event.Name,
-		EventDesc:  event.Description,
-		FromUserID: uid,
-		FromName:   dm.DisplayName,
-		FromPhoto:  dm.PhotoURL,
-		ToUserID:   playerUID,
-		ToEmail:    req.UserEmail,
-		Status:     "pending",
-		CreatedAt:  time.Now(),
+		ID:           invRef.ID,
+		CampaignID:   eventID,
+		CampaignName: campaign.Name,
+		FromUserID:   uid,
+		FromName:     dm.DisplayName,
+		FromPhoto:    dm.PhotoURL,
+		ToUserID:     playerUID,
+		ToEmail:      req.UserEmail,
+		Status:       "pending",
+		CreatedAt:    time.Now(),
 	}
 
 	if _, err := invRef.Set(ctx, invitation); err != nil {
@@ -466,6 +464,7 @@ func (h *Handler) InvitePlayer(c *gin.Context) {
 		"invitation": invitation,
 	})
 }
+
 func (h *Handler) RemovePlayer(c *gin.Context) {
 	uid := c.GetString("uid")
 	if uid == "" {
@@ -478,17 +477,17 @@ func (h *Handler) RemovePlayer(c *gin.Context) {
 
 	eventDoc, err := h.db.Collection("events").Doc(eventID).Get(ctx)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Evento no encontrado"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Campaña no encontrada"})
 		return
 	}
 
-	var event models.Event
-	if err := eventDoc.DataTo(&event); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando evento"})
+	var campaign models.Campaign
+	if err := eventDoc.DataTo(&campaign); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando campaña"})
 		return
 	}
 
-	if event.DmID != uid {
+	if campaign.DmID != uid {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Solo el DM puede eliminar jugadores"})
 		return
 	}
@@ -499,7 +498,7 @@ func (h *Handler) RemovePlayer(c *gin.Context) {
 	}
 
 	iter := h.db.Collection("event_members").
-		Where("eventId", "==", eventID).
+		Where("campaignId", "==", eventID).
 		Where("userId", "==", playerID).
 		Documents(ctx)
 

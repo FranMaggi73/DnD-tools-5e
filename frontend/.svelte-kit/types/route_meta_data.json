@@ -3,10 +3,10 @@
 		"src/routes/+layout.ts",
 		"src/routes/+layout.ts"
 	],
-	"/dashboard": [
+	"/campaigns/[id]": [
 		"src/routes/+layout.ts"
 	],
-	"/events/[id]": [
+	"/dashboard": [
 		"src/routes/+layout.ts"
 	],
 	"/login": [

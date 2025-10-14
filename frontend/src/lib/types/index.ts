@@ -4,13 +4,12 @@ export interface User {
   displayName: string;
   photoURL: string;
   createdAt: string;
-  eventCount: number;
+  campaignCount: number;
 }
 
-export interface Event {
+export interface Campaign {
   id: string;
   name: string;
-  description: string;
   dmId: string;
   dmName: string;
   dmPhoto: string;
@@ -18,8 +17,8 @@ export interface Event {
   playerIds: string[];
 }
 
-export interface EventMember {
-  eventId: string;
+export interface CampaignMember {
+  campaignId: string;
   userId: string;
   role: 'dm' | 'player';
   userName: string;
@@ -27,16 +26,15 @@ export interface EventMember {
   joinedAt: string;
 }
 
-export interface EventMembers {
-  dm: EventMember | null;
-  players: EventMember[];
+export interface CampaignMembers {
+  dm: CampaignMember | null;
+  players: CampaignMember[];
 }
 
 export interface Invitation {
   id: string;
-  eventId: string;
-  eventName: string;
-  eventDesc: string;
+  campaignId: string;
+  campaignName: string;
   fromUserId: string;
   fromName: string;
   fromPhoto: string;

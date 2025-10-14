@@ -136,12 +136,12 @@ func (h *Handler) RespondToInvitation(c *gin.Context) {
 						return authErr
 					}
 					user = models.User{
-						UID:         uid,
-						Email:       fbUser.Email,
-						DisplayName: fbUser.DisplayName,
-						PhotoURL:    fbUser.PhotoURL,
-						CreatedAt:   time.Now(),
-						EventCount:  0,
+						UID:           uid,
+						Email:         fbUser.Email,
+						DisplayName:   fbUser.DisplayName,
+						PhotoURL:      fbUser.PhotoURL,
+						CreatedAt:     time.Now(),
+						CampaignCount: 0,
 					}
 					if _, err := h.db.Collection("users").Doc(uid).Set(ctx, user); err != nil {
 						return err
@@ -157,20 +157,20 @@ func (h *Handler) RespondToInvitation(c *gin.Context) {
 
 			// Crear miembro del evento
 			memberRef := h.db.Collection("event_members").NewDoc()
-			member := models.EventMember{
-				EventID:   invitation.EventID,
-				UserID:    uid,
-				Role:      "player",
-				UserName:  user.DisplayName,
-				UserPhoto: user.PhotoURL,
-				JoinedAt:  time.Now(),
+			member := models.CampaignMember{
+				CampaignID: invitation.CampaignID,
+				UserID:     uid,
+				Role:       "player",
+				UserName:   user.DisplayName,
+				UserPhoto:  user.PhotoURL,
+				JoinedAt:   time.Now(),
 			}
 			if err := tx.Set(memberRef, member); err != nil {
 				return err
 			}
 
 			// Actualizar playerIds en evento
-			eventRef := h.db.Collection("events").Doc(invitation.EventID)
+			eventRef := h.db.Collection("events").Doc(invitation.CampaignID)
 			return tx.Update(eventRef, []firestore.Update{
 				{Path: "playerIds", Value: firestore.ArrayUnion(uid)},
 			})
