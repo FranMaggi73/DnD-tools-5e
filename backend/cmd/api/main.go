@@ -72,19 +72,28 @@ func main() {
 	})
 
 	// Rutas protegidas
+	// Rutas protegidas
 	protected := r.Group("/api")
 	protected.Use(middleware.AuthMiddleware(authClient))
 	{
+		// Usuarios
 		protected.GET("/users/me", h.GetCurrentUser)
+
+		// Eventos
 		protected.POST("/events", h.CreateEvent)
 		protected.GET("/events", h.GetUserEvents)
 		protected.GET("/events/:id", h.GetEvent)
 		protected.DELETE("/events/:id", h.DeleteEvent)
+
+		// Miembros
 		protected.POST("/events/:id/invite", h.InvitePlayer)
 		protected.DELETE("/events/:id/players/:userId", h.RemovePlayer)
 		protected.GET("/events/:id/members", h.GetEventMembers)
-	}
 
+		// Invitaciones (NUEVO)
+		protected.GET("/invitations", h.GetMyInvitations)
+		protected.POST("/invitations/:id/respond", h.RespondToInvitation)
+	}
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

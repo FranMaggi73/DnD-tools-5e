@@ -1,7 +1,4 @@
 <script lang="ts">
-  export let params: Record<string, string> | undefined;
-  void params;
-
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { userStore, loadingStore } from '$lib/stores/authStore';

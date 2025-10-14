@@ -1,12 +1,12 @@
 <script lang="ts">
-  export let params: Record<string, string> | undefined;
-  void params;
   import { onMount } from 'svelte';
   import { signOut } from 'firebase/auth';
   import { auth } from '$lib/firebase';
   import { userStore } from '$lib/stores/authStore';
   import { api } from '$lib/api/api';
   import { goto } from '$app/navigation';
+  import InvitationsButton from '$lib/components/InvitationsButton.svelte';
+
 
   let events: any[] = [];
   let loading = true;
@@ -47,6 +47,10 @@
     await signOut(auth);
     goto('/login');
   }
+
+  async function handleInvitationResponded() {
+    await loadEvents();
+  }
 </script>
 
 <div class="navbar bg-base-100 shadow-lg">
@@ -54,6 +58,7 @@
     <a href="/dashboard" class="btn btn-ghost text-xl">🎲 DM Events</a>
   </div>
   <div class="flex-none gap-2">
+    <InvitationsButton onInvitationResponded={handleInvitationResponded} />
     <div class="dropdown dropdown-end">
       <label tabindex="0" class="btn btn-ghost btn-circle avatar">
         <div class="w-10 rounded-full">

@@ -48,3 +48,22 @@ type EventMember struct {
 	UserPhoto string    `firestore:"userPhoto" json:"userPhoto"`
 	JoinedAt  time.Time `firestore:"joinedAt" json:"joinedAt"`
 }
+
+// ===========================
+// INVITACIONES
+// ===========================
+
+type Invitation struct {
+	ID          string    `firestore:"id" json:"id"`
+	EventID     string    `firestore:"eventId" json:"eventId"`
+	EventName   string    `firestore:"eventName" json:"eventName"`
+	EventDesc   string    `firestore:"eventDesc" json:"eventDesc"`
+	FromUserID  string    `firestore:"fromUserId" json:"fromUserId"`
+	FromName    string    `firestore:"fromName" json:"fromName"`
+	FromPhoto   string    `firestore:"fromPhoto" json:"fromPhoto"`
+	ToUserID    string    `firestore:"toUserId" json:"toUserId"`
+	ToEmail     string    `firestore:"toEmail" json:"toEmail"`
+	Status      string    `firestore:"status" json:"status"`
+	CreatedAt   time.Time `firestore:"createdAt" json:"createdAt"`
+	RespondedAt time.Time `firestore:"respondedAt,omitempty" json:"respondedAt,omitempty"`
+}

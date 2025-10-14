@@ -175,32 +175,51 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 func (h *Handler) GetUserEvents(c *gin.Context) {
 	uid := c.GetString("uid")
 	if uid == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing uid (not authenticated)"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
 		return
 	}
 	ctx := context.Background()
 
-	iter := h.db.Collection("events").
-		Where("dmId", "==", uid).
+	// Buscar eventos donde el usuario es miembro (DM o jugador)
+	memberIter := h.db.Collection("event_members").
+		Where("userId", "==", uid).
 		Documents(ctx)
 
-	var events []models.Event
+	eventIDs := make(map[string]bool)
 	for {
-		doc, err := iter.Next()
+		doc, err := memberIter.Next()
 		if err == iterator.Done {
 			break
 		}
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error obteniendo eventos"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error buscando eventos"})
 			return
 		}
 
-		var e models.Event
-		if err := doc.DataTo(&e); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando evento"})
-			return
+		var member models.EventMember
+		if err := doc.DataTo(&member); err != nil {
+			continue
 		}
-		events = append(events, e)
+		eventIDs[member.EventID] = true
+	}
+
+	// Obtener detalles de los eventos
+	var events []models.Event
+	for eventID := range eventIDs {
+		eventDoc, err := h.db.Collection("events").Doc(eventID).Get(ctx)
+		if err != nil {
+			continue
+		}
+
+		var event models.Event
+		if err := eventDoc.DataTo(&event); err != nil {
+			continue
+		}
+		events = append(events, event)
+	}
+
+	if events == nil {
+		events = []models.Event{}
 	}
 
 	c.JSON(http.StatusOK, events)
@@ -335,22 +354,21 @@ func (h *Handler) GetEventMembers(c *gin.Context) {
 func (h *Handler) InvitePlayer(c *gin.Context) {
 	uid := c.GetString("uid")
 	if uid == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing uid (not authenticated)"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
 		return
 	}
 	eventID := c.Param("id")
 	ctx := context.Background()
 
 	var req struct {
-		UserID    string `json:"userId"`
-		UserName  string `json:"userName"`
-		UserPhoto string `json:"userPhoto"`
+		UserEmail string `json:"userEmail" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	// Verificar que el evento existe y el usuario es el DM
 	eventDoc, err := h.db.Collection("events").Doc(eventID).Get(ctx)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Evento no encontrado"})
@@ -368,32 +386,86 @@ func (h *Handler) InvitePlayer(c *gin.Context) {
 		return
 	}
 
-	memberRef := h.db.Collection("event_members").NewDoc()
-	member := models.EventMember{
-		EventID:   eventID,
-		UserID:    req.UserID,
-		Role:      "player",
-		UserName:  req.UserName,
-		UserPhoto: req.UserPhoto,
-		JoinedAt:  time.Now(),
-	}
-
-	if _, err := memberRef.Set(ctx, member); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error invitando jugador"})
+	// Buscar usuario por email
+	userRecord, err := h.auth.GetUserByEmail(ctx, req.UserEmail)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Usuario no encontrado con ese email"})
 		return
 	}
 
-	// Actualizar playerIds en evento
-	if _, err := h.db.Collection("events").Doc(eventID).Update(ctx, []firestore.Update{
-		{Path: "playerIds", Value: firestore.ArrayUnion(req.UserID)},
-	}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error actualizando playerIds"})
+	playerUID := userRecord.UID
+
+	if playerUID == uid {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No puedes invitarte a ti mismo"})
 		return
 	}
 
-	c.JSON(http.StatusOK, member)
+	// Verificar que no esté ya en el evento
+	existingMember := h.db.Collection("event_members").
+		Where("eventId", "==", eventID).
+		Where("userId", "==", playerUID).
+		Limit(1).
+		Documents(ctx)
+
+	_, err = existingMember.Next()
+	if err != iterator.Done {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "El usuario ya es miembro del evento"})
+		return
+	}
+
+	// Verificar que no tenga invitación pendiente
+	existingInv := h.db.Collection("invitations").
+		Where("eventId", "==", eventID).
+		Where("toUserId", "==", playerUID).
+		Where("status", "==", "pending").
+		Limit(1).
+		Documents(ctx)
+
+	_, err = existingInv.Next()
+	if err != iterator.Done {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "El usuario ya tiene una invitación pendiente"})
+		return
+	}
+
+	// Obtener datos del DM
+	dmDoc, err := h.db.Collection("users").Doc(uid).Get(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error obteniendo datos del DM"})
+		return
+	}
+
+	var dm models.User
+	if err := dmDoc.DataTo(&dm); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando DM"})
+		return
+	}
+
+	// Crear invitación
+	invRef := h.db.Collection("invitations").NewDoc()
+	invitation := models.Invitation{
+		ID:         invRef.ID,
+		EventID:    eventID,
+		EventName:  event.Name,
+		EventDesc:  event.Description,
+		FromUserID: uid,
+		FromName:   dm.DisplayName,
+		FromPhoto:  dm.PhotoURL,
+		ToUserID:   playerUID,
+		ToEmail:    req.UserEmail,
+		Status:     "pending",
+		CreatedAt:  time.Now(),
+	}
+
+	if _, err := invRef.Set(ctx, invitation); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creando invitación"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message":    "Invitación enviada exitosamente",
+		"invitation": invitation,
+	})
 }
-
 func (h *Handler) RemovePlayer(c *gin.Context) {
 	uid := c.GetString("uid")
 	if uid == "" {
