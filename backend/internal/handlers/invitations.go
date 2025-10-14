@@ -30,8 +30,7 @@ func (h *Handler) GetMyInvitations(c *gin.Context) {
 	iter := h.db.Collection("invitations").
 		Where("toUserId", "==", uid).
 		Where("status", "==", "pending").
-		OrderBy("createdAt", firestore.Desc).
-		Documents(ctx)
+		Documents(ctx) // <-- SIN .OrderBy aquí
 
 	var invitations []models.Invitation
 	for {
