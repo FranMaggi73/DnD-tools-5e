@@ -1,4 +1,6 @@
 <script lang="ts">
+  export let params: Record<string, string> | undefined;
+  void params;
   import { onMount } from 'svelte';
   import { signOut } from 'firebase/auth';
   import { auth } from '$lib/firebase';
@@ -19,9 +21,11 @@
   async function loadEvents() {
     try {
       loading = true;
-      events = await api.getEvents();
+      const res = await api.getEvents();
+      events = Array.isArray(res) ? res : []; // asegura array
     } catch (err: any) {
       error = err.message;
+      events = []; // fallback
     } finally {
       loading = false;
     }
@@ -84,7 +88,7 @@
     <div class="flex justify-center">
       <span class="loading loading-spinner loading-lg"></span>
     </div>
-  {:else if events.length === 0}
+  {:else if (events?.length ?? 0) === 0}
     <div class="text-center py-12">
       <p class="text-xl opacity-70">No tienes eventos aún</p>
       <p class="opacity-50">Crea tu primer evento para comenzar</p>
@@ -96,15 +100,15 @@
           <div class="card-body">
             <h2 class="card-title">{event.name}</h2>
             <p class="opacity-70">{event.description}</p>
-            
+
             <div class="flex items-center gap-2 mt-2">
               <div class="avatar">
                 <div class="w-8 rounded-full">
-                  <img src={event.dmPhoto} alt={event.dmName} />
+                  <img src={event.dmPhoto || ''} alt={event.dmName || ''} />
                 </div>
               </div>
               <div>
-                <p class="text-sm font-bold">{event.dmName}</p>
+                <p class="text-sm font-bold">{event.dmName || 'Desconocido'}</p>
                 <p class="text-xs opacity-50">Dungeon Master</p>
               </div>
             </div>
@@ -124,7 +128,6 @@
   {/if}
 </div>
 
-<!-- Modal Crear Evento -->
 {#if showCreateModal}
   <div class="modal modal-open">
     <div class="modal-box">
@@ -154,17 +157,8 @@
       </div>
 
       <div class="modal-action">
-        <button 
-          on:click={() => showCreateModal = false}
-          class="btn"
-        >
-          Cancelar
-        </button>
-        <button 
-          on:click={createEvent}
-          class="btn btn-primary"
-          disabled={!newEvent.name}
-        >
+        <button on:click={() => showCreateModal = false} class="btn">Cancelar</button>
+        <button on:click={createEvent} class="btn btn-primary" disabled={!newEvent.name}>
           Crear
         </button>
       </div>

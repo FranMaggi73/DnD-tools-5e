@@ -40,10 +40,26 @@ func main() {
 	// Router Gin
 	r := gin.Default()
 
-	// CORS
+	// CORS dinámico
 	config := cors.DefaultConfig()
-	config.AllowOrigins = []string{"http://localhost:5173", "capacitor://localhost"}
 	config.AllowHeaders = []string{"Authorization", "Content-Type"}
+
+	// Detectar modo de ejecución
+	if gin.Mode() == gin.DebugMode {
+		// Desarrollo: permitir localhost Vite y cualquier origen Capacitor
+		config.AllowOrigins = []string{"http://localhost:5173"}
+		config.AllowOriginFunc = func(origin string) bool {
+			// Permitir todos los esquemas que no sean HTTP/HTTPS (para Capacitor)
+			if origin != "" && !startsWithHTTP(origin) {
+				return true
+			}
+			return false
+		}
+	} else {
+		// Producción: solo tu dominio seguro
+		config.AllowOrigins = []string{"https://tudominio.com"}
+	}
+
 	r.Use(cors.New(config))
 
 	// Handlers
@@ -51,26 +67,19 @@ func main() {
 
 	// Rutas públicas
 	public := r.Group("/api")
-	{
-		public.GET("/health", func(c *gin.Context) {
-			c.JSON(200, gin.H{"status": "ok"})
-		})
-	}
+	public.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
 
 	// Rutas protegidas
 	protected := r.Group("/api")
 	protected.Use(middleware.AuthMiddleware(authClient))
 	{
-		// Usuarios
 		protected.GET("/users/me", h.GetCurrentUser)
-
-		// Eventos
 		protected.POST("/events", h.CreateEvent)
 		protected.GET("/events", h.GetUserEvents)
 		protected.GET("/events/:id", h.GetEvent)
 		protected.DELETE("/events/:id", h.DeleteEvent)
-
-		// Miembros de eventos
 		protected.POST("/events/:id/invite", h.InvitePlayer)
 		protected.DELETE("/events/:id/players/:userId", h.RemovePlayer)
 		protected.GET("/events/:id/members", h.GetEventMembers)
@@ -83,4 +92,9 @@ func main() {
 
 	log.Printf("Servidor corriendo en puerto %s", port)
 	r.Run(":" + port)
+}
+
+// startsWithHTTP retorna true si el origen empieza con http:// o https://
+func startsWithHTTP(origin string) bool {
+	return len(origin) >= 7 && (origin[:7] == "http://" || (len(origin) >= 8 && origin[:8] == "https://"))
 }
