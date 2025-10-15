@@ -7,6 +7,7 @@
   import type { Campaign, Encounter, Combatant, Character } from '$lib/types';
   import CombatantCard from '$lib/components/CombatantCard.svelte';
   import AddCombatantModal from '$lib/components/AddCombatantModal.svelte';
+  import Sidebar from '$lib/components/Sidebar.svelte';
 
   $: campaignId = $page.params.id || '';
 
@@ -23,6 +24,7 @@
   let selectedCombatant: Combatant | null = null;
   let hpChangeValue = 0;
   let newCondition = '';
+  let sidebarOpen = true;
 
   let pollInterval: NodeJS.Timeout;
 
@@ -36,7 +38,6 @@
     await loadCharacters();
     await loadEncounter();
     
-    // Poll cada 5 segundos
     pollInterval = setInterval(() => {
       if (encounter?.isActive) {
         loadEncounter(true);
@@ -184,20 +185,14 @@
   <!-- Navbar -->
   <div class="navbar-medieval sticky top-0 z-50">
     <div class="container mx-auto">
-      <div class="flex-1">
-        <button on:click={() => goto('/dashboard')} class="btn btn-ghost font-medieval text-secondary hover:text-accent">
-          ← Volver al Grimorio
-        </button>
-      </div>
-      <div class="flex-none gap-2">
-        <button 
-          on:click={() => goto(`/campaigns/${campaignId}/characters`)}
-          class="btn btn-ghost btn-sm font-medieval text-secondary hover:text-accent gap-2"
-        >
-          <span class="text-lg">🧙‍♂️</span>
-          Personajes
-        </button>
+      <div class="flex-1"></div>
+      <div class="flex-none">
         <h1 class="font-medieval text-xl text-secondary">{campaign?.name || 'Campaña'}</h1>
+      </div>
+      <div class="flex-1 flex justify-end">
+        <button on:click={() => goto('/dashboard')} class="btn btn-ghost font-medieval text-secondary hover:text-accent">
+          Volver al Grimorio →
+        </button>
       </div>
     </div>
   </div>
@@ -211,116 +206,149 @@
     </div>
   {/if}
 
-  {#if loading}
-    <div class="flex-1 flex items-center justify-center">
-      <span class="loading loading-spinner loading-lg text-secondary"></span>
-    </div>
-  {:else if !encounter}
-    <!-- No hay encuentro activo -->
-    <div class="flex-1 flex items-center justify-center p-4">
-      <div class="card-parchment max-w-2xl w-full p-12 corner-ornament text-center">
-        <div class="text-6xl mb-4">⚔️</div>
-        <h2 class="text-3xl font-medieval text-neutral mb-4">No hay combate activo</h2>
-        <p class="text-neutral/70 font-body mb-6">
-          El DM debe iniciar un encuentro para comenzar la batalla
-        </p>
-        
-        {#if isDM}
-          <button 
-            on:click={() => showCreateEncounterModal = true}
-            class="btn btn-dnd btn-lg"
-          >
-            <span class="text-2xl">⚔️</span>
-            Iniciar Encuentro
-          </button>
-        {:else}
-          <p class="text-sm text-neutral/50 italic">Esperando que el DM inicie el combate...</p>
-        {/if}
-      </div>
-    </div>
-  {:else}
-    <!-- Combate activo -->
-    <div class="container mx-auto p-4 max-w-7xl">
-      <!-- Header del combate -->
-      <div class="card-parchment mb-6 corner-ornament">
-        <div class="card-body p-6">
-          <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-            <div>
-              <h2 class="text-3xl font-medieval text-neutral mb-2">{encounter.name}</h2>
-              <div class="flex gap-4">
-                <div class="badge badge-ornate badge-lg">
-                  🔄 Ronda {encounter.round}
-                </div>
-                <div class="badge bg-info/30 border-info/50 text-neutral badge-lg">
-                  👥 {combatants.length} Combatientes
-                </div>
-              </div>
-            </div>
+  <div class="flex flex-1">
+    <!-- Sidebar -->
+    <div class={`bg-neutral/50 border-r-4 border-secondary p-4 space-y-2 transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-16'}`}>
+      <!-- Botón toggle -->
+      <button 
+        on:click={() => sidebarOpen = !sidebarOpen}
+        class="btn btn-ghost btn-sm w-full justify-center mb-4"
+        title={sidebarOpen ? 'Ocultar sidebar' : 'Mostrar sidebar'}
+      >
+        <span class="text-xl">{sidebarOpen ? '◀' : '▶'}</span>
+      </button>
 
+      <button 
+        class="btn btn-dnd w-full justify-start gap-2"
+        title="Combate"
+      >
+        <span class="text-xl">⚔️</span>
+        {#if sidebarOpen}<span>Combate</span>{/if}
+      </button>
+      <button 
+        on:click={() => goto(`/campaigns/${campaignId}/characters`)}
+        class="btn btn-ghost w-full justify-start gap-2 text-secondary hover:text-accent font-medieval"
+        title="Personajes"
+      >
+        <span class="text-xl">🧙‍♂️</span>
+        {#if sidebarOpen}<span>Personajes</span>{/if}
+      </button>
+    </div>
+
+    <!-- Contenido principal -->
+    <div class="flex-1">
+      {#if loading}
+        <div class="flex items-center justify-center h-full">
+          <span class="loading loading-spinner loading-lg text-secondary"></span>
+        </div>
+      {:else if !encounter}
+        <!-- No hay encuentro activo -->
+        <div class="flex items-center justify-center h-full p-4">
+          <div class="card-parchment max-w-2xl w-full p-12 corner-ornament text-center">
+            <div class="text-6xl mb-4">⚔️</div>
+            <h2 class="text-3xl font-medieval text-neutral mb-4">No hay combate activo</h2>
+            <p class="text-neutral/70 font-body mb-6">
+              El DM debe iniciar un encuentro para comenzar la batalla
+            </p>
+            
             {#if isDM}
-              <div class="flex gap-2">
-                <button 
-                  on:click={() => showAddCombatantModal = true}
-                  class="btn btn-success btn-sm gap-2"
-                >
-                  <span class="text-lg">➕</span>
-                  Agregar
-                </button>
-                <button 
-                  on:click={nextTurn}
-                  class="btn btn-dnd btn-sm gap-2"
-                  disabled={combatants.length === 0}
-                >
-                  <span class="text-lg">▶️</span>
-                  Siguiente Turno
-                </button>
-                <button 
-                  on:click={endEncounter}
-                  class="btn btn-error btn-sm"
-                >
-                  🏁 Finalizar
-                </button>
-              </div>
+              <button 
+                on:click={() => showCreateEncounterModal = true}
+                class="btn btn-dnd btn-lg"
+              >
+                <span class="text-2xl">⚔️</span>
+                Iniciar Encuentro
+              </button>
+            {:else}
+              <p class="text-sm text-neutral/50 italic">Esperando que el DM inicie el combate...</p>
             {/if}
           </div>
+        </div>
+      {:else}
+        <!-- Combate activo -->
+        <div class="p-4 max-w-7xl mx-auto">
+          <!-- Header del combate -->
+          <div class="card-parchment mb-6 corner-ornament">
+            <div class="card-body p-6">
+              <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                <div>
+                  <h2 class="text-3xl font-medieval text-neutral mb-2">{encounter.name}</h2>
+                  <div class="flex gap-4">
+                    <div class="badge badge-ornate badge-lg">
+                      🔄 Ronda {encounter.round}
+                    </div>
+                    <div class="badge bg-info/30 border-info/50 text-neutral badge-lg">
+                      👥 {combatants.length} Combatientes
+                    </div>
+                  </div>
+                </div>
 
-          {#if currentTurnCombatant}
-            <div class="divider my-2">⚔️</div>
-            <div class="bg-gradient-to-r from-secondary/20 to-accent/20 p-4 rounded-lg border-2 border-secondary">
-              <p class="text-sm font-medieval text-neutral/70 mb-1">TURNO ACTUAL</p>
-              <p class="text-2xl font-bold font-medieval text-neutral">
-                {currentTurnCombatant.name}
+                {#if isDM}
+                  <div class="flex gap-2">
+                    <button 
+                      on:click={() => showAddCombatantModal = true}
+                      class="btn btn-success btn-sm gap-2"
+                    >
+                      <span class="text-lg">➕</span>
+                      Agregar
+                    </button>
+                    <button 
+                      on:click={nextTurn}
+                      class="btn btn-dnd btn-sm gap-2"
+                      disabled={combatants.length === 0}
+                    >
+                      <span class="text-lg">▶️</span>
+                      Siguiente Turno
+                    </button>
+                    <button 
+                      on:click={endEncounter}
+                      class="btn btn-error btn-sm"
+                    >
+                      🏁 Finalizar
+                    </button>
+                  </div>
+                {/if}
+              </div>
+
+              {#if currentTurnCombatant}
+                <div class="divider my-2">⚔️</div>
+                <div class="bg-gradient-to-r from-secondary/20 to-accent/20 p-4 rounded-lg border-2 border-secondary">
+                  <p class="text-sm font-medieval text-neutral/70 mb-1">TURNO ACTUAL</p>
+                  <p class="text-2xl font-bold font-medieval text-neutral">
+                    {currentTurnCombatant.name}
+                  </p>
+                </div>
+              {/if}
+            </div>
+          </div>
+
+          {#if combatants.length === 0}
+            <div class="card-parchment p-12 text-center">
+              <div class="text-4xl mb-3">🎲</div>
+              <p class="text-xl font-medieval text-neutral mb-2">Sin combatientes</p>
+              <p class="text-neutral/70 font-body">
+                {isDM ? 'Agrega personajes y criaturas para comenzar' : 'Esperando que el DM agregue combatientes'}
               </p>
+            </div>
+          {:else}
+            <!-- Lista de combatientes -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {#each combatants as combatant, index}
+                <CombatantCard 
+                  {combatant}
+                  isCurrentTurn={index === (encounter.turnIndex % combatants.length)}
+                  isDM={!!isDM} 
+                  on:updateHP={(e) => selectedCombatant = e.detail}
+                  on:addCondition={(e) => selectedCombatant = e.detail}
+                  on:remove={handleRemoveCombatant}
+                />
+              {/each}
             </div>
           {/if}
         </div>
-      </div>
-
-      {#if combatants.length === 0}
-        <div class="card-parchment p-12 text-center">
-          <div class="text-4xl mb-3">🎲</div>
-          <p class="text-xl font-medieval text-neutral mb-2">Sin combatientes</p>
-          <p class="text-neutral/70 font-body">
-            {isDM ? 'Agrega personajes y criaturas para comenzar' : 'Esperando que el DM agregue combatientes'}
-          </p>
-        </div>
-      {:else}
-        <!-- Lista de combatientes -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {#each combatants as combatant, index}
-            <CombatantCard 
-              {combatant}
-              isCurrentTurn={index === (encounter.turnIndex % combatants.length)}
-              isDM={!!isDM} 
-              on:updateHP={(e) => selectedCombatant = e.detail}
-              on:addCondition={(e) => selectedCombatant = e.detail}
-              on:remove={handleRemoveCombatant}
-            />
-          {/each}
-        </div>
       {/if}
     </div>
-  {/if}
+  </div>
 </div>
 
 <!-- Modal Crear Encuentro -->
@@ -429,12 +457,6 @@
           disabled={hpChangeValue === 0}
         >
           Aplicar
-        </button>
-        <button 
-          on:click={() => selectedCombatant && removeCondition(selectedCombatant, selectedCombatant.conditions[selectedCombatant.conditions.length - 1])}
-          class="btn btn-xs btn-error"
-        >
-          <span class="text-lg">❌</span>
         </button>
       </div>
     </div>

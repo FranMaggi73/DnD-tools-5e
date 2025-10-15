@@ -9,7 +9,6 @@
   import type { Campaign, CampaignMembers } from '$lib/types';
 
   let campaigns: Campaign[] = [];
-  // campaign + normalized members
   let campaignsWithMembers: Array<{ campaign: Campaign; members: CampaignMembers }> = [];
   let loading = true;
   let showCreateModal = false;
@@ -25,7 +24,6 @@
       loading = true;
       error = '';
 
-      // proteger por si api devuelve null/undefined
       const fetchedCampaigns = await api.getCampaigns();
       campaigns = Array.isArray(fetchedCampaigns) ? fetchedCampaigns : [];
 
@@ -33,24 +31,18 @@
         campaigns.map(async (campaign) => {
           try {
             const rawMembers = await api.getCampaignMembers(campaign.id);
-
-            // Normalizar members para garantizar estructura segura
             const members: CampaignMembers = {
               dm: rawMembers?.dm ?? null,
               players: Array.isArray(rawMembers?.players) ? rawMembers!.players : [],
             };
-
             return { campaign, members };
           } catch (err) {
-            // Si falla obtener miembros devolver estructura segura
             return { campaign, members: { dm: null, players: [] } };
           }
         })
       );
 
       campaignsWithMembers = campaignsData;
-      // debug (opcional)
-      // console.log('campaignsWithMembers', campaignsWithMembers);
     } catch (err: any) {
       error = err?.message ?? String(err);
       campaigns = [];
@@ -63,7 +55,6 @@
   async function createCampaign() {
     try {
       error = '';
-      // trim para evitar nombres vacíos con espacios
       if (!newCampaign.name || !newCampaign.name.trim()) {
         error = 'El nombre de la campaña no puede estar vacío.';
         return;
@@ -89,12 +80,13 @@
 
 <div class="navbar-medieval sticky top-0 z-50">
   <div class="container mx-auto">
-    <div class="flex-1">
+    <div class="flex-1"></div>
+    <div class="flex-none flex justify-center flex-1">
       <a href="/dashboard" class="btn btn-ghost text-xl font-medieval text-secondary hover:text-accent">
         🎲 Grimorio de Aventuras
       </a>
     </div>
-    <div class="flex-none gap-2">
+    <div class="flex-none gap-2 flex-1 flex justify-end">
       <InvitationsButton onInvitationResponded={handleInvitationResponded} />
       <div class="dropdown dropdown-end">
         <label tabindex="0" class="btn btn-ghost btn-circle avatar ring-2 ring-secondary ring-offset-2 ring-offset-neutral">
@@ -115,11 +107,11 @@
 </div>
 
 <div class="container mx-auto p-6 lg:p-8">
-  <div class="mb-8">
-    <h1 class="text-4xl lg:text-5xl font-bold text-center text-secondary title-ornament mb-3 text-shadow">
+  <div class="mb-8 text-center">
+    <h1 class="text-4xl lg:text-5xl font-bold text-secondary title-ornament mb-3 text-shadow">
       Mis Campañas
     </h1>
-    <p class="text-center text-base-content/70 font-body italic text-lg">
+    <p class="text-base-content/70 font-body italic text-lg">
       "Las aventuras aguardan a quienes se atreven a explorar..."
     </p>
   </div>
@@ -175,7 +167,6 @@
 
             <div class="divider my-1">⚔️</div>
 
-            <!-- DM -->
             <div class="mb-4 bg-gradient-to-r from-primary/20 to-accent/20 p-3 rounded-lg border border-primary/30">
               <p class="text-xs font-medieval text-neutral/60 mb-2 tracking-wider">DUNGEON MASTER</p>
               <div class="flex items-center gap-3">
@@ -190,7 +181,6 @@
               </div>
             </div>
 
-            <!-- Jugadores -->
             <div class="bg-gradient-to-r from-info/10 to-success/10 p-3 rounded-lg border border-info/30">
               <p class="text-xs font-medieval text-neutral/60 mb-2 tracking-wider">
                 AVENTUREROS ({(members?.players ?? []).length})
