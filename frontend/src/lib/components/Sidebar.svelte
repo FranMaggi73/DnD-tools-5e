@@ -6,8 +6,9 @@
   export let isOpen: boolean = true;
 
   $: currentPath = $page.url.pathname;
-  $: isCombatPage = currentPath === `/campaigns/${campaignId}`;
+  $: isCombatPage = currentPath === `/campaigns/${campaignId}/combat`;
   $: isCharactersPage = currentPath === `/campaigns/${campaignId}/characters`;
+  $: isCampaignPage = currentPath === `/campaigns/${campaignId}`;
 
   function toggleSidebar() {
     isOpen = !isOpen;
@@ -27,6 +28,18 @@
   <!-- Navegación -->
   <button 
     on:click={() => goto(`/campaigns/${campaignId}`)}
+    class={`btn w-full justify-start gap-2 font-medieval ${
+      isCampaignPage 
+        ? 'btn-dnd' 
+        : 'btn-ghost text-secondary hover:text-accent'
+    }`}
+    title="Home"
+  >
+    <span class="text-xl">🏠</span>
+    {#if isOpen}<span>Home</span>{/if}
+  </button>
+  <button 
+    on:click={() => goto(`/campaigns/${campaignId}/combat`)}
     class={`btn w-full justify-start gap-2 font-medieval ${
       isCombatPage 
         ? 'btn-dnd' 

@@ -27,20 +27,22 @@ export {};
 
 declare module "$app/types" {
 	export interface AppTypes {
-		RouteId(): "/" | "/campaigns" | "/campaigns/[id]" | "/campaigns/[id]/characters" | "/dashboard" | "/login";
+		RouteId(): "/" | "/campaigns" | "/campaigns/[id]" | "/campaigns/[id]/characters" | "/campaigns/[id]/combat" | "/dashboard" | "/login";
 		RouteParams(): {
 			"/campaigns/[id]": { id: string };
-			"/campaigns/[id]/characters": { id: string }
+			"/campaigns/[id]/characters": { id: string };
+			"/campaigns/[id]/combat": { id: string }
 		};
 		LayoutParams(): {
 			"/": { id?: string };
 			"/campaigns": { id?: string };
 			"/campaigns/[id]": { id: string };
 			"/campaigns/[id]/characters": { id: string };
+			"/campaigns/[id]/combat": { id: string };
 			"/dashboard": Record<string, never>;
 			"/login": Record<string, never>
 		};
-		Pathname(): "/" | "/campaigns" | "/campaigns/" | `/campaigns/${string}` & {} | `/campaigns/${string}/` & {} | `/campaigns/${string}/characters` & {} | `/campaigns/${string}/characters/` & {} | "/dashboard" | "/dashboard/" | "/login" | "/login/";
+		Pathname(): "/" | "/campaigns" | "/campaigns/" | `/campaigns/${string}` & {} | `/campaigns/${string}/` & {} | `/campaigns/${string}/characters` & {} | `/campaigns/${string}/characters/` & {} | `/campaigns/${string}/combat` & {} | `/campaigns/${string}/combat/` & {} | "/dashboard" | "/dashboard/" | "/login" | "/login/";
 		ResolvedPathname(): `${"" | `/${string}`}${ReturnType<AppTypes['Pathname']>}`;
 		Asset(): string & {};
 	}

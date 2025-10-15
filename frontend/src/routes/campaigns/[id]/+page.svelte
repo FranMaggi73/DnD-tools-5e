@@ -1,53 +1,31 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { userStore } from '$lib/stores/authStore';
   import { api } from '$lib/api/api';
-  import type { Campaign, Encounter, Combatant, Character } from '$lib/types';
-  import CombatantCard from '$lib/components/CombatantCard.svelte';
-  import AddCombatantModal from '$lib/components/AddCombatantModal.svelte';
+  import type { Campaign, CampaignMembers } from '$lib/types';
   import Sidebar from '$lib/components/Sidebar.svelte';
 
   $: campaignId = $page.params.id || '';
 
   let campaign: Campaign | null = null;
-  let encounter: Encounter | null = null;
-  let combatants: Combatant[] = [];
-  let characters: Character[] = [];
+  let members: CampaignMembers | null = null;
   let loading = true;
   let error = '';
-
-  let showAddCombatantModal = false;
-  let showCreateEncounterModal = false;
-  let encounterName = '';
-  let selectedCombatant: Combatant | null = null;
-  let hpChangeValue = 0;
-  let newCondition = '';
   let sidebarOpen = true;
 
-  let pollInterval: NodeJS.Timeout;
+  // Modales
+  let showInviteModal = false;
+  let showDeleteModal = false;
+  let inviteEmail = '';
+  let inviting = false;
 
   $: isDM = campaign && $userStore && campaign.dmId === $userStore.uid;
-  $: currentTurnCombatant = encounter && combatants.length > 0 
-    ? combatants[encounter.turnIndex % combatants.length] 
-    : null;
 
   onMount(async () => {
     await loadCampaign();
-    await loadCharacters();
-    await loadEncounter();
-    
-    // Poll cada 5 segundos
-    pollInterval = setInterval(() => {
-      if (encounter?.isActive) {
-        loadEncounter(true);
-      }
-    }, 5000);
-  });
-
-  onDestroy(() => {
-    if (pollInterval) clearInterval(pollInterval);
+    await loadMembers();
   });
 
   async function loadCampaign() {
@@ -58,124 +36,53 @@
     }
   }
 
-  async function loadCharacters() {
+  async function loadMembers() {
     try {
-      characters = await api.getCampaignCharacters(campaignId);
-    } catch (err) {
-      console.error('Error loading characters:', err);
-    }
-  }
-
-  async function loadEncounter(silent = false) {
-    try {
-      if (!silent) loading = true;
-      encounter = await api.getActiveEncounter(campaignId);
-      if (encounter) {
-        await loadCombatants();
-      }
+      loading = true;
+      members = await api.getCampaignMembers(campaignId);
     } catch (err: any) {
-      if (!silent) {
-        encounter = null;
-        combatants = [];
-      }
+      error = err.message;
     } finally {
-      if (!silent) loading = false;
+      loading = false;
     }
   }
 
-  async function loadCombatants() {
-    if (!encounter) return;
+  async function handleInvite() {
+    if (!inviteEmail.trim()) return;
+    
     try {
-      combatants = await api.getCombatants(encounter.id);
-    } catch (err) {
-      console.error('Error loading combatants:', err);
+      inviting = true;
+      error = '';
+      await api.invitePlayer(campaignId, inviteEmail.trim());
+      showInviteModal = false;
+      inviteEmail = '';
+      alert('¡Invitación enviada con éxito!');
+      await loadMembers();
+    } catch (err: any) {
+      error = err.message;
+    } finally {
+      inviting = false;
     }
   }
 
-  async function createEncounter() {
-    if (!encounterName.trim()) return;
+  async function handleRemovePlayer(userId: string, userName: string) {
+    if (!confirm(`¿Expulsar a ${userName} de la campaña?`)) return;
+    
     try {
-      await api.createEncounter(campaignId, encounterName);
-      showCreateEncounterModal = false;
-      encounterName = '';
-      await loadEncounter();
+      await api.removePlayer(campaignId, userId);
+      await loadMembers();
     } catch (err: any) {
       error = err.message;
     }
   }
 
-  async function endEncounter() {
-    if (!encounter || !confirm('¿Finalizar este encuentro?')) return;
+  async function handleDeleteCampaign() {
+    if (!campaign) return;
+    
     try {
-      await api.endEncounter(encounter.id);
-      encounter = null;
-      combatants = [];
-    } catch (err: any) {
-      error = err.message;
-    }
-  }
-
-  async function handleAddCombatant(event: CustomEvent) {
-    if (!encounter) return;
-    try {
-      await api.addCombatant(encounter.id, event.detail);
-      showAddCombatantModal = false;
-      await loadCombatants();
-    } catch (err: any) {
-      error = err.message;
-    }
-  }
-
-  async function handleRemoveCombatant(event: CustomEvent) {
-    const combatant = event.detail as Combatant;
-    if (!confirm(`¿Eliminar a ${combatant.name} del combate?`)) return;
-    try {
-      await api.removeCombatant(combatant.id);
-      await loadCombatants();
-    } catch (err: any) {
-      error = err.message;
-    }
-  }
-
-  async function updateHP(combatant: Combatant, change: number) {
-    try {
-      const newHP = Math.max(0, Math.min(combatant.maxHp, combatant.currentHp + change));
-      await api.updateCombatant(combatant.id, { currentHp: newHP });
-      await loadCombatants();
-      selectedCombatant = null;
-      hpChangeValue = 0;
-    } catch (err: any) {
-      error = err.message;
-    }
-  }
-
-  async function addCondition(combatant: Combatant, condition: string) {
-    if (!condition.trim()) return;
-    try {
-      const conditions = [...combatant.conditions, condition];
-      await api.updateCombatant(combatant.id, { conditions });
-      await loadCombatants();
-      newCondition = '';
-    } catch (err: any) {
-      error = err.message;
-    }
-  }
-
-  async function removeCondition(combatant: Combatant, condition: string) {
-    try {
-      const conditions = combatant.conditions.filter(c => c !== condition);
-      await api.updateCombatant(combatant.id, { conditions });
-      await loadCombatants();
-    } catch (err: any) {
-      error = err.message;
-    }
-  }
-
-  async function nextTurn() {
-    if (!encounter) return;
-    try {
-      encounter = await api.nextTurn(encounter.id);
-      await loadCombatants();
+      await api.deleteCampaign(campaignId);
+      showDeleteModal = false;
+      goto('/dashboard');
     } catch (err: any) {
       error = err.message;
     }
@@ -209,338 +116,255 @@
 
   <div class="flex flex-1">
     <!-- Sidebar -->
-    <div class={`bg-neutral/50 border-r-4 border-secondary p-4 space-y-2 transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-16'}`}>
-      <!-- Botón toggle -->
-      <button 
-        on:click={() => sidebarOpen = !sidebarOpen}
-        class="btn btn-ghost btn-sm w-full justify-center mb-4"
-        title={sidebarOpen ? 'Ocultar sidebar' : 'Mostrar sidebar'}
-      >
-        <span class="text-xl">{sidebarOpen ? '◀' : '▶'}</span>
-      </button>
-
-      <button 
-        class="btn btn-dnd w-full justify-start gap-2"
-        title="Combate"
-      >
-        <span class="text-xl">⚔️</span>
-        {#if sidebarOpen}<span>Combate</span>{/if}
-      </button>
-      <button 
-        on:click={() => goto(`/campaigns/${campaignId}/characters`)}
-        class="btn btn-ghost w-full justify-start gap-2 text-secondary hover:text-accent font-medieval"
-        title="Personajes"
-      >
-        <span class="text-xl">🧙‍♂️</span>
-        {#if sidebarOpen}<span>Personajes</span>{/if}
-      </button>
-    </div>
+    <Sidebar {campaignId} bind:isOpen={sidebarOpen} />
 
     <!-- Contenido principal -->
-    <div class="flex-1">
+    <div class="flex-1 p-6">
       {#if loading}
-        <div class="flex items-center justify-center h-full">
+        <div class="flex justify-center py-20">
           <span class="loading loading-spinner loading-lg text-secondary"></span>
         </div>
-      {:else if !encounter}
-        <!-- No hay encuentro activo -->
-        <div class="flex items-center justify-center h-full p-4">
-          <div class="card-parchment max-w-2xl w-full p-12 corner-ornament text-center">
-            <div class="text-6xl mb-4">⚔️</div>
-            <h2 class="text-3xl font-medieval text-neutral mb-4">No hay combate activo</h2>
-            <p class="text-neutral/70 font-body mb-6">
-              El DM debe iniciar un encuentro para comenzar la batalla
-            </p>
-            
-            {#if isDM}
-              <button 
-                on:click={() => showCreateEncounterModal = true}
-                class="btn btn-dnd btn-lg"
-              >
-                <span class="text-2xl">⚔️</span>
-                Iniciar Encuentro
-              </button>
-            {:else}
-              <p class="text-sm text-neutral/50 italic">Esperando que el DM inicie el combate...</p>
-            {/if}
-          </div>
-        </div>
       {:else}
-        <!-- Combate activo -->
-        <div class="p-4 max-w-7xl mx-auto">
-          <!-- Header del combate -->
+        <div class="container mx-auto max-w-6xl">
+          <!-- Header de la campaña -->
           <div class="card-parchment mb-6 corner-ornament">
-            <div class="card-body p-6">
-              <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-                <div>
-                  <h2 class="text-3xl font-medieval text-neutral mb-2">{encounter.name}</h2>
-                  <div class="flex gap-4">
-                    <div class="badge badge-ornate badge-lg">
-                      🔄 Ronda {encounter.round}
-                    </div>
-                    <div class="badge bg-info/30 border-info/50 text-neutral badge-lg">
-                      👥 {combatants.length} Combatientes
-                    </div>
-                  </div>
-                </div>
-
-                {#if isDM}
-                  <div class="flex gap-2">
-                    <button 
-                      on:click={() => showAddCombatantModal = true}
-                      class="btn btn-success btn-sm gap-2"
-                    >
-                      <span class="text-lg">➕</span>
-                      Agregar
-                    </button>
-                    <button 
-                      on:click={nextTurn}
-                      class="btn btn-dnd btn-sm gap-2"
-                      disabled={combatants.length === 0}
-                    >
-                      <span class="text-lg">▶️</span>
-                      Siguiente Turno
-                    </button>
-                    <button 
-                      on:click={endEncounter}
-                      class="btn btn-error btn-sm"
-                    >
-                      🏁 Finalizar
-                    </button>
-                  </div>
-                {/if}
+            <div class="card-body p-8">
+              <div class="text-center mb-6">
+                <div class="text-6xl mb-4">📜</div>
+                <h1 class="text-5xl font-medieval text-neutral mb-3">{campaign?.name}</h1>
+                <p class="text-neutral/60 font-body italic">Creada el {campaign ? new Date(campaign.createdAt).toLocaleDateString() : ''}</p>
               </div>
 
-              {#if currentTurnCombatant}
-                <div class="divider my-2">⚔️</div>
-                <div class="bg-gradient-to-r from-secondary/20 to-accent/20 p-4 rounded-lg border-2 border-secondary">
-                  <p class="text-sm font-medieval text-neutral/70 mb-1">TURNO ACTUAL</p>
-                  <p class="text-2xl font-bold font-medieval text-neutral">
-                    {currentTurnCombatant.name}
-                  </p>
+              {#if isDM}
+                <div class="divider">⚔️</div>
+                <div class="flex flex-wrap justify-center gap-3">
+                  <button 
+                    on:click={() => showInviteModal = true}
+                    class="btn btn-success gap-2"
+                  >
+                    <span class="text-lg">✉️</span>
+                    Invitar Jugador
+                  </button>
+                  <button 
+                    on:click={() => goto(`/campaigns/${campaignId}/combat`)}
+                    class="btn btn-dnd gap-2"
+                  >
+                    <span class="text-lg">⚔️</span>
+                    Ir a Combate
+                  </button>
+                  <button 
+                    on:click={() => goto(`/campaigns/${campaignId}/characters`)}
+                    class="btn btn-info gap-2"
+                  >
+                    <span class="text-lg">🧙‍♂️</span>
+                    Ver Personajes
+                  </button>
+                  <button 
+                    on:click={() => showDeleteModal = true}
+                    class="btn btn-error gap-2"
+                  >
+                    <span class="text-lg">🗑️</span>
+                    Eliminar Campaña
+                  </button>
                 </div>
               {/if}
             </div>
           </div>
 
-          {#if combatants.length === 0}
-            <div class="card-parchment p-12 text-center">
-              <div class="text-4xl mb-3">🎲</div>
-              <p class="text-xl font-medieval text-neutral mb-2">Sin combatientes</p>
-              <p class="text-neutral/70 font-body">
-                {isDM ? 'Agrega personajes y criaturas para comenzar' : 'Esperando que el DM agregue combatientes'}
-              </p>
+          <!-- Dungeon Master -->
+          <div class="mb-6">
+            <h2 class="text-3xl font-medieval text-secondary mb-4">👑 Dungeon Master</h2>
+            <div class="card-parchment corner-ornament">
+              <div class="card-body p-6">
+                <div class="flex items-center gap-4">
+                  <div class="avatar">
+                    <div class="w-20 rounded-full ring-4 ring-secondary ring-offset-4 ring-offset-[#f4e4c1]">
+                      <img src={members?.dm?.userPhoto || campaign?.dmPhoto} alt={members?.dm?.userName || campaign?.dmName} />
+                    </div>
+                  </div>
+                  <div class="flex-1">
+                    <h3 class="text-2xl font-bold text-neutral font-medieval">
+                      {members?.dm?.userName || campaign?.dmName}
+                    </h3>
+                    <p class="text-neutral/60 font-body">
+                      Maestro de mazmorras desde {members?.dm ? new Date(members.dm.joinedAt).toLocaleDateString() : 'el principio'}
+                    </p>
+                  </div>
+                  <div class="badge badge-ornate badge-lg">DM</div>
+                </div>
+              </div>
             </div>
-          {:else}
-            <!-- Lista de combatientes -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {#each combatants as combatant, index}
-                <CombatantCard 
-                  {combatant}
-                  isCurrentTurn={index === (encounter.turnIndex % combatants.length)}
-                  isDM={!!isDM} 
-                  on:updateHP={(e) => selectedCombatant = e.detail}
-                  on:addCondition={(e) => selectedCombatant = e.detail}
-                  on:remove={handleRemoveCombatant}
-                />
-              {/each}
+          </div>
+
+          <!-- Jugadores -->
+          <div>
+            <div class="flex justify-between items-center mb-4">
+              <h2 class="text-3xl font-medieval text-secondary">🎲 Aventureros ({members?.players?.length || 0})</h2>
+              {#if isDM}
+                <button 
+                  on:click={() => showInviteModal = true}
+                  class="btn btn-success btn-sm gap-2"
+                >
+                  <span class="text-lg">➕</span>
+                  Invitar
+                </button>
+              {/if}
             </div>
-          {/if}
+
+            {#if members?.players && members.players.length > 0}
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {#each members.players as player}
+                  <div class="card-parchment corner-ornament">
+                    <div class="card-body p-5">
+                      <div class="flex items-start gap-4">
+                        <div class="avatar">
+                          <div class="w-16 rounded-full ring-2 ring-success ring-offset-2 ring-offset-[#f4e4c1]">
+                            <img src={player.userPhoto} alt={player.userName} />
+                          </div>
+                        </div>
+                        <div class="flex-1">
+                          <h3 class="text-xl font-bold text-neutral font-medieval mb-1">
+                            {player.userName}
+                          </h3>
+                          <p class="text-sm text-neutral/60 font-body">
+                            Se unió el {new Date(player.joinedAt).toLocaleDateString()}
+                          </p>
+                          <div class="badge badge-success badge-sm mt-2">Jugador</div>
+                        </div>
+                        
+                        {#if isDM}
+                          <div class="dropdown dropdown-end">
+                            <label tabindex="0" class="btn btn-ghost btn-sm btn-circle">
+                              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                              </svg>
+                            </label>
+                            <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-neutral rounded-box w-52 border-2 border-secondary">
+                              <li>
+                                <a on:click={() => handleRemovePlayer(player.userId, player.userName)} class="text-error">
+                                  🚫 Expulsar
+                                </a>
+                              </li>
+                            </ul>
+                          </div>
+                        {/if}
+                      </div>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            {:else}
+              <div class="card-parchment p-12 text-center">
+                <div class="text-4xl mb-3">🎲</div>
+                <p class="text-xl font-medieval text-neutral mb-2">Sin aventureros</p>
+                <p class="text-neutral/70 font-body">
+                  {isDM ? 'Invita jugadores para comenzar la aventura' : 'Esperando que se unan más jugadores...'}
+                </p>
+              </div>
+            {/if}
+          </div>
         </div>
       {/if}
     </div>
   </div>
 </div>
 
-<!-- Modal Crear Encuentro -->
-{#if showCreateEncounterModal}
+<!-- Modal Invitar Jugador -->
+{#if showInviteModal}
   <div class="modal modal-open">
-    <div class="modal-box card-parchment border-4 border-secondary">
+    <div class="modal-box card-parchment border-4 border-secondary corner-ornament">
+      <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" on:click={() => { showInviteModal = false; inviteEmail = ''; }}>✕</button>
+      
       <h3 class="font-bold text-2xl font-medieval text-neutral mb-4 text-center">
-        ⚔️ Iniciar Encuentro
+        ✉️ Invitar Jugador
       </h3>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text font-medieval text-neutral text-lg">Nombre del Encuentro</span>
+          <span class="label-text font-medieval text-neutral text-lg">Email del Jugador</span>
         </label>
         <input 
-          type="text" 
-          bind:value={encounterName}
-          placeholder="Ej: Emboscada de Orcos"
-          class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 text-lg"
+          type="email" 
+          bind:value={inviteEmail}
+          placeholder="ejemplo@email.com"
+          class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
         />
+        <label class="label">
+          <span class="label-text-alt text-neutral/60 italic">
+            El jugador recibirá una invitación para unirse a la campaña
+          </span>
+        </label>
       </div>
 
       <div class="modal-action justify-center gap-4">
         <button 
-          on:click={() => { showCreateEncounterModal = false; encounterName = ''; }}
+          on:click={() => { showInviteModal = false; inviteEmail = ''; }}
           class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval"
         >
           Cancelar
         </button>
         <button 
-          on:click={createEncounter}
-          class="btn btn-dnd"
-          disabled={!encounterName.trim()}
+          on:click={handleInvite}
+          class="btn btn-success"
+          disabled={!inviteEmail.trim() || inviting}
         >
-          <span class="text-xl">⚔️</span>
-          Iniciar Combate
+          {#if inviting}
+            <span class="loading loading-spinner loading-sm"></span>
+          {:else}
+            <span class="text-xl">📨</span>
+          {/if}
+          Enviar Invitación
         </button>
       </div>
     </div>
   </div>
 {/if}
 
-<!-- Modal Modificar HP -->
-{#if selectedCombatant && !newCondition}
+<!-- Modal Confirmar Eliminación -->
+{#if showDeleteModal}
   <div class="modal modal-open">
-    <div class="modal-box card-parchment border-4 border-secondary">
+    <div class="modal-box card-parchment border-4 border-error corner-ornament">
       <h3 class="font-bold text-2xl font-medieval text-neutral mb-4 text-center">
-        💚 Modificar HP - {selectedCombatant.name}
+        ⚠️ Eliminar Campaña
       </h3>
 
       <div class="text-center mb-6">
-        <p class="text-sm font-medieval text-neutral/70">HP Actual</p>
-        <p class="text-5xl font-bold text-neutral">{selectedCombatant.currentHp}</p>
-        <p class="text-neutral/50">/ {selectedCombatant.maxHp}</p>
+        <div class="text-6xl mb-4">🔥</div>
+        <p class="text-lg text-neutral font-body mb-2">
+          ¿Estás seguro de que quieres eliminar esta campaña?
+        </p>
+        <p class="text-error font-bold font-medieval text-xl">
+          Esta acción no se puede deshacer
+        </p>
       </div>
 
-      <div class="form-control mb-4">
-        <label class="label">
-          <span class="label-text font-medieval text-neutral">Cambio de HP (+ curar / - daño)</span>
-        </label>
-        <input 
-          type="number" 
-          bind:value={hpChangeValue}
-          placeholder="Ej: -5 para daño, +10 para curación"
-          class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 text-center text-2xl"
-        />
-      </div>
-
-      <div class="grid grid-cols-2 gap-2 mb-4">
-        <button 
-          on:click={() => hpChangeValue = -5}
-          class="btn btn-error btn-sm"
-        >
-          -5
-        </button>
-        <button 
-          on:click={() => hpChangeValue = -10}
-          class="btn btn-error btn-sm"
-        >
-          -10
-        </button>
-        <button 
-          on:click={() => hpChangeValue = 5}
-          class="btn btn-success btn-sm"
-        >
-          +5
-        </button>
-        <button 
-          on:click={() => hpChangeValue = 10}
-          class="btn btn-success btn-sm"
-        >
-          +10
-        </button>
+      <div class="bg-error/20 p-4 rounded-lg border-2 border-error mb-4">
+        <p class="text-sm text-neutral font-body">
+          Se eliminarán permanentemente:
+        </p>
+        <ul class="list-disc list-inside text-sm text-neutral/70 font-body mt-2">
+          <li>Todos los personajes</li>
+          <li>Todos los encuentros y combates</li>
+          <li>Todas las invitaciones</li>
+          <li>Todos los datos de la campaña</li>
+        </ul>
       </div>
 
       <div class="modal-action justify-center gap-4">
         <button 
-          on:click={() => { selectedCombatant = null; hpChangeValue = 0; }}
+          on:click={() => showDeleteModal = false}
           class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval"
         >
           Cancelar
         </button>
         <button 
-          on:click={() => selectedCombatant && updateHP(selectedCombatant, hpChangeValue)}
-          class="btn btn-dnd"
-          disabled={hpChangeValue === 0}
+          on:click={handleDeleteCampaign}
+          class="btn btn-error"
         >
-          Aplicar
+          <span class="text-xl">🗑️</span>
+          Eliminar Definitivamente
         </button>
       </div>
     </div>
   </div>
 {/if}
-
-<!-- Modal Agregar Condición -->
-{#if selectedCombatant && newCondition !== null && newCondition !== undefined}
-  <div class="modal modal-open">
-    <div class="modal-box card-parchment border-4 border-secondary">
-      <h3 class="font-bold text-2xl font-medieval text-neutral mb-4 text-center">
-        ⚠️ Condiciones - {selectedCombatant.name}
-      </h3>
-
-      <!-- Condiciones actuales -->
-      {#if selectedCombatant.conditions.length > 0}
-        <div class="mb-4">
-          <p class="text-sm font-medieval text-neutral/70 mb-2">Condiciones Activas:</p>
-          <div class="flex flex-wrap gap-2">
-            {#each selectedCombatant.conditions as condition}
-              <div class="badge badge-warning gap-2">
-                {condition}
-                <button 
-                  class="btn btn-xs btn-circle btn-ghost"
-                  on:click={() => selectedCombatant && removeCondition(selectedCombatant, condition)}
-                >
-                  ✕
-                </button>
-              </div>
-            {/each}
-          </div>
-        </div>
-        <div class="divider">⚔️</div>
-      {/if}
-
-      <!-- Agregar nueva condición -->
-      <div class="form-control mb-4">
-        <label class="label">
-          <span class="label-text font-medieval text-neutral">Nueva Condición</span>
-        </label>
-        <input 
-          type="text" 
-          bind:value={newCondition}
-          placeholder="Ej: Envenenado, Aturdido..."
-          class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
-        />
-      </div>
-
-      <!-- Condiciones comunes -->
-      <div class="grid grid-cols-2 gap-2 mb-4">
-        {#each ['Envenenado', 'Aturdido', 'Cegado', 'Concentración', 'Hechizado', 'Asustado', 'Prone', 'Restringido'] as cond}
-          <button 
-            on:click={() => selectedCombatant && addCondition(selectedCombatant, cond)}
-            class="btn btn-xs btn-outline border-warning text-neutral hover:bg-warning"
-          >
-            {cond}
-          </button>
-        {/each}
-      </div>
-
-      <div class="modal-action justify-center gap-4">
-        <button 
-          on:click={() => { selectedCombatant = null; newCondition = ''; }}
-          class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval"
-        >
-          Cerrar
-        </button>
-        <button 
-          on:click={() => selectedCombatant && addCondition(selectedCombatant, newCondition)}
-          class="btn btn-warning"
-          disabled={!newCondition.trim()}
-        >
-          Agregar
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
-
-<!-- Modal Agregar Combatiente -->
-<AddCombatantModal 
-  bind:isOpen={showAddCombatantModal}
-  {characters}
-  on:add={handleAddCombatant}
-  on:close={() => showAddCombatantModal = false}
-/>

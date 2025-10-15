@@ -9,6 +9,9 @@
 	"/campaigns/[id]/characters": [
 		"src/routes/+layout.ts"
 	],
+	"/campaigns/[id]/combat": [
+		"src/routes/+layout.ts"
+	],
 	"/dashboard": [
 		"src/routes/+layout.ts"
 	],
