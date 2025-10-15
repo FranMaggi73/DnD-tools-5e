@@ -1,19 +1,22 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import type { Character } from '$lib/types';
+  import MonsterSearchModal from './MonsterSearchModal.svelte';
 
   export let isOpen: boolean = false;
   export let characters: Character[] = [];
 
   const dispatch = createEventDispatcher();
 
-  let tab: 'character' | 'creature' = 'character';
+  let tab: 'character' | 'creature' | 'search' = 'character';
   let selectedCharacterId = '';
   let creatureName = '';
   let initiative = 0;
   let maxHp = 0;
   let armorClass = 10;
   let imageUrl = '';
+  
+  let showMonsterSearch = false;
 
   function resetForm() {
     selectedCharacterId = '';
@@ -47,6 +50,11 @@
     resetForm();
   }
 
+  function handleMonsterAdd(event: CustomEvent) {
+    dispatch('add', event.detail);
+    showMonsterSearch = false;
+  }
+
   function handleClose() {
     resetForm();
     dispatch('close');
@@ -71,10 +79,16 @@
           🧙‍♂️ Personaje
         </a>
         <a 
+          class="tab {tab === 'search' ? 'tab-active bg-secondary text-neutral' : 'text-neutral/70'} font-medieval"
+          on:click={() => { tab = 'search'; showMonsterSearch = true; }}
+        >
+          🐉 Buscar Online
+        </a>
+        <a 
           class="tab {tab === 'creature' ? 'tab-active bg-secondary text-neutral' : 'text-neutral/70'} font-medieval"
           on:click={() => tab = 'creature'}
         >
-          👹 Criatura
+          👹 Manual
         </a>
       </div>
 
@@ -108,8 +122,24 @@
             </label>
           </div>
         </div>
+      {:else if tab === 'search'}
+        <!-- Buscar Online - Redirige al modal -->
+        <div class="text-center py-12">
+          <div class="text-6xl mb-4">🐉</div>
+          <h3 class="text-2xl font-medieval text-neutral mb-3">Buscar en Open5e</h3>
+          <p class="text-neutral/70 font-body mb-6">
+            Busca entre más de 2000 criaturas del SRD de D&D 5e
+          </p>
+          <button 
+            on:click={() => showMonsterSearch = true}
+            class="btn btn-dnd btn-lg"
+          >
+            <span class="text-2xl">🔍</span>
+            Abrir Buscador
+          </button>
+        </div>
       {:else}
-        <!-- Agregar Criatura -->
+        <!-- Agregar Criatura Manual -->
         <div class="space-y-4">
           <div class="form-control">
             <label class="label">
@@ -172,19 +202,28 @@
         </div>
       {/if}
 
-      <div class="modal-action justify-center gap-4">
-        <button on:click={handleClose} class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval">
-          Cancelar
-        </button>
-        <button 
-          on:click={handleSubmit} 
-          class="btn btn-dnd"
-          disabled={tab === 'character' ? !selectedCharacterId || !initiative : !creatureName || !maxHp || !initiative}
-        >
-          <span class="text-xl">⚔️</span>
-          Agregar al Combate
-        </button>
-      </div>
+      {#if tab !== 'search'}
+        <div class="modal-action justify-center gap-4">
+          <button on:click={handleClose} class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval">
+            Cancelar
+          </button>
+          <button 
+            on:click={handleSubmit} 
+            class="btn btn-dnd"
+            disabled={tab === 'character' ? !selectedCharacterId || !initiative : !creatureName || !maxHp || !initiative}
+          >
+            <span class="text-xl">⚔️</span>
+            Agregar al Combate
+          </button>
+        </div>
+      {/if}
     </div>
   </div>
 {/if}
+
+<!-- Modal de búsqueda de monstruos -->
+<MonsterSearchModal 
+  bind:isOpen={showMonsterSearch}
+  on:add={handleMonsterAdd}
+  on:close={() => { showMonsterSearch = false; tab = 'character'; }}
+/>

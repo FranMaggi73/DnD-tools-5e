@@ -38,6 +38,7 @@
     await loadCharacters();
     await loadEncounter();
     
+    // Poll cada 5 segundos
     pollInterval = setInterval(() => {
       if (encounter?.isActive) {
         loadEncounter(true);

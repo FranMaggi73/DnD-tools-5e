@@ -92,3 +92,37 @@ export interface Combatant {
   creatureSource?: string;
   createdAt: string;
 }
+
+export interface Monster {
+  slug: string;
+  name: string;
+  size: string;
+  type: string;
+  subtype?: string;
+  alignment: string;
+  armor_class: number;
+  hit_points: number;
+  hit_dice: string;
+  challenge_rating: string;
+  strength: number;
+  dexterity: number;
+  constitution: number;
+  intelligence: number;
+  wisdom: number;
+  charisma: number;
+  speed: {
+    walk?: number;
+    swim?: number;
+    fly?: number;
+    burrow?: number;
+  };
+  img_main?: string;
+  document__slug?: string;
+}
+
+export interface MonsterSearchResult {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: Monster[];
+}

@@ -6,7 +6,9 @@ import type {
   Invitation,
   Character,
   Encounter,
-  Combatant
+  Combatant,
+  Monster,
+  MonsterSearchResult
 } from '$lib/types';
 
 const API_BASE_URL = 'http://localhost:8080/api';
@@ -178,4 +180,39 @@ export const api = {
     fetchWithAuth<Encounter>(`/encounters/${encounterId}/next-turn`, {
       method: 'POST',
     }),
+};
+
+
+function getInitiativeModifier(dex: number): number {
+  return Math.floor((dex - 10) / 2);
+}
+
+// API de Open5e
+export const open5eApi = {
+  searchMonsters: async (query: string): Promise<MonsterSearchResult> => {
+    const response = await fetch(
+      `https://api.open5e.com/v1/monsters/?search=${encodeURIComponent(query)}&limit=20`
+    );
+    if (!response.ok) throw new Error('Error buscando criaturas');
+    return response.json();
+  },
+
+  getMonster: async (slug: string): Promise<Monster> => {
+    const response = await fetch(`https://api.open5e.com/v1/monsters/${slug}/`);
+    if (!response.ok) throw new Error('Error obteniendo criatura');
+    return response.json();
+  },
+
+  // Convertir Monster a formato Combatant
+  monsterToCombatant: (monster: Monster, initiative: number) => ({
+    type: 'creature' as const,
+    name: monster.name,
+    initiative,
+    maxHp: monster.hit_points,
+    currentHp: monster.hit_points,
+    armorClass: monster.armor_class,
+    imageUrl: monster.img_main || '',
+    isNpc: true,
+    creatureSource: 'open5e'
+  })
 };
