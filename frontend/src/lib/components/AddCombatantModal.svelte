@@ -1,6 +1,3 @@
-<!-- ============================================ -->
-<!-- frontend/src/lib/components/AddCombatantModal.svelte -->
-<!-- ============================================ -->
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import type { Character } from '$lib/types';

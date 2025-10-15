@@ -1,6 +1,3 @@
-<!-- ============================================ -->
-<!-- frontend/src/routes/campaigns/[id]/+page.svelte - REEMPLAZAR COMPLETO -->
-<!-- ============================================ -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
@@ -192,7 +189,14 @@
           ← Volver al Grimorio
         </button>
       </div>
-      <div class="flex-none">
+      <div class="flex-none gap-2">
+        <button 
+          on:click={() => goto(`/campaigns/${campaignId}/characters`)}
+          class="btn btn-ghost btn-sm font-medieval text-secondary hover:text-accent gap-2"
+        >
+          <span class="text-lg">🧙‍♂️</span>
+          Personajes
+        </button>
         <h1 class="font-medieval text-xl text-secondary">{campaign?.name || 'Campaña'}</h1>
       </div>
     </div>
@@ -304,14 +308,14 @@
         <!-- Lista de combatientes -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {#each combatants as combatant, index}
-          <CombatantCard 
-            {combatant}
-            isCurrentTurn={index === (encounter.turnIndex % combatants.length)}
-            isDM={!!isDM}   
-            on:updateHP={(e) => selectedCombatant = e.detail}
-            on:addCondition={(e) => selectedCombatant = e.detail}
-            on:remove={handleRemoveCombatant}
-          />
+            <CombatantCard 
+              {combatant}
+              isCurrentTurn={index === (encounter.turnIndex % combatants.length)}
+              isDM={!!isDM} 
+              on:updateHP={(e) => selectedCombatant = e.detail}
+              on:addCondition={(e) => selectedCombatant = e.detail}
+              on:remove={handleRemoveCombatant}
+            />
           {/each}
         </div>
       {/if}
@@ -426,6 +430,12 @@
         >
           Aplicar
         </button>
+        <button 
+          on:click={() => selectedCombatant && removeCondition(selectedCombatant, selectedCombatant.conditions[selectedCombatant.conditions.length - 1])}
+          class="btn btn-xs btn-error"
+        >
+          <span class="text-lg">❌</span>
+        </button>
       </div>
     </div>
   </div>
@@ -448,10 +458,10 @@
               <div class="badge badge-warning gap-2">
                 {condition}
                 <button 
+                  class="btn btn-xs btn-circle btn-ghost"
                   on:click={() => selectedCombatant && removeCondition(selectedCombatant, condition)}
-                  class="btn btn-xs btn-error"
                 >
-                  <span class="text-lg">❌</span>
+                  ✕
                 </button>
               </div>
             {/each}
@@ -476,13 +486,12 @@
       <!-- Condiciones comunes -->
       <div class="grid grid-cols-2 gap-2 mb-4">
         {#each ['Envenenado', 'Aturdido', 'Cegado', 'Concentración', 'Hechizado', 'Asustado', 'Prone', 'Restringido'] as cond}
-        <button 
-          on:click={() => selectedCombatant && addCondition(selectedCombatant, cond)}
-          class="btn btn-xs btn-outline border-warning text-neutral hover:bg-warning"
-        >
-          {cond}
-        </button>
-
+          <button 
+            on:click={() => selectedCombatant && addCondition(selectedCombatant, cond)}
+            class="btn btn-xs btn-outline border-warning text-neutral hover:bg-warning"
+          >
+            {cond}
+          </button>
         {/each}
       </div>
 
@@ -493,14 +502,13 @@
         >
           Cerrar
         </button>
-      <button 
-        on:click={() => selectedCombatant && addCondition(selectedCombatant, newCondition)}
-        class="btn btn-warning"
-        disabled={!newCondition.trim()}
-      >
-        Agregar
-      </button>
-
+        <button 
+          on:click={() => selectedCombatant && addCondition(selectedCombatant, newCondition)}
+          class="btn btn-warning"
+          disabled={!newCondition.trim()}
+        >
+          Agregar
+        </button>
       </div>
     </div>
   </div>
