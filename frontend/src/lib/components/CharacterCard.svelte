@@ -25,13 +25,9 @@
     <div class="flex items-start gap-4 mb-4">
       <div class="avatar">
         <div class="w-20 h-20 rounded-full ring-2 ring-secondary ring-offset-2 ring-offset-[#f4e4c1]">
-          {#if character.imageUrl}
-            <img src={character.imageUrl} alt={character.name} />
-          {:else}
             <div class="bg-gradient-to-br from-primary to-accent flex items-center justify-center">
               <span class="text-3xl">🧙‍♂️</span>
             </div>
-          {/if}
         </div>
       </div>
 

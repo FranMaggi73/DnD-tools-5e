@@ -211,7 +211,6 @@ export const open5eApi = {
     maxHp: monster.hit_points,
     currentHp: monster.hit_points,
     armorClass: monster.armor_class,
-    imageUrl: monster.img_main || '',
     isNpc: true,
     creatureSource: 'open5e'
   })

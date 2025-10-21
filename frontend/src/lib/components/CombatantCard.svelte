@@ -45,13 +45,9 @@
     <div class="flex items-start gap-3">
       <div class="avatar">
         <div class="w-16 h-16 rounded-full ring-2 {isCurrentTurn ? 'ring-secondary' : 'ring-primary/50'}">
-          {#if combatant.imageUrl}
-            <img src={combatant.imageUrl} alt={combatant.name} />
-          {:else}
             <div class="bg-primary/20 flex items-center justify-center">
               <span class="text-2xl">{combatant.isNpc ? '👹' : '🧙‍♂️'}</span>
             </div>
-          {/if}
         </div>
       </div>
 
