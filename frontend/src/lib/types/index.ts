@@ -122,7 +122,6 @@ export interface Monster {
     fly?: number;
     burrow?: number;
   };
-  img_main?: string;
   document__slug?: string;
 }
 
