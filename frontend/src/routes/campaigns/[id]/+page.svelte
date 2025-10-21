@@ -4,8 +4,8 @@
   import { goto } from '$app/navigation';
   import { userStore } from '$lib/stores/authStore';
   import { api } from '$lib/api/api';
+  import { headerTitle } from '$lib/stores/uiStore';
   import type { Campaign, CampaignMembers } from '$lib/types';
-  import Sidebar from '$lib/components/Sidebar.svelte';
 
   $: campaignId = $page.params.id || '';
 
@@ -13,8 +13,6 @@
   let members: CampaignMembers | null = null;
   let loading = true;
   let error = '';
-  let sidebarOpen = true;
-
   // Modales
   let showInviteModal = false;
   let showDeleteModal = false;
@@ -31,6 +29,9 @@
   async function loadCampaign() {
     try {
       campaign = await api.getCampaign(campaignId);
+      if (campaign?.name) {
+        headerTitle.set(campaign.name); // 👈 actualiza el título del header global
+      }
     } catch (err: any) {
       error = err.message;
     }
@@ -90,21 +91,6 @@
 </script>
 
 <div class="min-h-screen flex flex-col">
-  <!-- Navbar -->
-  <div class="navbar-medieval sticky top-0 z-50">
-    <div class="container mx-auto">
-      <div class="flex-1"></div>
-      <div class="flex-none">
-        <h1 class="font-medieval text-xl text-secondary">{campaign?.name || 'Campaña'}</h1>
-      </div>
-      <div class="flex-1 flex justify-end">
-        <button on:click={() => goto('/dashboard')} class="btn btn-ghost font-medieval text-secondary hover:text-accent">
-          Volver al Grimorio →
-        </button>
-      </div>
-    </div>
-  </div>
-
   {#if error}
     <div class="container mx-auto p-4">
       <div class="alert alert-error">
@@ -115,9 +101,6 @@
   {/if}
 
   <div class="flex flex-1">
-    <!-- Sidebar -->
-    <Sidebar {campaignId} bind:isOpen={sidebarOpen} />
-
     <!-- Contenido principal -->
     <div class="flex-1 p-6">
       {#if loading}
@@ -136,7 +119,6 @@
               </div>
 
               {#if isDM}
-                <div class="divider">⚔️</div>
                 <div class="flex flex-wrap justify-center gap-3">
                   <button 
                     on:click={() => showInviteModal = true}
@@ -271,14 +253,25 @@
 
 <!-- Modal Invitar Jugador -->
 {#if showInviteModal}
-  <div class="modal modal-open">
-    <div class="modal-box card-parchment border-4 border-secondary corner-ornament">
-      <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" on:click={() => { showInviteModal = false; inviteEmail = ''; }}>✕</button>
+  <!-- Overlay -->
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <!-- Modal Box -->
+    <div class="modal-box card-parchment border-4 border-secondary corner-ornament relative w-full max-w-md overflow-hidden">
       
+      <!-- Botón Cerrar -->
+      <button 
+        class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" 
+        on:click={() => { showInviteModal = false; inviteEmail = ''; }}
+      >
+        ✕
+      </button>
+      
+      <!-- Título -->
       <h3 class="font-bold text-2xl font-medieval text-neutral mb-4 text-center">
         ✉️ Invitar Jugador
       </h3>
 
+      <!-- Formulario -->
       <div class="form-control">
         <label class="label">
           <span class="label-text font-medieval text-neutral text-lg">Email del Jugador</span>
@@ -296,6 +289,7 @@
         </label>
       </div>
 
+      <!-- Acciones -->
       <div class="modal-action justify-center gap-4">
         <button 
           on:click={() => { showInviteModal = false; inviteEmail = ''; }}
@@ -320,14 +314,20 @@
   </div>
 {/if}
 
+
 <!-- Modal Confirmar Eliminación -->
 {#if showDeleteModal}
-  <div class="modal modal-open">
-    <div class="modal-box card-parchment border-4 border-error corner-ornament">
+  <!-- Overlay -->
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <!-- Modal Box -->
+    <div class="modal-box card-parchment border-4 border-error corner-ornament relative w-full max-w-lg overflow-hidden">
+      
+      <!-- Título -->
       <h3 class="font-bold text-2xl font-medieval text-neutral mb-4 text-center">
         ⚠️ Eliminar Campaña
       </h3>
 
+      <!-- Contenido -->
       <div class="text-center mb-6">
         <div class="text-6xl mb-4">🔥</div>
         <p class="text-lg text-neutral font-body mb-2">
@@ -350,6 +350,7 @@
         </ul>
       </div>
 
+      <!-- Acciones -->
       <div class="modal-action justify-center gap-4">
         <button 
           on:click={() => showDeleteModal = false}
@@ -365,6 +366,7 @@
           Eliminar Definitivamente
         </button>
       </div>
+
     </div>
   </div>
 {/if}

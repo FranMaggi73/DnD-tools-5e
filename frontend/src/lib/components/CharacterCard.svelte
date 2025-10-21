@@ -48,7 +48,7 @@
             </svg>
           </label>
           <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-neutral rounded-box w-52 border-2 border-secondary">
-            <li><a on:click={handleEdit}>✏️ Editar</a></li>
+            <li><a on:click={handleEdit} class="text-secondary">✏️ Editar</a></li>
             <li><a on:click={handleDelete} class="text-error">🗑️ Eliminar</a></li>
           </ul>
         </div>

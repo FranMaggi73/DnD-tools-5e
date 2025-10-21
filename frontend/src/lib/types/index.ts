@@ -65,6 +65,12 @@ export interface Character {
   updatedAt: string;
 }
 
+  export interface CharacterForm {
+    name: string;
+    maxHp: number;
+    armorClass: number;
+  }
+
 export interface Encounter {
   id: string;
   campaignId: string;

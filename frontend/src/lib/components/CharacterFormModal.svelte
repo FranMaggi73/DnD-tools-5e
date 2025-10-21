@@ -1,14 +1,10 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import type { CharacterForm } from '$lib/types';
 
-  export let isOpen: boolean = false;
-  export let isEdit: boolean = false;
-  export let form = {
-    name: '',
-    maxHp: 10,
-    armorClass: 10,
-    imageUrl: ''
-  };
+  export let isOpen = false;
+  export let isEdit = false;
+  export let form: CharacterForm = { name: '', maxHp: 10, armorClass: 10 };
 
   const dispatch = createEventDispatcher();
 
@@ -22,10 +18,17 @@
 </script>
 
 {#if isOpen}
-  <div class="modal modal-open">
-    <div class="modal-box card-parchment max-w-2xl border-4 border-secondary corner-ornament">
-      <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" on:click={handleClose}>✕</button>
-      
+  <!-- Fondo oscuro fijo -->
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 pt-4">
+    <!-- Modal fijo -->
+    <div class="bg-[#2d241c] text-base-content border-4 border-secondary corner-ornament card-parchment w-full max-w-2xl p-6 relative">
+      <!-- Botón cerrar -->
+      <button 
+        class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" 
+        on:click={handleClose}
+      >✕</button>
+
+      <!-- Título -->
       <h3 class="font-bold text-3xl font-medieval text-neutral mb-6 text-center">
         {isEdit ? '✏️ Editar Personaje' : '🧙‍♂️ Crear Personaje'}
       </h3>
@@ -73,32 +76,8 @@
             />
           </div>
         </div>
-
-        <!-- URL de Imagen -->
-        <div class="form-control mb-6">
-          <label class="label">
-            <span class="label-text font-medieval text-neutral text-lg">URL de Imagen (opcional)</span>
-          </label>
-          <input 
-            type="url" 
-            bind:value={form.imageUrl}
-            placeholder="https://ejemplo.com/imagen.jpg"
-            class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
-          />
-          {#if form.imageUrl}
-            <div class="mt-2">
-              <img 
-                src={form.imageUrl} 
-                alt="Preview" 
-                class="w-20 h-20 rounded-full object-cover mx-auto ring-2 ring-secondary" 
-                on:error={() => form.imageUrl = ''}
-              />
-            </div>
-          {/if}
-        </div>
-
         <!-- Botones -->
-        <div class="modal-action justify-center gap-4">
+        <div class="modal-action justify-center gap-4 mt-4">
           <button 
             type="button"
             on:click={handleClose}

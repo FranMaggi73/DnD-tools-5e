@@ -6,7 +6,10 @@
   import { api } from '$lib/api/api';
   import type { Campaign, Character } from '$lib/types';
   import CharacterCard from '$lib/components/CharacterCard.svelte';
-  import Sidebar from '$lib/components/Sidebar.svelte';
+  import CharacterFormModal from '$lib/components/CharacterFormModal.svelte';
+  import { headerTitle } from '$lib/stores/uiStore';
+
+  headerTitle.set('Personajes');
 
   $: campaignId = $page.params.id || '';
 
@@ -18,7 +21,6 @@
   let showFormModal = false;
   let editingCharacter: Character | null = null;
   let isEdit = false;
-  let sidebarOpen = true;
 
   // Form simplificado
   let form = {
@@ -127,25 +129,7 @@
 </script>
 
 <div class="min-h-screen flex flex-col">
-  <!-- Navbar -->
-  <div class="navbar-medieval sticky top-0 z-50">
-    <div class="container mx-auto">
-      <div class="flex-1"></div>
-      <div class="flex-none">
-        <h1 class="font-medieval text-xl text-secondary">{campaign?.name || 'Campaña'}</h1>
-      </div>
-      <div class="flex-1 flex justify-end">
-        <button on:click={() => goto('/dashboard')} class="btn btn-ghost font-medieval text-secondary hover:text-accent">
-          Volver al Grimorio →
-        </button>
-      </div>
-    </div>
-  </div>
-
   <div class="flex flex-1">
-    <!-- Sidebar Component -->
-    <Sidebar {campaignId} bind:isOpen={sidebarOpen} />
-
     <!-- Contenido principal -->
     <div class="flex-1 p-6">
       <div class="container mx-auto max-w-7xl">
@@ -173,11 +157,8 @@
         {:else}
           <!-- Mi Personaje -->
           <div class="mb-10">
-            <div class="flex justify-between items-center mb-6">
-              <h2 class="text-3xl font-medieval text-secondary">Tu Personaje</h2>
-            </div>
-
             {#if myCharacter}
+            <div class="flex justify-center">
               <div class="max-w-md">
                 <CharacterCard 
                   character={myCharacter}
@@ -186,8 +167,10 @@
                   on:delete={(e) => handleDelete(e.detail)}
                 />
               </div>
+            </div>
             {:else}
-              <div class="card-parchment p-12 text-center max-w-2xl corner-ornament">
+            <div class="flex justify-center">
+              <div class="card-parchment p-8 text-center max-w-2xl justify-center items-center corner-ornament">
                 <div class="text-6xl mb-4">🧙‍♂️</div>
                 <h3 class="text-2xl font-medieval text-neutral mb-3">No tienes personaje</h3>
                 <p class="text-neutral/70 font-body mb-6">
@@ -200,26 +183,27 @@
                   <span class="text-2xl">✨</span>
                   Crear Mi Personaje
                 </button>
-              </div>
+              </div>              
+            </div>
             {/if}
           </div>
-
           <!-- Otros Personajes -->
           {#if otherCharacters.length > 0}
             <div class="divider text-neutral/50 my-8">⚔️</div>
             
             <div class="mb-6">
-              <h2 class="text-3xl font-medieval text-secondary mb-2">Compañeros de Aventura</h2>
-              <p class="text-neutral/60 font-body italic">Los demás héroes de esta campaña</p>
+              <h2 class="text-3xl font-medieval text-center text-secondary mb-2">Compañeros de Aventura</h2>
+              <p class="text-primary text-center font-body italic">Los demás héroes de esta campaña</p>
             </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {#each otherCharacters as character}
-                <CharacterCard 
-                  {character}
-                  isOwner={false}
-                />
-              {/each}
+            <div class="w-3/4 mx-auto">
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {#each otherCharacters as character}
+                  <CharacterCard 
+                    {character}
+                    isOwner={false}
+                  />
+                {/each}
+              </div>              
             </div>
           {/if}
         {/if}
@@ -227,103 +211,12 @@
     </div>
   </div>
 </div>
-
-<!-- Modal de Formulario Simplificado -->
-{#if showFormModal}
-  <div class="modal modal-open">
-    <div class="modal-box card-parchment max-w-2xl border-4 border-secondary corner-ornament">
-      <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" on:click={() => showFormModal = false}>✕</button>
-      
-      <h3 class="font-bold text-3xl font-medieval text-neutral mb-6 text-center">
-        {isEdit ? '✏️ Editar Personaje' : '🧙‍♂️ Crear Personaje'}
-      </h3>
-
-      <form on:submit|preventDefault={handleSubmit}>
-        <!-- Nombre -->
-        <div class="form-control mb-4">
-          <label class="label">
-            <span class="label-text font-medieval text-neutral text-lg">Nombre *</span>
-          </label>
-          <input 
-            type="text" 
-            bind:value={form.name}
-            placeholder="Ej: Gandalf el Gris"
-            required
-            class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
-          />
-        </div>
-
-        <!-- HP y CA -->
-        <div class="grid grid-cols-2 gap-4 mb-4">
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text font-medieval text-neutral text-lg">HP Máximo *</span>
-            </label>
-            <input 
-              type="number" 
-              bind:value={form.maxHp}
-              min="1"
-              required
-              class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
-            />
-          </div>
-
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text font-medieval text-neutral text-lg">Clase de Armadura (CA) *</span>
-            </label>
-            <input 
-              type="number" 
-              bind:value={form.armorClass}
-              min="1"
-              required
-              class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
-            />
-          </div>
-        </div>
-
-        <!-- URL de Imagen -->
-        <div class="form-control mb-6">
-          <label class="label">
-            <span class="label-text font-medieval text-neutral text-lg">URL de Imagen (opcional)</span>
-          </label>
-          <input 
-            type="url" 
-            bind:value={form.imageUrl}
-            placeholder="https://ejemplo.com/imagen.jpg"
-            class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
-          />
-          {#if form.imageUrl}
-            <div class="mt-2">
-              <img 
-                src={form.imageUrl} 
-                alt="Preview" 
-                class="w-20 h-20 rounded-full object-cover mx-auto ring-2 ring-secondary" 
-                on:error={() => form.imageUrl = ''}
-              />
-            </div>
-          {/if}
-        </div>
-
-        <!-- Botones -->
-        <div class="modal-action justify-center gap-4">
-          <button 
-            type="button"
-            on:click={() => showFormModal = false}
-            class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval"
-          >
-            Cancelar
-          </button>
-          <button 
-            type="submit"
-            class="btn btn-dnd"
-            disabled={!form.name || !form.maxHp}
-          >
-            <span class="text-xl">{isEdit ? '💾' : '✨'}</span>
-            {isEdit ? 'Guardar Cambios' : 'Crear Personaje'}
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-{/if}
+<div class="justify-center items-center">
+  <CharacterFormModal
+    bind:isOpen={showFormModal}
+    {isEdit}
+    {form}
+    on:submit={handleSubmit}
+    on:close={handleClose}
+  />  
+</div>

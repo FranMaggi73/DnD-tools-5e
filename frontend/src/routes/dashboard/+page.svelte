@@ -1,12 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { signOut } from 'firebase/auth';
-  import { auth } from '$lib/firebase';
-  import { userStore } from '$lib/stores/authStore';
   import { api } from '$lib/api/api';
   import { goto } from '$app/navigation';
-  import InvitationsButton from '$lib/components/InvitationsButton.svelte';
   import type { Campaign, CampaignMembers } from '$lib/types';
+  import { headerTitle } from '$lib/stores/uiStore';
+
+  headerTitle.set('🎲 Grimorio de Aventuras');
 
   let campaigns: Campaign[] = [];
   let campaignsWithMembers: Array<{ campaign: Campaign; members: CampaignMembers }> = [];
@@ -67,45 +66,7 @@
       error = err?.message ?? String(err);
     }
   }
-
-  async function handleLogout() {
-    await signOut(auth);
-    goto('/login');
-  }
-
-  async function handleInvitationResponded() {
-    await loadCampaigns();
-  }
 </script>
-
-<div class="navbar-medieval sticky top-0 z-50">
-  <div class="container mx-auto">
-    <div class="flex-1"></div>
-    <div class="flex-none flex justify-center flex-1">
-      <a href="/dashboard" class="btn btn-ghost text-xl font-medieval text-secondary hover:text-accent">
-        🎲 Grimorio de Aventuras
-      </a>
-    </div>
-    <div class="flex-none gap-2 flex-1 flex justify-end">
-      <InvitationsButton onInvitationResponded={handleInvitationResponded} />
-      <div class="dropdown dropdown-end">
-        <label tabindex="0" class="btn btn-ghost btn-circle avatar ring-2 ring-secondary ring-offset-2 ring-offset-neutral">
-          <div class="w-10 rounded-full">
-            <img src={$userStore?.photoURL || ''} alt={$userStore?.displayName || ''} />
-          </div>
-        </label>
-        <ul tabindex="0" class="mt-3 z-[1] p-2 shadow-xl menu menu-sm dropdown-content bg-neutral rounded-box w-52 border-2 border-secondary">
-          <li>
-            <a on:click={handleLogout} class="text-base-content hover:text-secondary font-medieval">
-              🚪 Cerrar Sesión
-            </a>
-          </li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</div>
-
 <div class="container mx-auto p-6 lg:p-8">
   <div class="mb-8 text-center">
     <h1 class="text-4xl lg:text-5xl font-bold text-secondary title-ornament mb-3 text-shadow">

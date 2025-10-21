@@ -1,13 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
-  import { goto } from '$app/navigation';
   import { userStore } from '$lib/stores/authStore';
   import { api } from '$lib/api/api';
   import type { Campaign, Encounter, Combatant, Character } from '$lib/types';
   import CombatantCard from '$lib/components/CombatantCard.svelte';
   import AddCombatantModal from '$lib/components/AddCombatantModal.svelte';
-  import Sidebar from '$lib/components/Sidebar.svelte';
+  import { headerTitle } from '$lib/stores/uiStore';
+
+  headerTitle.set('Combate');
 
   $: campaignId = $page.params.id || '';
 
@@ -24,7 +25,6 @@
   let selectedCombatant: Combatant | null = null;
   let hpChangeValue = 0;
   let newCondition = '';
-  let sidebarOpen = true;
 
   let pollInterval: NodeJS.Timeout;
 
@@ -183,21 +183,6 @@
 </script>
 
 <div class="min-h-screen flex flex-col">
-  <!-- Navbar -->
-  <div class="navbar-medieval sticky top-0 z-50">
-    <div class="container mx-auto">
-      <div class="flex-1"></div>
-      <div class="flex-none">
-        <h1 class="font-medieval text-xl text-secondary">{campaign?.name || 'Campaña'}</h1>
-      </div>
-      <div class="flex-1 flex justify-end">
-        <button on:click={() => goto('/dashboard')} class="btn btn-ghost font-medieval text-secondary hover:text-accent">
-          Volver al Grimorio →
-        </button>
-      </div>
-    </div>
-  </div>
-
   {#if error}
     <div class="container mx-auto p-4">
       <div class="alert alert-error">
@@ -208,7 +193,6 @@
   {/if}
 
   <div class="flex flex-1">
-    <Sidebar {campaignId} bind:isOpen={sidebarOpen} />
     <!-- Contenido principal -->
     <div class="flex-1">
       {#if loading}
@@ -240,7 +224,7 @@
         </div>
       {:else}
         <!-- Combate activo -->
-        <div class="p-4 max-w-7xl mx-auto">
+        <div class="p-4 max-w-4xl mx-auto">
           <!-- Header del combate -->
           <div class="card-parchment mb-6 corner-ornament">
             <div class="card-body p-6">
@@ -285,7 +269,6 @@
               </div>
 
               {#if currentTurnCombatant}
-                <div class="divider my-2">⚔️</div>
                 <div class="bg-gradient-to-r from-secondary/20 to-accent/20 p-4 rounded-lg border-2 border-secondary">
                   <p class="text-sm font-medieval text-neutral/70 mb-1">TURNO ACTUAL</p>
                   <p class="text-2xl font-bold font-medieval text-neutral">
@@ -513,7 +496,7 @@
 <!-- Modal Agregar Combatiente -->
 <AddCombatantModal 
   bind:isOpen={showAddCombatantModal}
-  {characters}
+  players={characters}
   on:add={handleAddCombatant}
   on:close={() => showAddCombatantModal = false}
 />
