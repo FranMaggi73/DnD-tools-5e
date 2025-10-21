@@ -71,3 +71,5 @@ node_modules/
 # dataconnect generated files
 .dataconnect
 backend/cmd/api/serviceAccountKey.json
+frontend/.svelte-kit/generated/server/internal.js
+frontend/.svelte-kit/ambient.d.ts

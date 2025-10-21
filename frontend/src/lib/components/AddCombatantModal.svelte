@@ -27,7 +27,6 @@
       name: selectedPlayer.name,
       maxHp: selectedPlayer.maxHp,
       armorClass: selectedPlayer.armorClass,
-      imgUrl: selectedPlayer.imageUrl || '',
       initiative,
       isNpc: false
     });
@@ -45,7 +44,6 @@
   let name = '';
   let maxHp = 0;
   let armorClass = 10;
-  let imgUrl = '';
   let cr = '';
   let type = '';
   let size = '';
@@ -75,7 +73,6 @@
     initiative = Math.floor((selectedMonster.dexterity - 10) / 2);
     maxHp = selectedMonster.hit_points;
     armorClass = selectedMonster.armor_class;
-    imgUrl = selectedMonster.img_main || '';
     cr = selectedMonster.challenge_rating;
     type = selectedMonster.type;
     size = selectedMonster.size;
@@ -94,7 +91,6 @@
       initiative,
       maxHp,
       armorClass,
-      imgUrl,
       cr,
       size,
       alignment,
@@ -114,7 +110,6 @@
     initiative = 0;
     maxHp = 0;
     armorClass = 10;
-    imgUrl = '';
     cr = '';
     type = '';
     size = '';
@@ -124,8 +119,8 @@
 </script>
 
 {#if isOpen}
-  <div class="modal modal-open">
-    <div class="modal-box card-parchment max-w-3xl border-4 border-secondary relative">
+  <div class="modal modal-open z-20">
+    <div class="modal-box card-parchment max-w-3xl h-full relative">
       <button
         class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
         on:click={handleClose}
@@ -185,13 +180,6 @@
 
             <div class="card bg-neutral/20 border border-primary/40 p-4 mt-2">
               <div class="flex items-center gap-4">
-                {#if selectedPlayer.imageUrl}
-                  <img
-                    src={selectedPlayer.imageUrl}
-                    alt={selectedPlayer.name}
-                    class="w-16 h-16 rounded-lg object-cover border border-primary/40"
-                  />
-                {/if}
                 <div>
                   <p class="font-medieval text-lg text-neutral">{selectedPlayer.name}</p>
                   <p class="text-sm text-neutral/70">
@@ -293,18 +281,6 @@
                 />
               </div>
             </div>
-
-            <div class="form-control">
-              <label class="label">
-                <span class="label-text font-medieval text-neutral">Imagen (URL)</span>
-              </label>
-              <input
-                type="text"
-                bind:value={imgUrl}
-                class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
-              />
-            </div>
-
             <div class="modal-action justify-center gap-4 mt-4">
               <button
                 on:click={handleClose}
