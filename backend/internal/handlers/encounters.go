@@ -162,6 +162,7 @@ func (h *Handler) EndEncounter(c *gin.Context) {
 		return
 	}
 
+	// ===== NUEVA LÓGICA: Sincronizar todos los combatientes antes de terminar =====
 	combatantsIter := h.db.Collection("combatants").
 		Where("encounterId", "==", encounterID).
 		Documents(ctx)
@@ -181,7 +182,8 @@ func (h *Handler) EndEncounter(c *gin.Context) {
 		}
 
 		// Si es un personaje, sincronizar HP final
-		if combatant.Type == "character" && combatant.CharacterID != "" {
+		// Acepta tanto "character" como "player" para retrocompatibilidad
+		if combatant.CharacterID != "" && (combatant.Type == "character" || combatant.Type == "player") {
 			characterUpdates := []firestore.Update{
 				{Path: "currentHp", Value: combatant.CurrentHP},
 				{Path: "updatedAt", Value: time.Now()},
@@ -206,7 +208,8 @@ func (h *Handler) EndEncounter(c *gin.Context) {
 // COMBATIENTES
 // ===========================
 
-// AddCombatant - Agregar combatiente al encuentro
+// AddCombatant - Agregar combatiente al encuentro (CORREGIDO)
+// AddCombatant - Agregar combatiente al encuentro (CON DEBUGGING)
 func (h *Handler) AddCombatant(c *gin.Context) {
 	uid := c.GetString("uid")
 	if uid == "" {
@@ -221,6 +224,9 @@ func (h *Handler) AddCombatant(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	// 🔍 LOG: Ver qué llega del request
+	log.Printf("🔍 AddCombatant Request - Type: %s, CharacterID: '%s', Name: %s", req.Type, req.CharacterID, req.Name)
 
 	// Verificar que el encuentro existe
 	encounterDoc, err := h.db.Collection("encounters").Doc(encounterID).Get(ctx)
@@ -256,17 +262,27 @@ func (h *Handler) AddCombatant(c *gin.Context) {
 	// Si es un personaje, obtener datos del personaje
 	var name string
 	var imageURL string
-	var characterID string // 👈 NUEVO: variable para guardar el characterId
+	var characterID string
+	var conditions []string
 
-	// 👇 CORREGIDO: Acepta tanto "character" como "player" (retrocompatibilidad)
+	// 🔍 LOG: Verificar tipo
+	log.Printf("🔍 Type check - Is character/player? %v", req.Type == "character" || req.Type == "player")
+	log.Printf("🔍 CharacterID from request: '%s'", req.CharacterID)
+
 	if (req.Type == "character" || req.Type == "player") && req.CharacterID != "" {
-		characterID = req.CharacterID // 👈 GUARDAR el characterId
+		characterID = req.CharacterID
+		log.Printf("✅ Loading character data for: %s", characterID)
+
 		charDoc, err := h.db.Collection("characters").Doc(req.CharacterID).Get(ctx)
 		if err == nil {
 			var char models.Character
 			if charDoc.DataTo(&char) == nil {
 				name = char.Name
 				imageURL = char.ImageURL
+				conditions = char.Conditions
+
+				log.Printf("✅ Character loaded - Name: %s, Conditions: %v", name, conditions)
+
 				if req.MaxHP == 0 {
 					req.MaxHP = char.MaxHP
 				}
@@ -276,11 +292,17 @@ func (h *Handler) AddCombatant(c *gin.Context) {
 				if req.ArmorClass == 0 {
 					req.ArmorClass = char.ArmorClass
 				}
+			} else {
+				log.Printf("❌ Failed to parse character data")
 			}
+		} else {
+			log.Printf("❌ Character not found: %v", err)
 		}
 	} else {
 		name = req.Name
 		imageURL = req.ImageURL
+		conditions = []string{}
+		log.Printf("⏭️ Not a character - using manual data")
 	}
 
 	// Crear combatiente
@@ -289,13 +311,13 @@ func (h *Handler) AddCombatant(c *gin.Context) {
 		ID:          combatantRef.ID,
 		EncounterID: encounterID,
 		Type:        req.Type,
-		CharacterID: characterID, // 👈 CORREGIDO: Ahora sí guarda el characterId
+		CharacterID: characterID,
 		Name:        name,
 		Initiative:  req.Initiative,
 		MaxHP:       req.MaxHP,
 		CurrentHP:   req.CurrentHP,
 		ArmorClass:  req.ArmorClass,
-		Conditions:  []string{},
+		Conditions:  conditions,
 		ImageURL:    imageURL,
 		IsNPC:       req.IsNPC,
 		CreatedAt:   time.Now(),
@@ -305,11 +327,17 @@ func (h *Handler) AddCombatant(c *gin.Context) {
 		combatant.CurrentHP = combatant.MaxHP
 	}
 
+	// 🔍 LOG: Ver qué se va a guardar
+	log.Printf("📝 Saving combatant - Type: %s, CharacterID: '%s', Conditions: %v",
+		combatant.Type, combatant.CharacterID, combatant.Conditions)
+
 	if _, err := combatantRef.Set(ctx, combatant); err != nil {
+		log.Printf("❌ ERROR saving combatant: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error agregando combatiente"})
 		return
 	}
 
+	log.Printf("✅ Combatant created successfully!")
 	c.JSON(http.StatusCreated, combatant)
 }
 
@@ -352,6 +380,7 @@ func (h *Handler) GetCombatants(c *gin.Context) {
 	c.JSON(http.StatusOK, combatants)
 }
 
+// UpdateCombatant - Actualizar HP, condiciones, iniciativa de un combatante
 func (h *Handler) UpdateCombatant(c *gin.Context) {
 	uid := c.GetString("uid")
 	if uid == "" {
@@ -367,7 +396,11 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 		return
 	}
 
-	// Obtener combatiente
+	// 🔍 LOG: Ver qué llega del request
+	log.Printf("🔍 UpdateCombatant Request - CombatantID: %s", combatantID)
+	log.Printf("🔍 Request CurrentHP: %v, Conditions: %v, Initiative: %v", req.CurrentHP, req.Conditions, req.Initiative)
+
+	// Obtener combatante
 	combatantDoc, err := h.db.Collection("combatants").Doc(combatantID).Get(ctx)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Combatiente no encontrado"})
@@ -379,6 +412,9 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando combatante"})
 		return
 	}
+
+	// 🔍 LOG: Ver datos del combatante
+	log.Printf("🔍 Combatant Data - Type: %s, CharacterID: '%s', Name: %s", combatant.Type, combatant.CharacterID, combatant.Name)
 
 	// Verificar permisos
 	encounterDoc, err := h.db.Collection("encounters").Doc(combatant.EncounterID).Get(ctx)
@@ -405,7 +441,7 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 		return
 	}
 
-	// Preparar actualizaciones para el combatiente
+	// Preparar actualizaciones para el combatante
 	combatantUpdates := []firestore.Update{}
 
 	if req.CurrentHP != nil {
@@ -425,35 +461,53 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 		return
 	}
 
-	// Si el combatiente está vinculado a un personaje, también actualizar el personaje
-	if combatant.Type == "character" && combatant.CharacterID != "" {
+	// ===== SINCRONIZACIÓN BIDIRECCIONAL =====
+	// 🔍 LOG: Verificar condiciones antes de sincronizar
+	log.Printf("🔍 Sync Check - CharacterID empty? %v, Type: %s", combatant.CharacterID == "", combatant.Type)
+
+	if combatant.CharacterID != "" && (combatant.Type == "character" || combatant.Type == "player") {
+		log.Printf("✅ SYNCING to character %s", combatant.CharacterID)
+
 		characterUpdates := []firestore.Update{
 			{Path: "updatedAt", Value: time.Now()},
 		}
 
-		// Solo sincronizar HP (no iniciativa ni condiciones, porque son temporales del combate)
+		// Sincronizar HP
 		if req.CurrentHP != nil {
+			log.Printf("📊 Syncing HP: %d", *req.CurrentHP)
 			characterUpdates = append(characterUpdates, firestore.Update{Path: "currentHp", Value: *req.CurrentHP})
 		}
 
+		// Sincronizar Condiciones
+		if req.Conditions != nil {
+			log.Printf("⚠️ Syncing Conditions: %v", req.Conditions)
+			characterUpdates = append(characterUpdates, firestore.Update{Path: "conditions", Value: req.Conditions})
+		}
+
 		// Actualizar personaje
+		log.Printf("🔄 Updating character with %d fields", len(characterUpdates))
 		_, err := h.db.Collection("characters").Doc(combatant.CharacterID).Update(ctx, characterUpdates)
 		if err != nil {
-			log.Printf("Warning: Failed to sync character HP for %s: %v", combatant.CharacterID, err)
-			// No falla la operación completa, solo logueamos el warning
+			log.Printf("❌ ERROR: Failed to sync character data for %s: %v", combatant.CharacterID, err)
+		} else {
+			log.Printf("✅ SUCCESS: Character synced!")
 		}
+	} else {
+		log.Printf("⏭️ SKIPPING sync - CharacterID: '%s', Type: %s", combatant.CharacterID, combatant.Type)
 	}
 
-	// Actualizar combatiente
+	// Actualizar combatante
 	if _, err := h.db.Collection("combatants").Doc(combatantID).Update(ctx, combatantUpdates); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error actualizando combatiente"})
 		return
 	}
 
-	// Obtener combatiente actualizado
+	// Obtener combatante actualizado
 	updatedDoc, _ := h.db.Collection("combatants").Doc(combatantID).Get(ctx)
 	var updated models.Combatant
 	updatedDoc.DataTo(&updated)
+
+	log.Printf("✅ Combatant updated successfully - CurrentHP: %d, Conditions: %v", updated.CurrentHP, updated.Conditions)
 
 	c.JSON(http.StatusOK, updated)
 }

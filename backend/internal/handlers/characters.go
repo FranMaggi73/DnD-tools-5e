@@ -18,6 +18,7 @@ import (
 // ===========================
 
 // CreateCharacter - Crear un nuevo personaje en una campaña
+// CreateCharacter - Crear un nuevo personaje en una campaña (ACTUALIZADO)
 func (h *Handler) CreateCharacter(c *gin.Context) {
 	uid := c.GetString("uid")
 	if uid == "" {
@@ -72,6 +73,7 @@ func (h *Handler) CreateCharacter(c *gin.Context) {
 		CurrentHP:  req.MaxHP, // Empieza con HP máximo
 		ArmorClass: req.ArmorClass,
 		Initiative: req.Initiative,
+		Conditions: []string{}, // 👈 NUEVO: Inicializar array vacío
 		ImageURL:   req.ImageURL,
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),

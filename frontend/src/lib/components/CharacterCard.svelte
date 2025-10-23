@@ -9,6 +9,7 @@
 
   $: hpPercentage = (character.currentHp / character.maxHp) * 100;
   $: hpColor = hpPercentage > 50 ? 'success' : hpPercentage > 25 ? 'warning' : 'error';
+  $: hasConditions = Array.isArray(character.conditions) && character.conditions.length > 0;
 
   function handleEdit() {
     dispatch('edit', character);
@@ -21,19 +22,19 @@
 
 <div class="card-parchment card-hover corner-ornament">
   <div class="card-body p-5">
-    <!-- Header con avatar -->
+    <!-- Header sin avatar ni nivel -->
     <div class="flex items-start gap-4 mb-4">
       <div class="avatar">
         <div class="w-20 h-20 rounded-full ring-2 ring-secondary ring-offset-2 ring-offset-[#f4e4c1]">
-            <div class="bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-              <span class="text-3xl">🧙‍♂️</span>
-            </div>
+          <div class="bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+            <span class="text-3xl">🧙‍♂️</span>
+          </div>
         </div>
       </div>
 
       <div class="flex-1">
         <h3 class="text-2xl font-medieval font-bold text-neutral mb-1">{character.name}</h3>
-        <p class="text-sm text-neutral/70 font-body">{character.class} - Nivel {character.level}</p>
+        <p class="text-sm text-neutral/70 font-body">{character.class}</p>
       </div>
 
       {#if isOwner}
@@ -53,13 +54,8 @@
 
     <div class="divider my-2">⚔️</div>
 
-    <!-- Stats principales -->
-    <div class="grid grid-cols-3 gap-3 mb-4">
-      <div class="bg-gradient-to-br from-primary/20 to-accent/20 p-3 rounded-lg border border-primary/30 text-center">
-        <p class="text-xs font-medieval text-neutral/60 mb-1">NIVEL</p>
-        <p class="text-2xl font-bold text-neutral">{character.level}</p>
-      </div>
-      
+    <!-- Stats principales (SIN NIVEL) -->
+    <div class="grid grid-cols-2 gap-3 mb-4">
       <div class="bg-gradient-to-br from-info/20 to-success/20 p-3 rounded-lg border border-info/30 text-center">
         <p class="text-xs font-medieval text-neutral/60 mb-1">CA</p>
         <p class="text-2xl font-bold text-neutral">{character.armorClass}</p>
@@ -83,6 +79,18 @@
         max={character.maxHp}
       ></progress>
     </div>
+
+    <!-- Condiciones persistentes (siempre visibles si existen) -->
+    {#if hasConditions}
+      <div class="bg-warning/10 p-3 rounded-lg border border-warning/30 mt-3">
+        <p class="text-xs font-medieval text-neutral/60 mb-2">⚠️ CONDICIONES ACTIVAS</p>
+        <div class="flex flex-wrap gap-1">
+          {#each character.conditions as condition}
+            <div class="badge badge-warning badge-sm">{condition}</div>
+          {/each}
+        </div>
+      </div>
+    {/if}
 
     <!-- Footer -->
     <div class="text-xs text-neutral/50 text-center mt-3 italic font-body">

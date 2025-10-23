@@ -5,7 +5,7 @@
   import type { Monster, Character } from '$lib/types';
 
   export let isOpen: boolean = false;
-  export let players: Character[] = []; // jugadores de la campaña
+  export let players: Character[] = [];
 
   const dispatch = createEventDispatcher();
 
@@ -22,8 +22,8 @@
     if (!selectedPlayer) return;
 
     dispatch('add', {
-      type: 'character',
-      characterId: selectedPlayer.id,
+      type: 'character', // ✅ Corregido: era 'player'
+      characterId: selectedPlayer.id, // ✅ Corregido: era 'id'
       name: selectedPlayer.name,
       maxHp: selectedPlayer.maxHp,
       armorClass: selectedPlayer.armorClass,

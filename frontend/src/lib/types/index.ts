@@ -45,10 +45,6 @@ export interface Invitation {
   respondedAt?: string;
 }
 
-// ===========================
-// NUEVOS TIPOS PARA COMBATE
-// ===========================
-
 export interface Character {
   id: string;
   campaignId: string;
@@ -59,17 +55,18 @@ export interface Character {
   maxHp: number;
   currentHp: number;
   armorClass: number;
-  initiative: number; // Bonus de iniciativa
+  initiative: number;
+  conditions: string[]; // ✅ Condiciones persistentes
   imageUrl: string;
   createdAt: string;
   updatedAt: string;
 }
 
-  export interface CharacterForm {
-    name: string;
-    maxHp: number;
-    armorClass: number;
-  }
+export interface CharacterForm {
+  name: string;
+  maxHp: number;
+  armorClass: number;
+}
 
 export interface Encounter {
   id: string;
@@ -85,10 +82,10 @@ export interface Encounter {
 export interface Combatant {
   id: string;
   encounterId: string;
-  type: 'character' | 'creature';
+  type: 'character' | 'creature' | 'player';
   characterId?: string;
   name: string;
-  initiative: number; // Valor tirado
+  initiative: number;
   maxHp: number;
   currentHp: number;
   armorClass: number;

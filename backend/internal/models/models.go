@@ -80,6 +80,7 @@ type Character struct {
 	CurrentHP  int       `firestore:"currentHp" json:"currentHp"`
 	ArmorClass int       `firestore:"armorClass" json:"armorClass"`
 	Initiative int       `firestore:"initiative" json:"initiative"` // Bonus de iniciativa
+	Conditions []string  `firestore:"conditions" json:"conditions"` // 👈 NUEVO: Condiciones persistentes
 	ImageURL   string    `firestore:"imageUrl" json:"imageUrl"`
 	CreatedAt  time.Time `firestore:"createdAt" json:"createdAt"`
 	UpdatedAt  time.Time `firestore:"updatedAt" json:"updatedAt"`
