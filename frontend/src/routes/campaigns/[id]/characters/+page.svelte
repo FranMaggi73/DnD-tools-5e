@@ -4,12 +4,12 @@
   import { goto } from '$app/navigation';
   import { userStore } from '$lib/stores/authStore';
   import { api } from '$lib/api/api';
-  import type { Campaign, Character, Combatant } from '$lib/types';
+  import type { Campaign, Character } from '$lib/types';
   import CharacterCard from '$lib/components/CharacterCard.svelte';
   import CharacterFormModal from '$lib/components/CharacterFormModal.svelte';
   import { headerTitle } from '$lib/stores/uiStore';
 
-  // Importar Firestore
+  // ===== NUEVO: Importar Firestore =====
   import { getFirestore, collection, query, where, onSnapshot } from 'firebase/firestore';
   import { app } from '$lib/firebase';
 
@@ -19,7 +19,6 @@
 
   let campaign: Campaign | null = null;
   let characters: Character[] = [];
-  let combatants: Combatant[] = []; // 👈 NUEVO: Para trackear combatientes activos
   let loading = true;
   let error = '';
   
@@ -34,89 +33,24 @@
     imageUrl: ''
   };
 
-  // Listeners
+  // ===== NUEVO: Listener para sincronización en tiempo real =====
   let charactersUnsubscribe: (() => void) | null = null;
-  let encounterUnsubscribe: (() => void) | null = null;
-  let combatantsUnsubscribe: (() => void) | null = null;
   const db = getFirestore(app);
 
   $: myCharacter = characters.find(c => c.userId === $userStore?.uid);
   $: otherCharacters = characters.filter(c => c.userId !== $userStore?.uid);
   $: canCreateCharacter = !myCharacter;
 
-  // 👇 NUEVO: Función para obtener condiciones de un personaje en combate
-  function getCombatConditions(characterId: string): string[] | null {
-    const combatant = combatants.find(c => c.characterId === characterId);
-    if (!combatant) return null;
-    return Array.isArray(combatant.conditions) ? combatant.conditions : [];
-  }
-
   onMount(async () => {
     await loadCampaign();
     setupCharactersListener();
-    setupCombatListener(); // 👈 NUEVO
   });
 
   onDestroy(() => {
     if (charactersUnsubscribe) charactersUnsubscribe();
-    if (encounterUnsubscribe) encounterUnsubscribe();
-    if (combatantsUnsubscribe) combatantsUnsubscribe();
   });
 
-  // 👇 NUEVO: Listener para detectar combate activo
-  function setupCombatListener() {
-    try {
-      const encountersRef = collection(db, 'encounters');
-      const encounterQuery = query(
-        encountersRef,
-        where('campaignId', '==', campaignId),
-        where('isActive', '==', true)
-      );
-
-      encounterUnsubscribe = onSnapshot(
-        encounterQuery,
-        (snapshot) => {
-          if (snapshot.empty) {
-            combatants = [];
-            if (combatantsUnsubscribe) {
-              combatantsUnsubscribe();
-              combatantsUnsubscribe = null;
-            }
-          } else {
-            const encounter = snapshot.docs[0];
-            setupCombatantsListener(encounter.id);
-          }
-        },
-        (err) => {
-          console.error('Error en listener de encuentro:', err);
-        }
-      );
-    } catch (err) {
-      console.error('Error setting up combat listener:', err);
-    }
-  }
-
-  function setupCombatantsListener(encounterId: string) {
-    const combatantsRef = collection(db, 'combatants');
-    const combatantsQuery = query(
-      combatantsRef,
-      where('encounterId', '==', encounterId)
-    );
-
-    combatantsUnsubscribe = onSnapshot(
-      combatantsQuery,
-      (snapshot) => {
-        combatants = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as Combatant[];
-      },
-      (err) => {
-        console.error('Error en listener de combatientes:', err);
-      }
-    );
-  }
-
+  // ===== NUEVO: Setup listener en tiempo real =====
   function setupCharactersListener() {
     try {
       loading = true;
@@ -202,6 +136,7 @@
       }
       showFormModal = false;
       resetForm();
+      // No necesitamos recargar, el listener lo hará automáticamente
     } catch (err: any) {
       error = err.message;
     }
@@ -212,6 +147,7 @@
     
     try {
       await api.deleteCharacter(character.id);
+      // No necesitamos recargar, el listener lo hará automáticamente
     } catch (err: any) {
       error = err.message;
     }
@@ -235,6 +171,7 @@
           <p class="text-base-content/70 font-body italic text-lg mb-2">
             "Cada héroe tiene su historia..."
           </p>
+          <!-- Indicador de sincronización -->
           <div class="badge bg-success/30 border-success/50 text-neutral badge-lg" title="Los cambios se sincronizan en tiempo real">
             🔄 Sincronización en tiempo real activa
           </div>
@@ -260,7 +197,6 @@
                 <CharacterCard 
                   character={myCharacter}
                   isOwner={true}
-                  activeCombatConditions={getCombatConditions(myCharacter.id)}
                   on:edit={(e) => openEditModal(e.detail)}
                   on:delete={(e) => handleDelete(e.detail)}
                 />
@@ -300,7 +236,6 @@
                   <CharacterCard 
                     {character}
                     isOwner={false}
-                    activeCombatConditions={getCombatConditions(character.id)}
                   />
                 {/each}
               </div>              
