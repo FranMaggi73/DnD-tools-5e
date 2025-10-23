@@ -16,7 +16,7 @@
 </script>
 
 <div
-  class={`bg-neutral border-r-4 border-secondary transition-all duration-300 fixed top-0 left-0 h-full z-50 ${
+  class={`bg-neutral border-r-4 border-secondary transition-all duration-300 fixed top-0 left-0 h-full z-40 ${
     isOpen ? 'w-64' : 'w-20'
   }`}
 >

@@ -95,7 +95,7 @@
 
       {:else}
         <!-- HEADER GENERAL (incluye campañas y otras rutas) -->
-        <div class="flex-1"></div>
+        <div class="flex-1 z-1"></div>
         <div class="flex justify-center items-center flex-1 h-20">
           <h1 class="btn btn-ghost text-xl font-medieval text-secondary hover:text-accent">
             {$headerTitle}
@@ -115,7 +115,7 @@
     </div>
 
     <!-- Contenido principal -->
-    <div class="relative z-0">
+    <div class="relative">
       <slot />
     </div>
   {/if}

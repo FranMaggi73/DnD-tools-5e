@@ -35,7 +35,7 @@
   {/if}
 
   {#if isDead}
-    <div class="absolute inset-0 bg-error/20 flex items-center justify-center z-10 rounded-lg">
+    <div class="absolute inset-0 bg-error/20 flex items-center justify-center -z-10 rounded-lg">
       <span class="text-6xl">💀</span>
     </div>
   {/if}
@@ -103,7 +103,7 @@
     {/if}
 
     <!-- Actions (DM only) -->
-    {#if isDM && !isDead}
+    {#if isDM}
       <div class="flex gap-2 mt-3">
         <button 
           on:click={handleUpdateHP}

@@ -6,6 +6,8 @@
   import type { Campaign, Encounter, Combatant, Character } from '$lib/types';
   import CombatantCard from '$lib/components/CombatantCard.svelte';
   import AddCombatantModal from '$lib/components/AddCombatantModal.svelte';
+  import HPModal from '$lib/components/HPModal.svelte';
+  import ConditionModal from '$lib/components/ConditionModal.svelte';
   import { headerTitle } from '$lib/stores/uiStore';
 
   headerTitle.set('Combate');
@@ -22,9 +24,11 @@
   let showAddCombatantModal = false;
   let showCreateEncounterModal = false;
   let encounterName = '';
+  
+  // Modales de gestión
+  let showHPModal = false;
+  let showConditionModal = false;
   let selectedCombatant: Combatant | null = null;
-  let hpChangeValue = 0;
-  let newCondition = '';
 
   let pollInterval: NodeJS.Timeout;
 
@@ -87,6 +91,11 @@
     if (!encounter) return;
     try {
       combatants = await api.getCombatants(encounter.id);
+      // Actualizar selectedCombatant si está abierto un modal
+      if (selectedCombatant) {
+        const updated = combatants.find(c => c.id === selectedCombatant!.id);
+        if (updated) selectedCombatant = updated;
+      }
     } catch (err) {
       console.error('Error loading combatants:', err);
     }
@@ -137,34 +146,50 @@
     }
   }
 
-  async function updateHP(combatant: Combatant, change: number) {
+  function openHPModal(event: CustomEvent) {
+    selectedCombatant = event.detail;
+    showHPModal = true;
+    showConditionModal = false;
+  }
+
+  function openConditionModal(event: CustomEvent) {
+    selectedCombatant = event.detail;
+    showConditionModal = true;
+    showHPModal = false;
+  }
+
+  async function handleApplyHP(event: CustomEvent) {
+    if (!selectedCombatant) return;
     try {
-      const newHP = Math.max(0, Math.min(combatant.maxHp, combatant.currentHp + change));
-      await api.updateCombatant(combatant.id, { currentHp: newHP });
+      const change = event.detail as number;
+      const newHP = Math.max(0, Math.min(selectedCombatant.maxHp, selectedCombatant.currentHp + change));
+      await api.updateCombatant(selectedCombatant.id, { currentHp: newHP });
       await loadCombatants();
+      showHPModal = false;
       selectedCombatant = null;
-      hpChangeValue = 0;
     } catch (err: any) {
       error = err.message;
     }
   }
 
-  async function addCondition(combatant: Combatant, condition: string) {
-    if (!condition.trim()) return;
+  async function handleAddCondition(event: CustomEvent) {
+    if (!selectedCombatant) return;
     try {
-      const conditions = [...combatant.conditions, condition];
-      await api.updateCombatant(combatant.id, { conditions });
+      const condition = event.detail as string;
+      const conditions = [...selectedCombatant.conditions, condition];
+      await api.updateCombatant(selectedCombatant.id, { conditions });
       await loadCombatants();
-      newCondition = '';
     } catch (err: any) {
       error = err.message;
     }
   }
 
-  async function removeCondition(combatant: Combatant, condition: string) {
+  async function handleRemoveCondition(event: CustomEvent) {
+    if (!selectedCombatant) return;
     try {
-      const conditions = combatant.conditions.filter(c => c !== condition);
-      await api.updateCombatant(combatant.id, { conditions });
+      const condition = event.detail as string;
+      const conditions = selectedCombatant.conditions.filter(c => c !== condition);
+      await api.updateCombatant(selectedCombatant.id, { conditions });
       await loadCombatants();
     } catch (err: any) {
       error = err.message;
@@ -269,7 +294,7 @@
               </div>
 
               {#if currentTurnCombatant}
-                <div class="bg-gradient-to-r from-secondary/20 to-accent/20 p-4 rounded-lg border-2 border-secondary">
+                <div class="bg-gradient-to-r from-secondary/20 to-accent/20 p-4 rounded-lg border-2 border-secondary mt-4">
                   <p class="text-sm font-medieval text-neutral/70 mb-1">TURNO ACTUAL</p>
                   <p class="text-2xl font-bold font-medieval text-neutral">
                     {currentTurnCombatant.name}
@@ -295,8 +320,8 @@
                   {combatant}
                   isCurrentTurn={index === (encounter.turnIndex % combatants.length)}
                   isDM={!!isDM} 
-                  on:updateHP={(e) => selectedCombatant = e.detail}
-                  on:addCondition={(e) => selectedCombatant = e.detail}
+                  on:updateHP={openHPModal}
+                  on:addCondition={openConditionModal}
                   on:remove={handleRemoveCombatant}
                 />
               {/each}
@@ -310,7 +335,7 @@
 
 <!-- Modal Crear Encuentro -->
 {#if showCreateEncounterModal}
-  <div class="modal modal-open">
+  <div class="modal modal-open z-50">
     <div class="modal-box card-parchment border-4 border-secondary">
       <h3 class="font-bold text-2xl font-medieval text-neutral mb-4 text-center">
         ⚔️ Iniciar Encuentro
@@ -348,150 +373,22 @@
   </div>
 {/if}
 
-<!-- Modal Modificar HP -->
-{#if selectedCombatant && !newCondition}
-  <div class="modal modal-open">
-    <div class="modal-box card-parchment border-4 border-secondary">
-      <h3 class="font-bold text-2xl font-medieval text-neutral mb-4 text-center">
-        💚 Modificar HP - {selectedCombatant.name}
-      </h3>
+<!-- Modal de HP -->
+<HPModal 
+  bind:isOpen={showHPModal}
+  combatant={selectedCombatant}
+  on:apply={handleApplyHP}
+  on:close={() => { showHPModal = false; selectedCombatant = null; }}
+/>
 
-      <div class="text-center mb-6">
-        <p class="text-sm font-medieval text-neutral/70">HP Actual</p>
-        <p class="text-5xl font-bold text-neutral">{selectedCombatant.currentHp}</p>
-        <p class="text-neutral/50">/ {selectedCombatant.maxHp}</p>
-      </div>
-
-      <div class="form-control mb-4">
-        <label class="label">
-          <span class="label-text font-medieval text-neutral">Cambio de HP (+ curar / - daño)</span>
-        </label>
-        <input 
-          type="number" 
-          bind:value={hpChangeValue}
-          placeholder="Ej: -5 para daño, +10 para curación"
-          class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 text-center text-2xl"
-        />
-      </div>
-
-      <div class="grid grid-cols-2 gap-2 mb-4">
-        <button 
-          on:click={() => hpChangeValue = -5}
-          class="btn btn-error btn-sm"
-        >
-          -5
-        </button>
-        <button 
-          on:click={() => hpChangeValue = -10}
-          class="btn btn-error btn-sm"
-        >
-          -10
-        </button>
-        <button 
-          on:click={() => hpChangeValue = 5}
-          class="btn btn-success btn-sm"
-        >
-          +5
-        </button>
-        <button 
-          on:click={() => hpChangeValue = 10}
-          class="btn btn-success btn-sm"
-        >
-          +10
-        </button>
-      </div>
-
-      <div class="modal-action justify-center gap-4">
-        <button 
-          on:click={() => { selectedCombatant = null; hpChangeValue = 0; }}
-          class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval"
-        >
-          Cancelar
-        </button>
-        <button 
-          on:click={() => selectedCombatant && updateHP(selectedCombatant, hpChangeValue)}
-          class="btn btn-dnd"
-          disabled={hpChangeValue === 0}
-        >
-          Aplicar
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
-
-<!-- Modal Agregar Condición -->
-{#if selectedCombatant && newCondition !== null && newCondition !== undefined}
-  <div class="modal modal-open">
-    <div class="modal-box card-parchment border-4 border-secondary">
-      <h3 class="font-bold text-2xl font-medieval text-neutral mb-4 text-center">
-        ⚠️ Condiciones - {selectedCombatant.name}
-      </h3>
-
-      <!-- Condiciones actuales -->
-      {#if selectedCombatant.conditions.length > 0}
-        <div class="mb-4">
-          <p class="text-sm font-medieval text-neutral/70 mb-2">Condiciones Activas:</p>
-          <div class="flex flex-wrap gap-2">
-            {#each selectedCombatant.conditions as condition}
-              <div class="badge badge-warning gap-2">
-                {condition}
-                <button 
-                  class="btn btn-xs btn-circle btn-ghost"
-                  on:click={() => selectedCombatant && removeCondition(selectedCombatant, condition)}
-                >
-                  ✕
-                </button>
-              </div>
-            {/each}
-          </div>
-        </div>
-        <div class="divider">⚔️</div>
-      {/if}
-
-      <!-- Agregar nueva condición -->
-      <div class="form-control mb-4">
-        <label class="label">
-          <span class="label-text font-medieval text-neutral">Nueva Condición</span>
-        </label>
-        <input 
-          type="text" 
-          bind:value={newCondition}
-          placeholder="Ej: Envenenado, Aturdido..."
-          class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
-        />
-      </div>
-
-      <!-- Condiciones comunes -->
-      <div class="grid grid-cols-2 gap-2 mb-4">
-        {#each ['Envenenado', 'Aturdido', 'Cegado', 'Concentración', 'Hechizado', 'Asustado', 'Prone', 'Restringido'] as cond}
-          <button 
-            on:click={() => selectedCombatant && addCondition(selectedCombatant, cond)}
-            class="btn btn-xs btn-outline border-warning text-neutral hover:bg-warning"
-          >
-            {cond}
-          </button>
-        {/each}
-      </div>
-
-      <div class="modal-action justify-center gap-4">
-        <button 
-          on:click={() => { selectedCombatant = null; newCondition = ''; }}
-          class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval"
-        >
-          Cerrar
-        </button>
-        <button 
-          on:click={() => selectedCombatant && addCondition(selectedCombatant, newCondition)}
-          class="btn btn-warning"
-          disabled={!newCondition.trim()}
-        >
-          Agregar
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
+<!-- Modal de Condiciones -->
+<ConditionModal 
+  bind:isOpen={showConditionModal}
+  combatant={selectedCombatant}
+  on:add={handleAddCondition}
+  on:remove={handleRemoveCondition}
+  on:close={() => { showConditionModal = false; selectedCombatant = null; }}
+/>
 
 <!-- Modal Agregar Combatiente -->
 <AddCombatantModal 

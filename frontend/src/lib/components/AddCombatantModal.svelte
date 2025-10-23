@@ -119,7 +119,7 @@
 </script>
 
 {#if isOpen}
-  <div class="modal modal-open z-20">
+  <div class="modal modal-open z-50">
     <div class="modal-box card-parchment max-w-3xl h-full relative">
       <button
         class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"

@@ -187,7 +187,7 @@
 </div>
 
 {#if showCreateModal}
-  <div class="modal modal-open">
+  <div class="modal modal-open z-50">
     <div class="modal-box card-parchment border-4 border-secondary corner-ornament">
       <h3 class="font-bold text-2xl font-medieval text-neutral mb-4 text-center">
         📜 Crear Nueva Campaña

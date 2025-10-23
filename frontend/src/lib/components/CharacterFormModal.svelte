@@ -19,7 +19,7 @@
 
 {#if isOpen}
   <!-- Fondo oscuro fijo -->
-  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-10 pt-4">
+  <div class="modal modal-open z-50">
     <!-- Modal fijo -->
     <div class="bg-[#2d241c] text-base-content border-4 border-secondary corner-ornament card-parchment w-full max-w-2xl p-6 relative">
       <!-- Botón cerrar -->
