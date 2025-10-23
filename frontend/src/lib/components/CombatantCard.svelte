@@ -60,9 +60,6 @@
           <div class="badge badge-sm bg-info/30 text-neutral border-info/50">
             🛡️ AC {combatant.armorClass}
           </div>
-          {#if combatant.isNpc}
-            <div class="badge badge-sm badge-error">NPC</div>
-          {/if}
         </div>
       </div>
 
