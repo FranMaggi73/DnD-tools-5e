@@ -1,13 +1,17 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { userStore } from '$lib/stores/authStore';
   import { api } from '$lib/api/api';
-  import type { Campaign, Character } from '$lib/types';
+  import type { Campaign, Character, Combatant } from '$lib/types';
   import CharacterCard from '$lib/components/CharacterCard.svelte';
   import CharacterFormModal from '$lib/components/CharacterFormModal.svelte';
   import { headerTitle } from '$lib/stores/uiStore';
+
+  // Importar Firestore
+  import { getFirestore, collection, query, where, onSnapshot } from 'firebase/firestore';
+  import { app } from '$lib/firebase';
 
   headerTitle.set('Personajes');
 
@@ -15,6 +19,7 @@
 
   let campaign: Campaign | null = null;
   let characters: Character[] = [];
+  let combatants: Combatant[] = []; // 👈 NUEVO: Para trackear combatientes activos
   let loading = true;
   let error = '';
   
@@ -22,7 +27,6 @@
   let editingCharacter: Character | null = null;
   let isEdit = false;
 
-  // Form simplificado
   let form = {
     name: '',
     maxHp: 10,
@@ -30,31 +34,124 @@
     imageUrl: ''
   };
 
+  // Listeners
+  let charactersUnsubscribe: (() => void) | null = null;
+  let encounterUnsubscribe: (() => void) | null = null;
+  let combatantsUnsubscribe: (() => void) | null = null;
+  const db = getFirestore(app);
+
   $: myCharacter = characters.find(c => c.userId === $userStore?.uid);
   $: otherCharacters = characters.filter(c => c.userId !== $userStore?.uid);
   $: canCreateCharacter = !myCharacter;
 
+  // 👇 NUEVO: Función para obtener condiciones de un personaje en combate
+  function getCombatConditions(characterId: string): string[] | null {
+    const combatant = combatants.find(c => c.characterId === characterId);
+    if (!combatant) return null;
+    return Array.isArray(combatant.conditions) ? combatant.conditions : [];
+  }
+
   onMount(async () => {
     await loadCampaign();
-    await loadCharacters();
+    setupCharactersListener();
+    setupCombatListener(); // 👈 NUEVO
   });
+
+  onDestroy(() => {
+    if (charactersUnsubscribe) charactersUnsubscribe();
+    if (encounterUnsubscribe) encounterUnsubscribe();
+    if (combatantsUnsubscribe) combatantsUnsubscribe();
+  });
+
+  // 👇 NUEVO: Listener para detectar combate activo
+  function setupCombatListener() {
+    try {
+      const encountersRef = collection(db, 'encounters');
+      const encounterQuery = query(
+        encountersRef,
+        where('campaignId', '==', campaignId),
+        where('isActive', '==', true)
+      );
+
+      encounterUnsubscribe = onSnapshot(
+        encounterQuery,
+        (snapshot) => {
+          if (snapshot.empty) {
+            combatants = [];
+            if (combatantsUnsubscribe) {
+              combatantsUnsubscribe();
+              combatantsUnsubscribe = null;
+            }
+          } else {
+            const encounter = snapshot.docs[0];
+            setupCombatantsListener(encounter.id);
+          }
+        },
+        (err) => {
+          console.error('Error en listener de encuentro:', err);
+        }
+      );
+    } catch (err) {
+      console.error('Error setting up combat listener:', err);
+    }
+  }
+
+  function setupCombatantsListener(encounterId: string) {
+    const combatantsRef = collection(db, 'combatants');
+    const combatantsQuery = query(
+      combatantsRef,
+      where('encounterId', '==', encounterId)
+    );
+
+    combatantsUnsubscribe = onSnapshot(
+      combatantsQuery,
+      (snapshot) => {
+        combatants = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Combatant[];
+      },
+      (err) => {
+        console.error('Error en listener de combatientes:', err);
+      }
+    );
+  }
+
+  function setupCharactersListener() {
+    try {
+      loading = true;
+      const charactersRef = collection(db, 'characters');
+      const charactersQuery = query(
+        charactersRef,
+        where('campaignId', '==', campaignId)
+      );
+
+      charactersUnsubscribe = onSnapshot(
+        charactersQuery,
+        (snapshot) => {
+          characters = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as Character[];
+          loading = false;
+        },
+        (err) => {
+          console.error('Error en listener de personajes:', err);
+          error = err.message;
+          loading = false;
+        }
+      );
+    } catch (err: any) {
+      error = err.message;
+      loading = false;
+    }
+  }
 
   async function loadCampaign() {
     try {
       campaign = await api.getCampaign(campaignId);
     } catch (err: any) {
       error = err.message;
-    }
-  }
-
-  async function loadCharacters() {
-    try {
-      loading = true;
-      characters = await api.getCampaignCharacters(campaignId);
-    } catch (err: any) {
-      error = err.message;
-    } finally {
-      loading = false;
     }
   }
 
@@ -105,7 +202,6 @@
       }
       showFormModal = false;
       resetForm();
-      await loadCharacters();
     } catch (err: any) {
       error = err.message;
     }
@@ -116,7 +212,6 @@
     
     try {
       await api.deleteCharacter(character.id);
-      await loadCharacters();
     } catch (err: any) {
       error = err.message;
     }
@@ -130,7 +225,6 @@
 
 <div class="min-h-screen flex flex-col">
   <div class="flex flex-1">
-    <!-- Contenido principal -->
     <div class="flex-1 p-6">
       <div class="container mx-auto max-w-7xl">
         <!-- Header -->
@@ -138,9 +232,12 @@
           <h1 class="text-4xl lg:text-5xl font-bold text-secondary title-ornament mb-3 text-shadow">
             Personajes
           </h1>
-          <p class="text-base-content/70 font-body italic text-lg">
+          <p class="text-base-content/70 font-body italic text-lg mb-2">
             "Cada héroe tiene su historia..."
           </p>
+          <div class="badge bg-success/30 border-success/50 text-neutral badge-lg" title="Los cambios se sincronizan en tiempo real">
+            🔄 Sincronización en tiempo real activa
+          </div>
         </div>
 
         {#if error}
@@ -163,6 +260,7 @@
                 <CharacterCard 
                   character={myCharacter}
                   isOwner={true}
+                  activeCombatConditions={getCombatConditions(myCharacter.id)}
                   on:edit={(e) => openEditModal(e.detail)}
                   on:delete={(e) => handleDelete(e.detail)}
                 />
@@ -187,6 +285,7 @@
             </div>
             {/if}
           </div>
+
           <!-- Otros Personajes -->
           {#if otherCharacters.length > 0}
             <div class="divider text-neutral/50 my-8">⚔️</div>
@@ -201,6 +300,7 @@
                   <CharacterCard 
                     {character}
                     isOwner={false}
+                    activeCombatConditions={getCombatConditions(character.id)}
                   />
                 {/each}
               </div>              
@@ -211,6 +311,7 @@
     </div>
   </div>
 </div>
+
 <div class="justify-center items-center">
   <CharacterFormModal
     bind:isOpen={showFormModal}

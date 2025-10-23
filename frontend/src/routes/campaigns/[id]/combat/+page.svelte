@@ -9,6 +9,10 @@
   import HPModal from '$lib/components/HPModal.svelte';
   import ConditionModal from '$lib/components/ConditionModal.svelte';
   import { headerTitle } from '$lib/stores/uiStore';
+  
+  // ===== NUEVO: Importar Firestore =====
+  import { getFirestore, collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+  import { app } from '$lib/firebase';
 
   headerTitle.set('Combate');
 
@@ -30,7 +34,10 @@
   let showConditionModal = false;
   let selectedCombatant: Combatant | null = null;
 
-  let pollInterval: NodeJS.Timeout;
+  // ===== NUEVO: Variables para listeners =====
+  let encounterUnsubscribe: (() => void) | null = null;
+  let combatantsUnsubscribe: (() => void) | null = null;
+  const db = getFirestore(app);
 
   $: isDM = campaign && $userStore && campaign.dmId === $userStore.uid;
   $: currentTurnCombatant = encounter && combatants.length > 0 
@@ -40,19 +47,88 @@
   onMount(async () => {
     await loadCampaign();
     await loadCharacters();
-    await loadEncounter();
-    
-    // Poll cada 5 segundos
-    pollInterval = setInterval(() => {
-      if (encounter?.isActive) {
-        loadEncounter(true);
-      }
-    }, 5000);
+    await setupRealtimeListeners();
   });
 
   onDestroy(() => {
-    if (pollInterval) clearInterval(pollInterval);
+    // Limpiar listeners
+    if (encounterUnsubscribe) encounterUnsubscribe();
+    if (combatantsUnsubscribe) combatantsUnsubscribe();
   });
+
+  // ===== NUEVO: Setup de listeners en tiempo real =====
+  async function setupRealtimeListeners() {
+    try {
+      loading = true;
+
+      // Listener para el encuentro activo
+      const encountersRef = collection(db, 'encounters');
+      const encounterQuery = query(
+        encountersRef,
+        where('campaignId', '==', campaignId),
+        where('isActive', '==', true)
+      );
+
+      encounterUnsubscribe = onSnapshot(
+        encounterQuery,
+        (snapshot) => {
+          if (snapshot.empty) {
+            encounter = null;
+            combatants = [];
+            if (combatantsUnsubscribe) {
+              combatantsUnsubscribe();
+              combatantsUnsubscribe = null;
+            }
+          } else {
+            const doc = snapshot.docs[0];
+            encounter = { id: doc.id, ...doc.data() } as Encounter;
+            
+            // Setup listener para combatientes cuando hay encuentro activo
+            if (!combatantsUnsubscribe && encounter) {
+              setupCombatantsListener(encounter.id);
+            }
+          }
+          loading = false;
+        },
+        (err) => {
+          console.error('Error en listener de encuentro:', err);
+          error = err.message;
+          loading = false;
+        }
+      );
+    } catch (err: any) {
+      error = err.message;
+      loading = false;
+    }
+  }
+
+  function setupCombatantsListener(encounterId: string) {
+    const combatantsRef = collection(db, 'combatants');
+    const combatantsQuery = query(
+      combatantsRef,
+      where('encounterId', '==', encounterId),
+      orderBy('initiative', 'desc')
+    );
+
+    combatantsUnsubscribe = onSnapshot(
+      combatantsQuery,
+      (snapshot) => {
+        combatants = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Combatant[];
+
+        // Actualizar selectedCombatant si está en un modal
+        if (selectedCombatant) {
+          const updated = combatants.find(c => c.id === selectedCombatant!.id);
+          if (updated) selectedCombatant = updated;
+        }
+      },
+      (err) => {
+        console.error('Error en listener de combatientes:', err);
+      }
+    );
+  }
 
   async function loadCampaign() {
     try {
@@ -70,55 +146,23 @@
     }
   }
 
-  async function loadEncounter(silent = false) {
-    try {
-      if (!silent) loading = true;
-      encounter = await api.getActiveEncounter(campaignId);
-      if (encounter) {
-        await loadCombatants();
-      }
-    } catch (err: any) {
-      if (!silent) {
-        encounter = null;
-        combatants = [];
-      }
-    } finally {
-      if (!silent) loading = false;
-    }
-  }
-
-  async function loadCombatants() {
-    if (!encounter) return;
-    try {
-      combatants = await api.getCombatants(encounter.id);
-      // Actualizar selectedCombatant si está abierto un modal
-      if (selectedCombatant) {
-        const updated = combatants.find(c => c.id === selectedCombatant!.id);
-        if (updated) selectedCombatant = updated;
-      }
-    } catch (err) {
-      console.error('Error loading combatants:', err);
-    }
-  }
-
   async function createEncounter() {
     if (!encounterName.trim()) return;
     try {
       await api.createEncounter(campaignId, encounterName);
       showCreateEncounterModal = false;
       encounterName = '';
-      await loadEncounter();
+      // No necesitamos recargar, el listener lo hará automáticamente
     } catch (err: any) {
       error = err.message;
     }
   }
 
   async function endEncounter() {
-    if (!encounter || !confirm('¿Finalizar este encuentro?')) return;
+    if (!encounter || !confirm('¿Finalizar este encuentro? Los HP actuales se guardarán en los personajes.')) return;
     try {
       await api.endEncounter(encounter.id);
-      encounter = null;
-      combatants = [];
+      // No necesitamos resetear manualmente, el listener lo hará
     } catch (err: any) {
       error = err.message;
     }
@@ -129,7 +173,7 @@
     try {
       await api.addCombatant(encounter.id, event.detail);
       showAddCombatantModal = false;
-      await loadCombatants();
+      // El listener actualizará automáticamente
     } catch (err: any) {
       error = err.message;
     }
@@ -140,7 +184,7 @@
     if (!confirm(`¿Eliminar a ${combatant.name} del combate?`)) return;
     try {
       await api.removeCombatant(combatant.id);
-      await loadCombatants();
+      // El listener actualizará automáticamente
     } catch (err: any) {
       error = err.message;
     }
@@ -164,7 +208,7 @@
       const change = event.detail as number;
       const newHP = Math.max(0, Math.min(selectedCombatant.maxHp, selectedCombatant.currentHp + change));
       await api.updateCombatant(selectedCombatant.id, { currentHp: newHP });
-      await loadCombatants();
+      // El listener actualizará automáticamente
       showHPModal = false;
       selectedCombatant = null;
     } catch (err: any) {
@@ -172,73 +216,55 @@
     }
   }
 
-
-
-// Reemplaza estas funciones en campaigns/[id]/combat/+page.svelte
-
-async function handleAddCondition(event: CustomEvent) {
-  if (!selectedCombatant) return;
-  try {
-    const condition = event.detail as string;
-    
-    // 🔧 CORRECCIÓN: Asegurar que conditions es un array
-    const currentConditions = Array.isArray(selectedCombatant.conditions) 
-      ? selectedCombatant.conditions 
-      : [];
-    
-    // Verificar que no esté duplicada
-    if (currentConditions.includes(condition)) {
-      console.log('Condición ya existe, ignorando');
-      return;
+  async function handleAddCondition(event: CustomEvent) {
+    if (!selectedCombatant) return;
+    try {
+      const condition = event.detail as string;
+      const currentConditions = Array.isArray(selectedCombatant.conditions) 
+        ? selectedCombatant.conditions 
+        : [];
+      
+      if (currentConditions.includes(condition)) {
+        console.log('Condición ya existe, ignorando');
+        return;
+      }
+      
+      const conditions = [...currentConditions, condition];
+      await api.updateCombatant(selectedCombatant.id, { conditions });
+      // El listener actualizará automáticamente
+    } catch (err: any) {
+      error = err.message;
     }
-    
-    const conditions = [...currentConditions, condition];
-    console.log('Enviando condiciones al servidor:', conditions);
-    
-    await api.updateCombatant(selectedCombatant.id, { conditions });
-    await loadCombatants();
-    
-    console.log('Condición agregada exitosamente');
-  } catch (err: any) {
-    console.error('Error agregando condición:', err);
-    error = err.message;
   }
-}
 
-async function handleRemoveCondition(event: CustomEvent) {
-  if (!selectedCombatant) return;
-  try {
-    const condition = event.detail as string;
-    
-    // 🔧 CORRECCIÓN: Asegurar que conditions es un array
-    const currentConditions = Array.isArray(selectedCombatant.conditions) 
-      ? selectedCombatant.conditions 
-      : [];
-    
-    const conditions = currentConditions.filter(c => c !== condition);
-    console.log('Removiendo condición, nuevas condiciones:', conditions);
-    
-    await api.updateCombatant(selectedCombatant.id, { conditions });
-    await loadCombatants();
-    
-    console.log('Condición removida exitosamente');
-  } catch (err: any) {
-    console.error('Error removiendo condición:', err);
-    error = err.message;
+  async function handleRemoveCondition(event: CustomEvent) {
+    if (!selectedCombatant) return;
+    try {
+      const condition = event.detail as string;
+      const currentConditions = Array.isArray(selectedCombatant.conditions) 
+        ? selectedCombatant.conditions 
+        : [];
+      
+      const conditions = currentConditions.filter(c => c !== condition);
+      await api.updateCombatant(selectedCombatant.id, { conditions });
+      // El listener actualizará automáticamente
+    } catch (err: any) {
+      error = err.message;
+    }
   }
-}
 
   async function nextTurn() {
     if (!encounter) return;
     try {
-      encounter = await api.nextTurn(encounter.id);
-      await loadCombatants();
+      await api.nextTurn(encounter.id);
+      // El listener actualizará automáticamente
     } catch (err: any) {
       error = err.message;
     }
   }
 </script>
 
+<!-- El resto del template es igual... -->
 <div class="min-h-screen flex flex-col">
   {#if error}
     <div class="container mx-auto p-4">
@@ -250,14 +276,12 @@ async function handleRemoveCondition(event: CustomEvent) {
   {/if}
 
   <div class="flex flex-1">
-    <!-- Contenido principal -->
     <div class="flex-1">
       {#if loading}
         <div class="flex items-center justify-center h-full">
           <span class="loading loading-spinner loading-lg text-secondary"></span>
         </div>
       {:else if !encounter}
-        <!-- No hay encuentro activo -->
         <div class="flex items-center justify-center h-full p-4">
           <div class="card-parchment max-w-2xl w-full p-12 corner-ornament text-center">
             <div class="text-6xl mb-4">⚔️</div>
@@ -280,9 +304,7 @@ async function handleRemoveCondition(event: CustomEvent) {
           </div>
         </div>
       {:else}
-        <!-- Combate activo -->
         <div class="p-4 max-w-4xl mx-auto">
-          <!-- Header del combate -->
           <div class="card-parchment mb-6 corner-ornament">
             <div class="card-body p-6">
               <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
@@ -294,6 +316,10 @@ async function handleRemoveCondition(event: CustomEvent) {
                     </div>
                     <div class="badge bg-info/30 border-info/50 text-neutral badge-lg">
                       👥 {combatants.length} Combatientes
+                    </div>
+                    <!-- Indicador de sincronización en tiempo real -->
+                    <div class="badge bg-success/30 border-success/50 text-neutral badge-lg" title="Sincronización en tiempo real activa">
+                      🔄 LIVE
                     </div>
                   </div>
                 </div>
@@ -345,7 +371,6 @@ async function handleRemoveCondition(event: CustomEvent) {
               </p>
             </div>
           {:else}
-            <!-- Lista de combatientes -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {#each combatants as combatant, index}
                 <CombatantCard 
@@ -365,7 +390,6 @@ async function handleRemoveCondition(event: CustomEvent) {
   </div>
 </div>
 
-<!-- Modal Crear Encuentro -->
 {#if showCreateEncounterModal}
   <div class="modal modal-open z-50">
     <div class="modal-box card-parchment border-4 border-secondary">
@@ -405,7 +429,6 @@ async function handleRemoveCondition(event: CustomEvent) {
   </div>
 {/if}
 
-<!-- Modal de HP -->
 <HPModal 
   bind:isOpen={showHPModal}
   combatant={selectedCombatant}
@@ -413,7 +436,6 @@ async function handleRemoveCondition(event: CustomEvent) {
   on:close={() => { showHPModal = false; selectedCombatant = null; }}
 />
 
-<!-- Modal de Condiciones -->
 <ConditionModal 
   bind:isOpen={showConditionModal}
   combatant={selectedCombatant}
@@ -422,7 +444,6 @@ async function handleRemoveCondition(event: CustomEvent) {
   on:close={() => { showConditionModal = false; selectedCombatant = null; }}
 />
 
-<!-- Modal Agregar Combatiente -->
 <AddCombatantModal 
   bind:isOpen={showAddCombatantModal}
   players={characters}

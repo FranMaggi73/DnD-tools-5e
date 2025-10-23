@@ -57,11 +57,13 @@ service cloud.firestore {
     }
     
     // ===========================
-    // PERSONAJES
+    // PERSONAJES - Permisos para listeners en tiempo real
     // ===========================
     match /characters/{characterId} {
+      // Permitir lectura a todos los miembros de la campaña
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
+      // Actualización permitida para el dueño o el DM
       allow update: if isAuthenticated() && 
         (resource.data.userId == request.auth.uid || 
          isCampaignDM(resource.data.campaignId));
@@ -71,9 +73,10 @@ service cloud.firestore {
     }
     
     // ===========================
-    // ENCUENTROS
+    // ENCUENTROS - Permisos para listeners
     // ===========================
     match /encounters/{encounterId} {
+      // Lectura permitida para todos los autenticados (para listeners)
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
       allow update: if isAuthenticated() && 
@@ -83,9 +86,10 @@ service cloud.firestore {
     }
     
     // ===========================
-    // COMBATIENTES
+    // COMBATIENTES - Permisos para listeners
     // ===========================
     match /combatants/{combatantId} {
+      // Lectura permitida para todos los autenticados (para listeners)
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
       allow update: if isAuthenticated();

@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"sort"
 	"time"
@@ -161,7 +162,35 @@ func (h *Handler) EndEncounter(c *gin.Context) {
 		return
 	}
 
-	// Marcar como inactivo
+	combatantsIter := h.db.Collection("combatants").
+		Where("encounterId", "==", encounterID).
+		Documents(ctx)
+
+	for {
+		doc, err := combatantsIter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			continue
+		}
+
+		var combatant models.Combatant
+		if err := doc.DataTo(&combatant); err != nil {
+			continue
+		}
+
+		// Si es un personaje, sincronizar HP final
+		if combatant.Type == "character" && combatant.CharacterID != "" {
+			characterUpdates := []firestore.Update{
+				{Path: "currentHp", Value: combatant.CurrentHP},
+				{Path: "updatedAt", Value: time.Now()},
+			}
+			h.db.Collection("characters").Doc(combatant.CharacterID).Update(ctx, characterUpdates)
+		}
+	}
+
+	// Marcar encuentro como inactivo
 	if _, err := h.db.Collection("encounters").Doc(encounterID).Update(ctx, []firestore.Update{
 		{Path: "isActive", Value: false},
 		{Path: "updatedAt", Value: time.Now()},
@@ -170,7 +199,7 @@ func (h *Handler) EndEncounter(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Encuentro finalizado"})
+	c.JSON(http.StatusOK, gin.H{"message": "Encuentro finalizado y personajes sincronizados"})
 }
 
 // ===========================
@@ -227,7 +256,11 @@ func (h *Handler) AddCombatant(c *gin.Context) {
 	// Si es un personaje, obtener datos del personaje
 	var name string
 	var imageURL string
-	if req.Type == "character" && req.CharacterID != "" {
+	var characterID string // 👈 NUEVO: variable para guardar el characterId
+
+	// 👇 CORREGIDO: Acepta tanto "character" como "player" (retrocompatibilidad)
+	if (req.Type == "character" || req.Type == "player") && req.CharacterID != "" {
+		characterID = req.CharacterID // 👈 GUARDAR el characterId
 		charDoc, err := h.db.Collection("characters").Doc(req.CharacterID).Get(ctx)
 		if err == nil {
 			var char models.Character
@@ -256,7 +289,7 @@ func (h *Handler) AddCombatant(c *gin.Context) {
 		ID:          combatantRef.ID,
 		EncounterID: encounterID,
 		Type:        req.Type,
-		CharacterID: req.CharacterID,
+		CharacterID: characterID, // 👈 CORREGIDO: Ahora sí guarda el characterId
 		Name:        name,
 		Initiative:  req.Initiative,
 		MaxHP:       req.MaxHP,
@@ -319,7 +352,6 @@ func (h *Handler) GetCombatants(c *gin.Context) {
 	c.JSON(http.StatusOK, combatants)
 }
 
-// UpdateCombatant - Actualizar HP, condiciones, iniciativa de un combatiente
 func (h *Handler) UpdateCombatant(c *gin.Context) {
 	uid := c.GetString("uid")
 	if uid == "" {
@@ -344,7 +376,7 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 
 	var combatant models.Combatant
 	if err := combatantDoc.DataTo(&combatant); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando combatiente"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando combatante"})
 		return
 	}
 
@@ -373,28 +405,47 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 		return
 	}
 
-	// Preparar actualizaciones
-	updates := []firestore.Update{}
+	// Preparar actualizaciones para el combatiente
+	combatantUpdates := []firestore.Update{}
 
 	if req.CurrentHP != nil {
-		updates = append(updates, firestore.Update{Path: "currentHp", Value: *req.CurrentHP})
+		combatantUpdates = append(combatantUpdates, firestore.Update{Path: "currentHp", Value: *req.CurrentHP})
 	}
 
 	if req.Conditions != nil {
-		updates = append(updates, firestore.Update{Path: "conditions", Value: req.Conditions})
+		combatantUpdates = append(combatantUpdates, firestore.Update{Path: "conditions", Value: req.Conditions})
 	}
 
 	if req.Initiative != nil {
-		updates = append(updates, firestore.Update{Path: "initiative", Value: *req.Initiative})
+		combatantUpdates = append(combatantUpdates, firestore.Update{Path: "initiative", Value: *req.Initiative})
 	}
 
-	if len(updates) == 0 {
+	if len(combatantUpdates) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No hay datos para actualizar"})
 		return
 	}
 
-	// Actualizar
-	if _, err := h.db.Collection("combatants").Doc(combatantID).Update(ctx, updates); err != nil {
+	// Si el combatiente está vinculado a un personaje, también actualizar el personaje
+	if combatant.Type == "character" && combatant.CharacterID != "" {
+		characterUpdates := []firestore.Update{
+			{Path: "updatedAt", Value: time.Now()},
+		}
+
+		// Solo sincronizar HP (no iniciativa ni condiciones, porque son temporales del combate)
+		if req.CurrentHP != nil {
+			characterUpdates = append(characterUpdates, firestore.Update{Path: "currentHp", Value: *req.CurrentHP})
+		}
+
+		// Actualizar personaje
+		_, err := h.db.Collection("characters").Doc(combatant.CharacterID).Update(ctx, characterUpdates)
+		if err != nil {
+			log.Printf("Warning: Failed to sync character HP for %s: %v", combatant.CharacterID, err)
+			// No falla la operación completa, solo logueamos el warning
+		}
+	}
+
+	// Actualizar combatiente
+	if _, err := h.db.Collection("combatants").Doc(combatantID).Update(ctx, combatantUpdates); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error actualizando combatiente"})
 		return
 	}

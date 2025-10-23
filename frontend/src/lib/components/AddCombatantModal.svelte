@@ -22,8 +22,8 @@
     if (!selectedPlayer) return;
 
     dispatch('add', {
-      type: 'player',
-      id: selectedPlayer.id,
+      type: 'character',
+      characterId: selectedPlayer.id,
       name: selectedPlayer.name,
       maxHp: selectedPlayer.maxHp,
       armorClass: selectedPlayer.armorClass,
