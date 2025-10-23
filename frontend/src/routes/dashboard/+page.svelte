@@ -67,7 +67,7 @@
     }
   }
 </script>
-<div class="container mx-auto p-6 lg:p-8">
+<div class="container mx-auto justify-center items-center flex flex-col p-6 lg:p-8">
   <div class="mb-8 text-center">
     <h1 class="text-4xl lg:text-5xl font-bold text-secondary title-ornament mb-3 text-shadow">
       Mis Campañas
@@ -76,17 +76,6 @@
       "Las aventuras aguardan a quienes se atreven a explorar..."
     </p>
   </div>
-
-  <div class="flex justify-center mb-8">
-    <button 
-      on:click={() => showCreateModal = true}
-      class="btn btn-dnd btn-lg gap-2"
-    >
-      <span class="text-2xl">📜</span>
-      Crear Nueva Campaña
-    </button>
-  </div>
-
   {#if error}
     <div class="alert bg-error/20 border-2 border-error mb-6">
       <svg xmlns="http://www.w3.org/2000/svg" class="stroke-error shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
@@ -118,16 +107,13 @@
       </button>
     </div>
   {:else}
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div class="w-fit gap-6">
       {#each campaignsWithMembers as { campaign, members }}
         <div class="card-parchment card-hover corner-ornament">
           <div class="card-body">
             <h2 class="card-title text-2xl font-medieval text-neutral mb-4 text-center">
               {campaign.name}
             </h2>
-
-            <div class="divider my-1">⚔️</div>
-
             <div class="mb-4 bg-gradient-to-r from-primary/20 to-accent/20 p-3 rounded-lg border border-primary/30">
               <p class="text-xs font-medieval text-neutral/60 mb-2 tracking-wider">DUNGEON MASTER</p>
               <div class="flex items-center gap-3">
@@ -187,13 +173,17 @@
 </div>
 
 {#if showCreateModal}
-  <div class="modal modal-open z-50">
-    <div class="modal-box card-parchment border-4 border-secondary corner-ornament">
-      <h3 class="font-bold text-2xl font-medieval text-neutral mb-4 text-center">
+  <div class="modal modal-open z-50 fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div 
+      class="card-parchment border-4 border-secondary corner-ornament w-[420px] max-w-full relative p-6 flex flex-col transition-all duration-200 transform scale-100"
+    >
+      <!-- Header -->
+      <h3 class="font-bold text-2xl font-medieval text-neutral text-center mb-4">
         📜 Crear Nueva Campaña
       </h3>
-      
-      <div class="form-control w-full mt-6">
+
+      <!-- Input -->
+      <div class="form-control w-full flex-1">
         <label class="label">
           <span class="label-text font-medieval text-neutral text-lg">Nombre de la Campaña</span>
         </label>
@@ -201,22 +191,31 @@
           type="text" 
           bind:value={newCampaign.name}
           placeholder="Ej: La Mina Perdida de Phandelver"
-          class="input input-medieval w-full text-lg font-body" 
+          class="input input-medieval w-full text-lg font-body"
         />
         <label class="label">
           <span class="label-text-alt text-neutral/60 italic">Elige un nombre épico para tu aventura</span>
         </label>
       </div>
 
-      <div class="modal-action justify-center gap-4">
-        <button on:click={() => { showCreateModal = false; newCampaign = { name: '' }; }} class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval">
+      <!-- Botones -->
+      <div class="mt-6 flex justify-center gap-4">
+        <button 
+          on:click={() => { showCreateModal = false; newCampaign = { name: '' }; }} 
+          class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval w-32"
+        >
           Cancelar
         </button>
-        <button on:click={createCampaign} class="btn btn-dnd" disabled={!newCampaign.name || !newCampaign.name.trim()}>
+        <button 
+          on:click={createCampaign} 
+          class="btn btn-dnd w-32 disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={!newCampaign.name || !newCampaign.name.trim()}
+        >
           <span class="text-xl">✨</span>
-          Crear Campaña
+          Crear
         </button>
       </div>
     </div>
   </div>
 {/if}
+

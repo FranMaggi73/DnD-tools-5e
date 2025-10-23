@@ -70,7 +70,6 @@
     selectedMonster = await open5eApi.getMonster(monster.slug);
 
     name = selectedMonster.name;
-    initiative = Math.floor((selectedMonster.dexterity - 10) / 2);
     maxHp = selectedMonster.hit_points;
     armorClass = selectedMonster.armor_class;
     cr = selectedMonster.challenge_rating;
@@ -166,13 +165,16 @@
             </select>
           </div>
 
-          {#if selectedPlayer}
             <div class="form-control">
               <label class="label">
                 <span class="label-text font-medieval text-neutral">Iniciativa</span>
               </label>
               <input
                 type="number"
+                min="1"
+                max="100"
+                step="1"
+                required
                 bind:value={initiative}
                 class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
               />
@@ -181,9 +183,9 @@
             <div class="card bg-neutral/20 border border-primary/40 p-4 mt-2">
               <div class="flex items-center gap-4">
                 <div>
-                  <p class="font-medieval text-lg text-neutral">{selectedPlayer.name}</p>
+                  <p class="text-lg font-bold text-neutral">{selectedPlayer?.name || 'Elegir jugador'}</p>
                   <p class="text-sm text-neutral/70">
-                    HP: {selectedPlayer.maxHp} | AC: {selectedPlayer.armorClass}
+                    HP: {selectedPlayer?.maxHp || 0} | AC: {selectedPlayer?.armorClass || 0}
                   </p>
                 </div>
               </div>
@@ -199,12 +201,11 @@
               <button
                 on:click={handleAddPlayer}
                 class="btn btn-dnd"
-                disabled={!selectedPlayer}
+                disabled={!selectedPlayer || initiative < 1}
               >
                 <span class="text-xl">⚔️</span> Agregar al Combate
               </button>
             </div>
-          {/if}
         </div>
       {:else}
         <!-- === TAB MONSTRUO === -->
@@ -291,7 +292,7 @@
               <button
                 on:click={handleAddMonster}
                 class="btn btn-dnd"
-                disabled={!name || !maxHp || !armorClass}
+                disabled={!name || !maxHp || !armorClass || initiative < 1}
               >
                 <span class="text-xl">⚔️</span> Agregar al Combate
               </button>

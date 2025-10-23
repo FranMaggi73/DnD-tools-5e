@@ -1,253 +1,238 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { Combatant } from '$lib/types';
+  import debounce from 'lodash/debounce';
+  import { open5eApi } from '$lib/api/api';
+  import type { Combatant, Condition } from '$lib/types';
 
   export let isOpen: boolean = false;
   export let combatant: Combatant | null = null;
 
   const dispatch = createEventDispatcher();
 
-  let newCondition = '';
   let searchQuery = '';
+  let suggestions: Condition[] = [];
+  let loading = false;
 
-  // Condiciones de D&D 5e con descripciones
-  const conditions = [
-    { name: 'Cegado', icon: '👁️', description: 'No puede ver, falla automáticamente chequeos de vista', category: 'Sentidos' },
-    { name: 'Encantado', icon: '💫', description: 'No puede atacar al encantador', category: 'Mental' },
-    { name: 'Ensordecido', icon: '👂', description: 'No puede oír, falla chequeos de audición', category: 'Sentidos' },
-    { name: 'Asustado', icon: '😱', description: 'Desventaja en ataques y chequeos mientras ve la fuente', category: 'Mental' },
-    { name: 'Agarrado', icon: '🤝', description: 'Velocidad 0, no puede beneficiarse de bonos de velocidad', category: 'Movimiento' },
-    { name: 'Incapacitado', icon: '😵', description: 'No puede realizar acciones o reacciones', category: 'Grave' },
-    { name: 'Invisible', icon: '👻', description: 'Imposible de ver sin magia o sentidos especiales', category: 'Ventaja' },
-    { name: 'Paralizado', icon: '🥶', description: 'Incapacitado, no puede moverse ni hablar', category: 'Grave' },
-    { name: 'Petrificado', icon: '🗿', description: 'Transformado en piedra, incapacitado', category: 'Grave' },
-    { name: 'Envenenado', icon: '🤢', description: 'Desventaja en ataques y chequeos de habilidad', category: 'Debilitante' },
-    { name: 'Postrado', icon: '🤕', description: 'Solo puede arrastrarse, desventaja en ataques', category: 'Movimiento' },
-    { name: 'Restringido', icon: '⛓️', description: 'Velocidad 0, desventaja en DEX, ventaja a atacantes', category: 'Grave' },
-    { name: 'Aturdido', icon: '😵‍💫', description: 'Incapacitado, no puede moverse, solo balbucea', category: 'Grave' },
-    { name: 'Inconsciente', icon: '💤', description: 'Incapacitado, postrado, suelta lo que sostiene', category: 'Grave' },
-    { name: 'Exhausto', icon: '😮‍💨', description: 'Efectos acumulativos de cansancio (1-6)', category: 'Debilitante' },
-    { name: 'Concentración', icon: '🎯', description: 'Manteniendo un hechizo o efecto', category: 'Ventaja' },
-    { name: 'Bendicido', icon: '✨', description: 'Bono en ataques y salvaciones', category: 'Ventaja' },
-    { name: 'Maldito', icon: '😈', description: 'Penalización en ataques y salvaciones', category: 'Debilitante' },
-    { name: 'Enfermedad', icon: '🦠', description: 'Sufre los efectos de una enfermedad', category: 'Debilitante' },
-    { name: 'Sorprendido', icon: '😲', description: 'No puede moverse ni actuar en el primer turno', category: 'Temporal' },
-  ];
-
-  $: filteredConditions = searchQuery.trim() 
-    ? conditions.filter(c => 
-        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.category.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : conditions;
-
-  $: conditionsByCategory = filteredConditions.reduce((acc, condition) => {
-    if (!acc[condition.category]) {
-      acc[condition.category] = [];
+  // Buscar condiciones en Open5e usando la API centralizada
+  const searchConditions = debounce(async () => {
+    if (!searchQuery.trim()) {
+      suggestions = [];
+      return;
     }
-    acc[condition.category].push(condition);
-    return acc;
-  }, {} as Record<string, Array<typeof conditions[0]>>);
+    
+    loading = true;
+    try {
+      const result = await open5eApi.searchConditions(searchQuery);
+      suggestions = result.results;
+    } catch (err) {
+      console.error('Error searching conditions:', err);
+      suggestions = [];
+    } finally {
+      loading = false;
+    }
+  }, 300);
 
   function addCondition(conditionName: string) {
-    if (combatant && conditionName.trim() && !combatant.conditions.includes(conditionName)) {
-      dispatch('add', conditionName);
+    if (!combatant || !conditionName.trim()) return;
+    
+    const currentConditions = Array.isArray(combatant.conditions) ? combatant.conditions : [];
+    if (currentConditions.includes(conditionName)) {
+      console.log('Condición ya existe:', conditionName);
+      return;
     }
+
+    console.log('Agregando condición:', conditionName);
+    dispatch('add', conditionName);
+    searchQuery = '';
+    suggestions = [];
   }
 
   function removeCondition(conditionName: string) {
-    if (combatant) {
-      dispatch('remove', conditionName);
-    }
-  }
-
-  function addCustomCondition() {
-    if (newCondition.trim()) {
-      addCondition(newCondition.trim());
-      newCondition = '';
-    }
+    if (!combatant) return;
+    console.log('Removiendo condición:', conditionName);
+    dispatch('remove', conditionName);
   }
 
   function handleClose() {
-    newCondition = '';
     searchQuery = '';
+    suggestions = [];
     dispatch('close');
   }
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       handleClose();
-    } else if (e.key === 'Enter' && newCondition.trim()) {
-      addCustomCondition();
     }
   }
-
-  const categoryColors: Record<string, string> = {
-    'Sentidos': 'info',
-    'Mental': 'secondary',
-    'Movimiento': 'warning',
-    'Grave': 'error',
-    'Ventaja': 'success',
-    'Debilitante': 'warning',
-    'Temporal': 'accent',
-  };
 </script>
 
 {#if isOpen && combatant}
   <div class="modal modal-open z-50" on:keydown={handleKeydown}>
-    <div class="card-parchment border-4 border-secondary max-w-4xl max-h-[90vh] w-full mx-4 overflow-hidden flex flex-col">
+    <div class="card-parchment border-4 border-secondary w-1/2 h-5/6 mx-4 relative flex flex-col">
+      <!-- Botón cerrar -->
       <button 
-        class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" 
+        class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3 z-10 hover:bg-error/20" 
         on:click={handleClose}
       >
         ✕
       </button>
 
-      <h3 class="font-bold text-3xl font-medieval text-neutral mb-4 text-center">
-        ⚠️ Gestión de Estados
-      </h3>
+      <!-- Header compacto y fijo -->
+      <div class="p-4 flex-shrink-0 bg-gradient-to-b from-[#f4e4c1] to-transparent">
+        <h3 class="font-bold text-2xl font-medieval text-neutral text-center mb-3">
+          ⚠️ Estados de Combate
+        </h3>
 
-      <!-- Info del Combatiente -->
-      <div class="bg-gradient-to-r from-primary/20 to-accent/20 p-4 rounded-lg border-2 border-primary/30 mb-4">
-        <div class="flex items-center gap-3">
+        <!-- Info del Combatiente - Más compacta -->
+        <div class="bg-gradient-to-r from-primary/10 to-accent/10 p-3 rounded-lg border border-primary/30 flex items-center gap-3">
           <div class="avatar">
-            <div class="w-14 h-14 rounded-full ring-2 ring-secondary ring-offset-2 ring-offset-[#f4e4c1]">
+            <div class="w-12 h-12 rounded-full ring-2 ring-secondary">
               <div class="bg-primary/20 flex items-center justify-center">
-                <span class="text-2xl">{combatant.isNpc ? '👹' : '🧙‍♂️'}</span>
+                <span class="text-xl">{combatant.isNpc ? '👹' : '🧙‍♂️'}</span>
               </div>
             </div>
           </div>
-          <div class="flex-1">
-            <h4 class="text-xl font-medieval text-neutral font-bold">{combatant.name}</h4>
+          <div class="flex-1 min-w-0">
+            <h4 class="text-lg font-medieval text-neutral font-bold truncate">{combatant.name}</h4>
             <div class="flex gap-2 mt-1">
-              <div class="badge badge-sm bg-error/30 text-neutral border-error/50">
+              <div class="badge badge-xs bg-error/30 text-neutral border-error/50">
                 ❤️ {combatant.currentHp}/{combatant.maxHp}
               </div>
-              <div class="badge badge-sm bg-info/30 text-neutral border-info/50">
-                🛡️ AC {combatant.armorClass}
+              <div class="badge badge-xs bg-info/30 text-neutral border-info/50">
+                🛡️ {combatant.armorClass}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Condiciones Activas -->
-      {#if combatant.conditions && combatant.conditions.length > 0}
-        <div class="bg-warning/10 p-4 rounded-lg border-2 border-warning/30 mb-4">
-          <p class="text-sm font-medieval text-neutral/70 mb-2 flex items-center gap-2">
-            <span class="text-lg">⚠️</span>
-            Estados Activos ({combatant.conditions.length})
-          </p>
-          <div class="flex flex-wrap gap-2">
-            {#each combatant.conditions as condition}
-              {@const conditionData = conditions.find(c => c.name === condition)}
-              <div class="badge badge-warning badge-lg gap-2 p-3">
-                {#if conditionData}
-                  <span>{conditionData.icon}</span>
-                {/if}
-                <span class="font-medieval">{condition}</span>
-                <button 
-                  class="btn btn-xs btn-circle btn-ghost hover:bg-error hover:text-white"
-                  on:click={() => removeCondition(condition)}
-                  title="Eliminar estado"
-                >
-                  ✕
-                </button>
+      <!-- Layout de 2 columnas - Altura fija -->
+      <div class="flex-1 overflow-hidden flex flex-col md:flex-row gap-3 p-4" style="min-height: 0;">
+        <!-- Columna izquierda: Estados Activos (30%) - Altura fija -->
+        <div class="md:w-1/3 flex flex-col" style="min-height: 300px;">
+          <div class="bg-warning/10 rounded-lg border-2 border-warning/30 p-3 flex flex-col h-full">
+            <div class="flex items-center justify-between mb-3">
+              <h5 class="font-medieval text-neutral font-bold flex items-center gap-2">
+                <span>⚠️</span>
+                <span>Estados Activos</span>
+              </h5>
+              <span class="badge badge-warning badge-sm">
+                {combatant.conditions && Array.isArray(combatant.conditions) ? combatant.conditions.length : 0}
+              </span>
+            </div>
+
+            {#if combatant.conditions && Array.isArray(combatant.conditions) && combatant.conditions.length > 0}
+              <div class="flex-1 overflow-y-auto custom-scrollbar pr-1 space-y-2">
+                {#each combatant.conditions as condition}
+                  <div class="bg-warning/20 rounded px-3 py-2 border border-warning/40 flex items-center justify-between gap-2 hover:bg-warning/30 transition-colors">
+                    <span class="font-medieval text-sm text-neutral flex-1">{condition}</span>
+                    <button 
+                      class="btn btn-xs btn-circle btn-ghost hover:bg-error hover:text-white"
+                      on:click={() => removeCondition(condition)}
+                      title="Eliminar"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                {/each}
               </div>
-            {/each}
+            {:else}
+              <div class="flex-1 flex flex-col items-center justify-center text-center py-6">
+                <div class="text-3xl mb-2 opacity-50">😌</div>
+                <p class="text-xs text-neutral/60 font-body italic">
+                  Sin estados activos
+                </p>
+              </div>
+            {/if}
           </div>
         </div>
-        <div class="divider text-neutral/50">⚔️</div>
-      {/if}
 
-      <!-- Búsqueda y Condición Personalizada -->
-      <div class="mb-4 space-y-2">
-        <div class="form-control">
-          <label class="label">
-            <span class="label-text font-medieval text-neutral">🔍 Buscar Estado</span>
-          </label>
-          <input 
-            type="text" 
-            bind:value={searchQuery}
-            placeholder="Buscar por nombre, descripción o categoría..."
-            class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
-          />
-        </div>
-      </div>
-
-      <!-- Lista de Condiciones por Categoría -->
-      <div class="flex-1 overflow-y-auto pr-2 space-y-3">
-        {#if Object.keys(conditionsByCategory).length === 0}
-          <div class="text-center py-8">
-            <p class="text-neutral/70 font-body">No se encontraron estados con "{searchQuery}"</p>
+        <!-- Columna derecha: Búsqueda y Resultados (70%) - Altura fija -->
+        <div class="md:w-2/3 flex flex-col" style="min-height: 300px;">
+          <!-- Búsqueda -->
+          <div class="mb-3">
+            <div class="relative">
+              <input 
+                type="text" 
+                bind:value={searchQuery}
+                on:input={searchConditions}
+                placeholder="Buscar condición (ej: blinded, poisoned, stunned)..."
+                class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full pr-10"
+              />
+              <div class="absolute right-3 top-1/2 -translate-y-1/2 text-neutral/50">
+                🔍
+              </div>
+            </div>
+            <p class="text-xs text-neutral/50 mt-1 italic">
+              Base de datos oficial de D&D 5e
+            </p>
           </div>
-        {:else}
-          {#each Object.entries(conditionsByCategory) as [category, categoryConditions]}
-            <div class="bg-neutral/10 rounded-lg p-3 border border-primary/20">
-              <h4 class="font-medieval text-neutral font-bold mb-2 flex items-center gap-2">
-                <span class="badge badge-{categoryColors[category] || 'neutral'} badge-sm">{category}</span>
-              </h4>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {#each categoryConditions as condition}
-                  {@const isActive = combatant.conditions && combatant.conditions.includes(condition.name)}
+
+          <!-- Resultados con scroll -->
+          <div class="flex-1 overflow-y-auto custom-scrollbar bg-neutral/5 rounded-lg border border-primary/20 p-3">
+            {#if loading}
+              <div class="flex flex-col items-center justify-center h-full">
+                <span class="loading loading-spinner loading-md text-secondary"></span>
+                <p class="text-xs text-neutral/60 mt-2">Buscando...</p>
+              </div>
+            {:else if suggestions.length > 0}
+              <div class="space-y-2">
+                {#each suggestions as suggestion}
+                  {@const currentConditions = Array.isArray(combatant.conditions) ? combatant.conditions : []}
+                  {@const isActive = currentConditions.includes(suggestion.name)}
                   <button
-                    on:click={() => isActive ? removeCondition(condition.name) : addCondition(condition.name)}
-                    class="btn btn-sm justify-start h-auto py-3 {isActive ? 'btn-warning' : 'btn-ghost border-primary/30'} hover:bg-primary/20"
+                    on:click={() => addCondition(suggestion.name)}
                     disabled={isActive}
+                    class="w-full text-left p-3 rounded-lg border-2 transition-all {isActive 
+                      ? 'border-success/50 bg-success/10 cursor-not-allowed opacity-60' 
+                      : 'border-primary/30 bg-[#f4e4c1]/50 hover:bg-[#f4e4c1] hover:border-primary/50 hover:shadow-md'
+                    }"
                   >
-                    <div class="text-left w-full">
-                      <div class="flex items-center gap-2 mb-1">
-                        <span class="text-lg">{condition.icon}</span>
-                        <span class="font-medieval font-bold">{condition.name}</span>
-                        {#if isActive}
-                          <span class="badge badge-xs badge-success">Activo</span>
-                        {/if}
-                      </div>
-                      <p class="text-xs text-neutral/60 font-body leading-tight">{condition.description}</p>
+                    <div class="flex items-start justify-between gap-2 mb-1">
+                      <span class="font-medieval font-bold text-neutral">
+                        {suggestion.name}
+                      </span>
+                      {#if isActive}
+                        <span class="badge badge-xs badge-success shrink-0">✓ Activo</span>
+                      {/if}
                     </div>
+                    <p class="text-xs text-neutral/70 font-body leading-snug">
+                      {open5eApi.cleanDescription(suggestion.desc, 120)}
+                    </p>
                   </button>
                 {/each}
               </div>
-            </div>
-          {/each}
-        {/if}
+            {:else if searchQuery.trim()}
+              <div class="flex flex-col items-center justify-center h-full text-center">
+                <div class="text-4xl mb-3">🔍</div>
+                <p class="text-neutral/70 font-body mb-3">
+                  No se encontró "<span class="font-bold">{searchQuery}</span>"
+                </p>
+                <button 
+                  on:click={() => addCondition(searchQuery.trim())}
+                  class="btn btn-primary btn-sm"
+                >
+                  ➕ Agregar como personalizado
+                </button>
+              </div>
+            {:else}
+              <div class="flex flex-col items-center justify-center h-full text-center px-4">
+                <div class="text-5xl mb-3">📖</div>
+                <p class="text-neutral/70 font-body mb-2">
+                  Escribe para buscar condiciones
+                </p>
+                <div class="flex flex-wrap gap-1 justify-center text-xs text-neutral/50 mt-2">
+                  <span class="bg-neutral/10 px-2 py-1 rounded">blinded</span>
+                  <span class="bg-neutral/10 px-2 py-1 rounded">charmed</span>
+                  <span class="bg-neutral/10 px-2 py-1 rounded">frightened</span>
+                  <span class="bg-neutral/10 px-2 py-1 rounded">grappled</span>
+                  <span class="bg-neutral/10 px-2 py-1 rounded">paralyzed</span>
+                </div>
+              </div>
+            {/if}
+          </div>
+        </div>
       </div>
-
-      <!-- Footer -->
-      <div class="modal-action justify-center pt-4 border-t-2 border-primary/30 mt-4">
-        <button 
-          on:click={handleClose}
-          class="btn btn-dnd btn-lg"
-        >
-          <span class="text-xl">✓</span>
-          Listo
-        </button>
-      </div>
-
-      <p class="text-xs text-center text-neutral/50 mt-2 italic">
-        Presiona Enter para agregar personalizado • Escape para cerrar
-      </p>
     </div>
   </div>
 {/if}
-
-<style>
-  .overflow-y-auto::-webkit-scrollbar {
-    width: 8px;
-  }
-
-  .overflow-y-auto::-webkit-scrollbar-track {
-    background: rgba(139, 69, 19, 0.1);
-    border-radius: 4px;
-  }
-
-  .overflow-y-auto::-webkit-scrollbar-thumb {
-    background: linear-gradient(to bottom, #8B4513, #654321);
-    border-radius: 4px;
-  }
-
-  .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(to bottom, #A0522D, #8B4513);
-  }
-</style>

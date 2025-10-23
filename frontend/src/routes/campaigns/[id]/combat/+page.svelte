@@ -172,29 +172,61 @@
     }
   }
 
-  async function handleAddCondition(event: CustomEvent) {
-    if (!selectedCombatant) return;
-    try {
-      const condition = event.detail as string;
-      const conditions = [...selectedCombatant.conditions, condition];
-      await api.updateCombatant(selectedCombatant.id, { conditions });
-      await loadCombatants();
-    } catch (err: any) {
-      error = err.message;
-    }
-  }
 
-  async function handleRemoveCondition(event: CustomEvent) {
-    if (!selectedCombatant) return;
-    try {
-      const condition = event.detail as string;
-      const conditions = selectedCombatant.conditions.filter(c => c !== condition);
-      await api.updateCombatant(selectedCombatant.id, { conditions });
-      await loadCombatants();
-    } catch (err: any) {
-      error = err.message;
+
+// Reemplaza estas funciones en campaigns/[id]/combat/+page.svelte
+
+async function handleAddCondition(event: CustomEvent) {
+  if (!selectedCombatant) return;
+  try {
+    const condition = event.detail as string;
+    
+    // 🔧 CORRECCIÓN: Asegurar que conditions es un array
+    const currentConditions = Array.isArray(selectedCombatant.conditions) 
+      ? selectedCombatant.conditions 
+      : [];
+    
+    // Verificar que no esté duplicada
+    if (currentConditions.includes(condition)) {
+      console.log('Condición ya existe, ignorando');
+      return;
     }
+    
+    const conditions = [...currentConditions, condition];
+    console.log('Enviando condiciones al servidor:', conditions);
+    
+    await api.updateCombatant(selectedCombatant.id, { conditions });
+    await loadCombatants();
+    
+    console.log('Condición agregada exitosamente');
+  } catch (err: any) {
+    console.error('Error agregando condición:', err);
+    error = err.message;
   }
+}
+
+async function handleRemoveCondition(event: CustomEvent) {
+  if (!selectedCombatant) return;
+  try {
+    const condition = event.detail as string;
+    
+    // 🔧 CORRECCIÓN: Asegurar que conditions es un array
+    const currentConditions = Array.isArray(selectedCombatant.conditions) 
+      ? selectedCombatant.conditions 
+      : [];
+    
+    const conditions = currentConditions.filter(c => c !== condition);
+    console.log('Removiendo condición, nuevas condiciones:', conditions);
+    
+    await api.updateCombatant(selectedCombatant.id, { conditions });
+    await loadCombatants();
+    
+    console.log('Condición removida exitosamente');
+  } catch (err: any) {
+    console.error('Error removiendo condición:', err);
+    error = err.message;
+  }
+}
 
   async function nextTurn() {
     if (!encounter) return;

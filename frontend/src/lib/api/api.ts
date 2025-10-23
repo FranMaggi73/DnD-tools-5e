@@ -8,7 +8,10 @@ import type {
   Encounter,
   Combatant,
   Monster,
-  MonsterSearchResult
+  MonsterSearchResult,
+  ConditionSearchResult,
+  Condition,
+  
 } from '$lib/types';
 
 const API_BASE_URL = 'http://localhost:8080/api';
@@ -182,11 +185,6 @@ export const api = {
     }),
 };
 
-
-function getInitiativeModifier(dex: number): number {
-  return Math.floor((dex - 10) / 2);
-}
-
 // API de Open5e
 export const open5eApi = {
   searchMonsters: async (query: string): Promise<MonsterSearchResult> => {
@@ -213,5 +211,31 @@ export const open5eApi = {
     armorClass: monster.armor_class,
     isNpc: true,
     creatureSource: 'open5e'
-  })
+  }),
+  searchConditions: async (query: string): Promise<ConditionSearchResult> => {
+    const response = await fetch(
+      `https://api.open5e.com/v1/conditions/?search=${encodeURIComponent(query)}&limit=5`
+    );
+    if (!response.ok) throw new Error('Error buscando condiciones');
+    return response.json();
+  },
+
+  // Obtener condición específica
+  getCondition: async (slug: string): Promise<Condition> => {
+    const response = await fetch(`https://api.open5e.com/v1/conditions/${slug}/`);
+    if (!response.ok) throw new Error('Error obteniendo condición');
+    return response.json();
+  },
+
+  // Limpiar HTML de descripciones
+  cleanDescription: (html: string, maxLength: number = 150): string => {
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    let text = temp.textContent || temp.innerText || '';
+    if (text.length > maxLength) {
+      text = text.substring(0, maxLength) + '...';
+    }
+    return text;
+  }
+
 };

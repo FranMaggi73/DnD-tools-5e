@@ -131,3 +131,16 @@ export interface MonsterSearchResult {
   previous: string | null;
   results: Monster[];
 }
+
+export interface Condition {
+  slug: string;
+  name: string;
+  desc: string;
+}
+
+export interface ConditionSearchResult {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: Condition[];
+}
