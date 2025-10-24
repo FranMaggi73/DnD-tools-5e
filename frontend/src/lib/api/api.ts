@@ -11,10 +11,10 @@ import type {
   MonsterSearchResult,
   ConditionSearchResult,
   Condition,
-  
 } from '$lib/types';
 
-const API_BASE_URL = 'http://localhost:8080/api';
+// ✅ Usar variable de entorno para la URL del API
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
 async function fetchWithAuth<T>(url: string, options: RequestInit = {}): Promise<T> {
   const token = get(tokenStore);
@@ -78,9 +78,7 @@ export const api = {
       body: JSON.stringify({ action }),
     }),
 
-  // ===========================
-  // PERSONAJES
-  // ===========================
+  // Personajes
   createCharacter: (campaignId: string, data: {
     name: string;
     class: string;
@@ -117,9 +115,7 @@ export const api = {
       method: 'DELETE',
     }),
 
-  // ===========================
-  // ENCUENTROS
-  // ===========================
+  // Encuentros
   createEncounter: (campaignId: string, name: string) =>
     fetchWithAuth<Encounter>(`/campaigns/${campaignId}/encounters`, {
       method: 'POST',
@@ -139,9 +135,7 @@ export const api = {
       method: 'POST',
     }),
 
-  // ===========================
-  // COMBATIENTES
-  // ===========================
+  // Combatientes
   addCombatant: (encounterId: string, data: {
     type: 'character' | 'creature';
     characterId?: string;
@@ -176,9 +170,7 @@ export const api = {
       method: 'DELETE',
     }),
 
-  // ===========================
-  // TURNOS
-  // ===========================
+  // Turnos
   nextTurn: (encounterId: string) =>
     fetchWithAuth<Encounter>(`/encounters/${encounterId}/next-turn`, {
       method: 'POST',
@@ -201,7 +193,6 @@ export const open5eApi = {
     return response.json();
   },
 
-  // Convertir Monster a formato Combatant
   monsterToCombatant: (monster: Monster, initiative: number) => ({
     type: 'creature' as const,
     name: monster.name,
@@ -212,6 +203,7 @@ export const open5eApi = {
     isNpc: true,
     creatureSource: 'open5e'
   }),
+
   searchConditions: async (query: string): Promise<ConditionSearchResult> => {
     const response = await fetch(
       `https://api.open5e.com/v1/conditions/?search=${encodeURIComponent(query)}&limit=5`
@@ -220,14 +212,12 @@ export const open5eApi = {
     return response.json();
   },
 
-  // Obtener condición específica
   getCondition: async (slug: string): Promise<Condition> => {
     const response = await fetch(`https://api.open5e.com/v1/conditions/${slug}/`);
     if (!response.ok) throw new Error('Error obteniendo condición');
     return response.json();
   },
 
-  // Limpiar HTML de descripciones
   cleanDescription: (html: string, maxLength: number = 150): string => {
     const temp = document.createElement('div');
     temp.innerHTML = html;
@@ -237,5 +227,4 @@ export const open5eApi = {
     }
     return text;
   }
-
 };

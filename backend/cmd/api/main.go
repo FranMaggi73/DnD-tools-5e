@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"time"
 
 	firebase "firebase.google.com/go/v4"
 	"github.com/gin-contrib/cors"
@@ -40,20 +41,28 @@ func main() {
 	// Router Gin
 	r := gin.Default()
 
-	// CORS
-	config := cors.DefaultConfig()
-	config.AllowHeaders = []string{"Authorization", "Content-Type"}
+	// CORS actualizado para producción
+	config := cors.Config{
+		AllowOrigins:     []string{"http://localhost:5173"}, // temporal, lo cambiaremos según env
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Authorization", "Content-Type", "Accept"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true, // si usás cookies o autenticación que requiera credenciales. Si no, podés poner false.
+		MaxAge:           12 * time.Hour,
+	}
 
-	if gin.Mode() == gin.DebugMode {
-		config.AllowOrigins = []string{"http://localhost:5173"}
-		config.AllowOriginFunc = func(origin string) bool {
-			if origin != "" && !startsWithHTTP(origin) {
-				return true
-			}
-			return false
+	env := os.Getenv("ENV")
+	if env == "production" {
+		// PRODUCCIÓN: Solo tu dominio de Firebase Hosting
+		config.AllowOrigins = []string{
+			"https://dnd5etools-73.web.app",
+			"https://dnd5etools-73.firebaseapp.com",
 		}
+		log.Println("🌐 CORS configurado para PRODUCCIÓN")
 	} else {
-		config.AllowOrigins = []string{"https://tudominio.com"}
+		// DESARROLLO: localhost
+		config.AllowOrigins = []string{"http://localhost:5173"}
+		log.Println("🛠️  CORS configurado para DESARROLLO")
 	}
 
 	r.Use(cors.New(config))
@@ -65,7 +74,7 @@ func main() {
 	public := r.Group("/api")
 	{
 		public.GET("/health", func(c *gin.Context) {
-			c.JSON(200, gin.H{"status": "ok"})
+			c.JSON(200, gin.H{"status": "ok", "env": env})
 		})
 	}
 
@@ -91,33 +100,25 @@ func main() {
 		protected.GET("/invitations", h.GetMyInvitations)
 		protected.POST("/invitations/:id/respond", h.RespondToInvitation)
 
-		// ===========================
-		// PERSONAJES
-		// ===========================
+		// Personajes
 		protected.POST("/campaigns/:id/characters", h.CreateCharacter)
 		protected.GET("/campaigns/:id/characters", h.GetCampaignCharacters)
 		protected.PUT("/characters/:charId", h.UpdateCharacter)
 		protected.DELETE("/characters/:charId", h.DeleteCharacter)
 
-		// ===========================
-		// ENCUENTROS DE COMBATE
-		// ===========================
+		// Encuentros
 		protected.POST("/campaigns/:id/encounters", h.CreateEncounter)
 		protected.GET("/campaigns/:id/encounters/active", h.GetActiveEncounter)
 		protected.DELETE("/encounters/:encounterId", h.EndEncounter)
 		protected.POST("/encounters/:encounterId/reset", h.ResetEncounter)
 
-		// ===========================
-		// COMBATIENTES
-		// ===========================
+		// Combatientes
 		protected.POST("/encounters/:encounterId/combatants", h.AddCombatant)
 		protected.GET("/encounters/:encounterId/combatants", h.GetCombatants)
 		protected.PUT("/combatants/:combatantId", h.UpdateCombatant)
 		protected.DELETE("/combatants/:combatantId", h.RemoveCombatant)
 
-		// ===========================
-		// GESTIÓN DE TURNOS
-		// ===========================
+		// Turnos
 		protected.POST("/encounters/:encounterId/next-turn", h.NextTurn)
 	}
 

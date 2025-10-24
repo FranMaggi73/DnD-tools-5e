@@ -1,0 +1,28 @@
+# .gcloudignore
+# Similar a .dockerignore pero para gcloud
+
+.gcloudignore
+.git
+.gitignore
+
+# Frontend (no necesario para backend)
+frontend/node_modules/
+frontend/build/
+frontend/.svelte-kit/
+
+# Documentación
+*.md
+README.md
+
+# Firebase
+.firebase/
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.*
+
+# OS
+.DS_Store

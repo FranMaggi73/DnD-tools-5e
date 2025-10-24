@@ -1,0 +1,36 @@
+# .dockerignore
+# Archivos y carpetas que NO deben incluirse en la imagen Docker
+
+# Frontend
+frontend/
+*.md
+.git/
+.gitignore
+
+# Firebase
+.firebase/
+.firebaserc
+firebase.json
+firestore.rules
+firestore.indexes.json
+
+# Backend build artifacts
+backend/cmd/api/server
+*.exe
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

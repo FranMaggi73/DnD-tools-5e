@@ -11,6 +11,13 @@ import (
 
 func AuthMiddleware(authClient *auth.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// <-- IMPORTANTE: permitir preflight OPTIONS sin auth -->
+		if c.Request.Method == http.MethodOptions {
+			// Responder OK para preflight y evitar que el middleware de auth bloquee la petición
+			c.AbortWithStatus(http.StatusOK)
+			return
+		}
+
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token de autorización requerido"})
