@@ -51,14 +51,15 @@ func (h *Handler) CreateEncounter(c *gin.Context) {
 		return
 	}
 
-	// ===== OPTIMIZACIÓN: Usar batch para desactivar encuentros anteriores =====
+	// ===== OPTIMIZACIÓN: Desactivar encuentros anteriores con batch =====
 	batch := h.db.Batch()
+	deactivatedCount := 0
+
 	activeEncounters := h.db.Collection("encounters").
 		Where("campaignId", "==", campaignID).
 		Where("isActive", "==", true).
 		Documents(ctx)
 
-	deactivatedCount := 0
 	for {
 		doc, err := activeEncounters.Next()
 		if err == iterator.Done {
@@ -92,6 +93,9 @@ func (h *Handler) CreateEncounter(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creando encuentro"})
 		return
 	}
+
+	// Invalidar caché
+	h.cache.InvalidateEncounter(encounter.ID)
 
 	log.Printf("✅ Encuentro creado: %s (desactivados: %d)", encounter.ID, deactivatedCount)
 	c.JSON(http.StatusCreated, encounter)
@@ -127,7 +131,7 @@ func (h *Handler) GetActiveEncounter(c *gin.Context) {
 }
 
 // ===========================
-// ELIMINACIÓN OPTIMIZADA CON CASCADA
+// ✅ ARREGLADO: EndEncounter - ELIMINACIÓN COMPLETA
 // ===========================
 
 func (h *Handler) EndEncounter(c *gin.Context) {
@@ -168,9 +172,9 @@ func (h *Handler) EndEncounter(c *gin.Context) {
 		return
 	}
 
-	log.Printf("🏁 Finalizando encuentro: %s", encounterID)
+	log.Printf("🏁 Finalizando encuentro: %s (ELIMINACIÓN COMPLETA)", encounterID)
 
-	// ===== SINCRONIZACIÓN Y LIMPIEZA OPTIMIZADA CON BATCH =====
+	// ===== SINCRONIZACIÓN Y ELIMINACIÓN OPTIMIZADA CON BATCH =====
 	batch := h.db.Batch()
 	syncedChars := 0
 	deletedCombatants := 0
@@ -193,7 +197,7 @@ func (h *Handler) EndEncounter(c *gin.Context) {
 			continue
 		}
 
-		// Sincronizar personajes
+		// Sincronizar personajes (guardar HP y condiciones)
 		if combatant.CharacterID != "" && (combatant.Type == "character" || combatant.Type == "player") {
 			characterRef := h.db.Collection("characters").Doc(combatant.CharacterID)
 			batch.Update(characterRef, []firestore.Update{
@@ -204,28 +208,36 @@ func (h *Handler) EndEncounter(c *gin.Context) {
 			syncedChars++
 		}
 
-		// Eliminar combatiente
+		// ✅ ELIMINAR combatiente (en lugar de solo marcar como inactivo)
 		batch.Delete(doc.Ref)
 		deletedCombatants++
+
+		// Firestore batch limit es 500 operaciones
+		if (syncedChars + deletedCombatants) >= 400 {
+			if _, err := batch.Commit(ctx); err != nil {
+				log.Printf("❌ Error en batch commit: %v", err)
+			}
+			batch = h.db.Batch()
+		}
 	}
 
-	// Marcar encuentro como inactivo (en lugar de eliminarlo)
-	batch.Update(h.db.Collection("encounters").Doc(encounterID), []firestore.Update{
-		{Path: "isActive", Value: false},
-		{Path: "updatedAt", Value: time.Now()},
-	})
+	// ✅ ELIMINAR encuentro completamente (en lugar de marcar como inactivo)
+	batch.Delete(h.db.Collection("encounters").Doc(encounterID))
 
-	// Commit todas las operaciones
+	// Commit todas las operaciones pendientes
 	if _, err := batch.Commit(ctx); err != nil {
-		log.Printf("❌ Error en batch commit: %v", err)
+		log.Printf("❌ Error en batch commit final: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error finalizando encuentro"})
 		return
 	}
 
-	log.Printf("✅ Encuentro finalizado: %d personajes sincronizados, %d combatientes eliminados", syncedChars, deletedCombatants)
+	// Invalidar caché
+	h.cache.InvalidateEncounter(encounterID)
+
+	log.Printf("✅ Encuentro ELIMINADO: %d personajes sincronizados, %d combatientes eliminados", syncedChars, deletedCombatants)
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":           "Encuentro finalizado y personajes sincronizados",
+		"message":           "Encuentro finalizado y eliminado completamente",
 		"syncedCharacters":  syncedChars,
 		"deletedCombatants": deletedCombatants,
 	})
@@ -401,7 +413,7 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 
 	var combatant models.Combatant
 	if err := combatantDoc.DataTo(&combatant); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando combatante"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando combatiente"})
 		return
 	}
 
@@ -428,7 +440,7 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 		return
 	}
 
-	// ===== SINCRONIZACIÓN BIDIRECCIONAL OPTIMIZADA =====
+	// ===== SINCRONIZACIÓN BIDIRECCIONAL OPTIMIZADA CON BATCH =====
 	batch := h.db.Batch()
 	combatantUpdates := []firestore.Update{}
 

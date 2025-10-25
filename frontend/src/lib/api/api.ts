@@ -13,8 +13,13 @@ import type {
   Condition,
 } from '$lib/types';
 
-// ✅ Usar variable de entorno para la URL del API
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+// ✅ DETECCIÓN AUTOMÁTICA: usa localhost en desarrollo, producción en build
+const API_BASE_URL = import.meta.env.MODE === 'development'
+  ? 'http://localhost:8080/api'
+  : (import.meta.env.VITE_API_URL || 'https://dm-events-backend-858373640437.us-central1.run.app/api');
+
+console.log('🔧 Entorno:', import.meta.env.MODE);
+console.log('🌐 API URL:', API_BASE_URL);
 
 async function fetchWithAuth<T>(url: string, options: RequestInit = {}): Promise<T> {
   const token = get(tokenStore);
