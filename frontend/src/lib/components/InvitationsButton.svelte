@@ -46,7 +46,10 @@
     {/if}
   </label>
   
-  <div tabindex="0" class="mt-3 z-[1] card card-compact dropdown-content w-96 shadow-2xl bg-neutral border-2 border-secondary">
+ <div
+  tabindex="0"
+  class="mt-3 z-[1] card card-compact dropdown-content w-96 max-w-[73vw] sm:max-w-sm md:max-w-md shadow-2xl bg-neutral border-2 border-secondary"
+>
     <div class="card-body">
       <h3 class="card-title text-xl font-medieval text-secondary">
         📜 Invitaciones

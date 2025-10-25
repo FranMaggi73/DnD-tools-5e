@@ -69,7 +69,7 @@
 </script>
 <div class="container mx-auto justify-center items-center flex flex-col p-6 lg:p-8">
   <div class="mb-8 text-center">
-    <h1 class="text-4xl lg:text-5xl font-bold text-secondary title-ornament mb-3 text-shadow">
+    <h1 class="text-4xl lg:text-5xl font-bold text-secondary title-ornament mx-4 mb-3 text-shadow">
       Mis Campañas
     </h1>
     <p class="text-base-content/70 font-body italic text-lg">

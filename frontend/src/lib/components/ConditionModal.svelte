@@ -68,7 +68,7 @@
 
 {#if isOpen && combatant}
   <div class="modal modal-open z-50" on:keydown={handleKeydown}>
-    <div class="card-parchment border-4 border-secondary w-1/2 h-5/6 mx-4 relative flex flex-col">
+    <div class="card-parchment border-4 border-secondary w-5/6 h-5/6 mx-4 relative flex flex-col">
       <!-- Botón cerrar -->
       <button 
         class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3 z-10 hover:bg-error/20" 

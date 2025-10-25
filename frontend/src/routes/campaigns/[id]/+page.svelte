@@ -122,28 +122,28 @@
                 <div class="flex flex-wrap justify-center gap-3">
                   <button 
                     on:click={() => showInviteModal = true}
-                    class="btn btn-success gap-2"
+                    class="btn btn-success gap-2 w-3/4 md:w-1/3"
                   >
                     <span class="text-lg">✉️</span>
                     Invitar Jugador
                   </button>
                   <button 
                     on:click={() => goto(`/campaigns/${campaignId}/combat`)}
-                    class="btn btn-dnd gap-2"
+                    class="btn btn-dnd gap-2 w-3/4 md:w-1/3"
                   >
-                    <span class="text-lg">⚔️</span>
+                    <span class="text-lg ">⚔️</span>
                     Ir a Combate
                   </button>
                   <button 
                     on:click={() => goto(`/campaigns/${campaignId}/characters`)}
-                    class="btn btn-info gap-2"
+                    class="btn btn-info gap-2 w-3/4 md:w-1/3"
                   >
                     <span class="text-lg">🧙‍♂️</span>
                     Ver Personajes
                   </button>
                   <button 
                     on:click={() => showDeleteModal = true}
-                    class="btn btn-error gap-2"
+                    class="btn btn-error gap-2 w-3/4 md:w-1/3"
                   >
                     <span class="text-lg">🗑️</span>
                     Eliminar Campaña
@@ -155,7 +155,7 @@
 
           <!-- Dungeon Master -->
           <div class="mb-6">
-            <h2 class="text-3xl font-medieval text-secondary mb-4">👑 Dungeon Master</h2>
+            <h2 class="text-2xl font-medieval text-secondary mb-4">👑 Dungeon Master</h2>
             <div class="card-parchment corner-ornament">
               <div class="card-body p-6">
                 <div class="flex items-center gap-4">
@@ -177,22 +177,11 @@
               </div>
             </div>
           </div>
-
           <!-- Jugadores -->
           <div>
             <div class="flex justify-between items-center mb-4">
-              <h2 class="text-3xl font-medieval text-secondary">🎲 Aventureros ({members?.players?.length || 0})</h2>
-              {#if isDM}
-                <button 
-                  on:click={() => showInviteModal = true}
-                  class="btn btn-success btn-sm gap-2"
-                >
-                  <span class="text-lg">➕</span>
-                  Invitar
-                </button>
-              {/if}
+              <h2 class="text-2xl font-medieval text-secondary">🎲 Aventureros ({members?.players?.length || 0})</h2>
             </div>
-
             {#if members?.players && members.players.length > 0}
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {#each members.players as player}

@@ -118,37 +118,39 @@
 </script>
 
 {#if isOpen}
-  <div class="modal modal-open z-50">
-    <div class="modal-box card-parchment max-w-3xl h-full relative">
-      <button
-        class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
-        on:click={handleClose}
-      >
-        ✕
-      </button>
+<div class="modal modal-open z-50">
+  <!-- Contenedor del modal -->
+  <div class="modal-box card-parchment w-11/12 max-w-3xl h-[80vh] md:h-[70vh] relative flex flex-col">
 
-      <h3 class="font-bold text-2xl font-medieval text-neutral mb-4 text-center">
+        <!-- HEADER FIJO: título + tabs + close -->
+    <div class="flex flex-col md:flex-row justify-between items-center p-4 border-b-2 border-secondary gap-2 md:gap-4">
+      <!-- Título -->
+      <h3 class="font-bold text-2xl md:text-3xl font-medieval text-neutral flex-1 text-center md:text-left">
         ⚔️ Agregar Combatiente
       </h3>
-
       <!-- Tabs -->
-      <div class="flex justify-center gap-4 mb-6">
+      <div class="flex gap-2">
         <button
           class="btn btn-sm font-medieval {activeTab === 'player' ? 'btn-primary' : 'btn-outline'}"
           on:click={() => (activeTab = 'player')}
-        >
-          🧝 Jugador
-        </button>
+        >🧝 Jugador</button>
         <button
           class="btn btn-sm font-medieval {activeTab === 'monster' ? 'btn-primary' : 'btn-outline'}"
           on:click={() => (activeTab = 'monster')}
-        >
-          🐉 Monstruo
-        </button>
+        >🐉 Monstruo</button>
       </div>
 
+      <!-- Botón cerrar -->
+      <button
+        class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 md:static"
+        on:click={handleClose}
+      >✕</button>
+    </div>
+
+    <!-- CONTENIDO SCROLLEABLE -->
+    <div class="flex-1 overflow-y-auto p-4 space-y-4">
       {#if activeTab === 'player'}
-        <!-- === TAB JUGADOR === -->
+        <!-- TAB JUGADOR -->
         <div class="space-y-4">
           <div class="form-control">
             <label class="label">
@@ -156,7 +158,7 @@
             </label>
             <select
               bind:value={selectedPlayerId}
-              class="select select-bordered bg-[#2d241c] text-base-content border-primary/50"
+              class="select select-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"
             >
               <option value="" disabled selected>-- Elegir jugador --</option>
               {#each players as p}
@@ -165,50 +167,34 @@
             </select>
           </div>
 
-            <div class="form-control">
-              <label class="label">
-                <span class="label-text font-medieval text-neutral">Iniciativa</span>
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="100"
-                step="1"
-                required
-                bind:value={initiative}
-                class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
-              />
-            </div>
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medieval text-neutral">Iniciativa</span>
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="100"
+              step="1"
+              required
+              bind:value={initiative}
+              class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"
+            />
+          </div>
 
-            <div class="card bg-neutral/20 border border-primary/40 p-4 mt-2">
-              <div class="flex items-center gap-4">
-                <div>
-                  <p class="text-lg font-bold text-neutral">{selectedPlayer?.name || 'Elegir jugador'}</p>
-                  <p class="text-sm text-neutral/70">
-                    HP: {selectedPlayer?.maxHp || 0} | AC: {selectedPlayer?.armorClass || 0}
-                  </p>
-                </div>
+          <div class="card bg-neutral/20 border border-primary/40 p-4 mt-2">
+            <div class="flex items-center gap-4">
+              <div>
+                <p class="text-lg font-bold text-neutral">{selectedPlayer?.name || 'Elegir jugador'}</p>
+                <p class="text-sm text-neutral/70">
+                  HP: {selectedPlayer?.maxHp || 0} | AC: {selectedPlayer?.armorClass || 0}
+                </p>
               </div>
             </div>
-
-            <div class="modal-action justify-center gap-4 mt-4">
-              <button
-                on:click={handleClose}
-                class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval"
-              >
-                Cancelar
-              </button>
-              <button
-                on:click={handleAddPlayer}
-                class="btn btn-dnd"
-                disabled={!selectedPlayer || initiative < 1}
-              >
-                <span class="text-xl">⚔️</span> Agregar al Combate
-              </button>
-            </div>
+          </div>
         </div>
       {:else}
-        <!-- === TAB MONSTRUO === -->
+        <!-- TAB MONSTRUO -->
         <div class="space-y-4">
           <div class="form-control mb-4">
             <label class="label">
@@ -218,7 +204,7 @@
               type="text"
               bind:value={searchQuery}
               placeholder="Ej: goblin, dragon..."
-              class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
+              class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"
               on:input={handleSearch}
             />
           </div>
@@ -228,7 +214,7 @@
               {#each suggestions as s}
                 <button
                   on:click={() => selectSuggestion(s)}
-                  class="btn btn-ghost text-left border border-primary/30 hover:bg-primary/20 flex justify-between"
+                  class="btn btn-ghost text-left border border-primary/30 hover:bg-primary/20 flex justify-between w-full"
                 >
                   <span>{s.name}</span>
                   <span class="text-xs text-neutral/60">CR {s.challenge_rating}</span>
@@ -246,11 +232,11 @@
               <input
                 type="text"
                 bind:value={name}
-                class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
+                class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"
               />
             </div>
 
-            <div class="grid grid-cols-3 gap-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               <div class="form-control">
                 <label class="label">
                   <span class="label-text font-medieval text-neutral">Iniciativa</span>
@@ -258,7 +244,7 @@
                 <input
                   type="number"
                   bind:value={initiative}
-                  class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
+                  class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"
                 />
               </div>
               <div class="form-control">
@@ -268,7 +254,7 @@
                 <input
                   type="number"
                   bind:value={maxHp}
-                  class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
+                  class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"
                 />
               </div>
               <div class="form-control">
@@ -278,28 +264,32 @@
                 <input
                   type="number"
                   bind:value={armorClass}
-                  class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
+                  class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"
                 />
               </div>
-            </div>
-            <div class="modal-action justify-center gap-4 mt-4">
-              <button
-                on:click={handleClose}
-                class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval"
-              >
-                Cancelar
-              </button>
-              <button
-                on:click={handleAddMonster}
-                class="btn btn-dnd"
-                disabled={!name || !maxHp || !armorClass || initiative < 1}
-              >
-                <span class="text-xl">⚔️</span> Agregar al Combate
-              </button>
             </div>
           </div>
         </div>
       {/if}
     </div>
+
+    <!-- FOOTER FIJO -->
+    <div class="flex justify-center gap-4 p-4 border-t-2 border-secondary flex-col md:flex-row">
+      <button
+        on:click={handleClose}
+        class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval w-full md:w-auto"
+      >Cancelar</button>
+      <button
+        on:click={activeTab === 'player' ? handleAddPlayer : handleAddMonster}
+        class="btn btn-dnd w-full md:w-auto"
+        disabled={
+          (activeTab === 'player' && (!selectedPlayer || initiative < 1)) ||
+          (activeTab === 'monster' && (!name || !maxHp || !armorClass || initiative < 1))
+        }
+      >
+        <span class="text-xl">⚔️</span> Agregar al Combate
+      </button>
+    </div>
   </div>
+</div>
 {/if}

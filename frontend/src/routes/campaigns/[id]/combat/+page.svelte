@@ -264,11 +264,10 @@
   }
 </script>
 
-<!-- El resto del template es igual... -->
 <div class="min-h-screen flex flex-col">
   {#if error}
     <div class="container mx-auto p-4">
-      <div class="alert alert-error">
+      <div class="alert alert-error flex justify-between items-center">
         <span>{error}</span>
         <button class="btn btn-sm" on:click={() => error = ''}>✕</button>
       </div>
@@ -304,64 +303,56 @@
           </div>
         </div>
       {:else}
-        <div class="p-4 max-w-4xl mx-auto">
+        <div class="p-4 max-w-5xl mx-auto">
+          <!-- HEADER DEL ENCUENTRO -->
           <div class="card-parchment mb-6 corner-ornament">
-            <div class="card-body p-6">
-              <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-                <div>
-                  <h2 class="text-3xl font-medieval text-neutral mb-2">{encounter.name}</h2>
-                  <div class="flex gap-4">
-                    <div class="badge badge-ornate badge-lg">
-                      🔄 Ronda {encounter.round}
-                    </div>
-                    <div class="badge bg-info/30 border-info/50 text-neutral badge-lg">
-                      👥 {combatants.length} Combatientes
-                    </div>
-                    <!-- Indicador de sincronización en tiempo real -->
-                    <div class="badge bg-success/30 border-success/50 text-neutral badge-lg" title="Sincronización en tiempo real activa">
-                      🔄 LIVE
-                    </div>
-                  </div>
+            <div class="card-body p-6 flex flex-col lg:flex-row justify-between gap-4">
+              
+              <!-- Nombre y badges -->
+              <div class="flex-1 flex flex-col sm:flex-row sm:items-center sm:gap-4 flex-wrap">
+                <h2 class="text-2xl md:text-3xl font-medieval text-neutral mb-2 sm:mb-0">{encounter.name}</h2>
+                <div class="flex flex-wrap gap-2 mt-2 sm:mt-0">
+                  <div class="badge badge-ornate badge-md">🔄 Ronda {encounter.round}</div>
+                  <div class="badge bg-info/30 border-info/50 text-neutral badge-md">👥 {combatants.length} Combatientes</div>
                 </div>
-
-                {#if isDM}
-                  <div class="flex gap-2">
-                    <button 
-                      on:click={() => showAddCombatantModal = true}
-                      class="btn btn-success btn-sm gap-2"
-                    >
-                      <span class="text-lg">➕</span>
-                      Agregar
-                    </button>
-                    <button 
-                      on:click={nextTurn}
-                      class="btn btn-dnd btn-sm gap-2"
-                      disabled={combatants.length === 0}
-                    >
-                      <span class="text-lg">▶️</span>
-                      Siguiente Turno
-                    </button>
-                    <button 
-                      on:click={endEncounter}
-                      class="btn btn-error btn-sm"
-                    >
-                      🏁 Finalizar
-                    </button>
-                  </div>
-                {/if}
               </div>
 
-              {#if currentTurnCombatant}
-                <div class="bg-gradient-to-r from-secondary/20 to-accent/20 p-4 rounded-lg border-2 border-secondary mt-4">
-                  <p class="text-sm font-medieval text-neutral/70 mb-1">TURNO ACTUAL</p>
-                  <p class="text-2xl font-bold font-medieval text-neutral">
-                    {currentTurnCombatant.name}
-                  </p>
+              <!-- BOTONES DM -->
+              {#if isDM}
+                <div class="flex flex-col sm:flex-row gap-2 mt-2 lg:mt-0 w-full sm:w-auto">
+                  <button 
+                    class="btn btn-success btn-sm gap-2 flex-1 sm:flex-none"
+                    on:click={() => showAddCombatantModal = true}
+                  >
+                    <span class="text-lg">➕</span> Agregar
+                  </button>
+                  <button 
+                    class="btn btn-dnd btn-sm gap-2 flex-1 sm:flex-none"
+                    on:click={nextTurn}
+                    disabled={combatants.length === 0}
+                  >
+                    <span class="text-lg">▶️</span> Siguiente Turno
+                  </button>
+                  <button 
+                    class="btn btn-error btn-sm flex-1 sm:flex-none"
+                    on:click={endEncounter}
+                  >
+                    🏁 Finalizar
+                  </button>
                 </div>
               {/if}
             </div>
+
+            <!-- TURNO ACTUAL -->
+            {#if currentTurnCombatant}
+              <div class="bg-gradient-to-r from-secondary/20 to-accent/20 p-4 rounded-lg border-2 border-secondary mt-4">
+                <p class="text-sm font-medieval text-neutral/70 mb-1">TURNO ACTUAL</p>
+                <p class="text-2xl font-bold font-medieval text-neutral">{currentTurnCombatant.name}</p>
+              </div>
+            {/if}
           </div>
 
+          <!-- COMBATIENTES -->
           {#if combatants.length === 0}
             <div class="card-parchment p-12 text-center">
               <div class="text-4xl mb-3">🎲</div>
@@ -371,7 +362,7 @@
               </p>
             </div>
           {:else}
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {#each combatants as combatant, index}
                 <CombatantCard 
                   {combatant}
@@ -389,6 +380,7 @@
     </div>
   </div>
 </div>
+
 
 {#if showCreateEncounterModal}
   <div class="modal modal-open z-50">

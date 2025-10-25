@@ -39,7 +39,6 @@
 
   $: myCharacter = characters.find(c => c.userId === $userStore?.uid);
   $: otherCharacters = characters.filter(c => c.userId !== $userStore?.uid);
-  $: canCreateCharacter = !myCharacter;
 
   onMount(async () => {
     await loadCampaign();
@@ -171,10 +170,6 @@
           <p class="text-base-content/70 font-body italic text-lg mb-2">
             "Cada héroe tiene su historia..."
           </p>
-          <!-- Indicador de sincronización -->
-          <div class="badge bg-success/30 border-success/50 text-neutral badge-lg" title="Los cambios se sincronizan en tiempo real">
-            🔄 Sincronización en tiempo real activa
-          </div>
         </div>
 
         {#if error}
@@ -231,7 +226,7 @@
               <p class="text-primary text-center font-body italic">Los demás héroes de esta campaña</p>
             </div>
             <div class="w-3/4 mx-auto">
-              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                 {#each otherCharacters as character}
                   <CharacterCard 
                     {character}
