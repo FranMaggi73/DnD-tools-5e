@@ -1,4 +1,5 @@
 import { c as create_ssr_component } from "../../../chunks/ssr.js";
+import "../../../chunks/api.js";
 import "@sveltejs/kit/internal";
 import "../../../chunks/exports.js";
 import "../../../chunks/utils.js";

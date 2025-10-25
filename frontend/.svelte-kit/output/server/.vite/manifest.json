@@ -9,6 +9,10 @@
       "_environment.js"
     ]
   },
+  "_api.js": {
+    "file": "chunks/api.js",
+    "name": "api"
+  },
   "_authStore.js": {
     "file": "chunks/authStore.js",
     "name": "authStore",
@@ -129,7 +133,8 @@
       "_exports.js",
       "_utils.js",
       "_state.svelte.js",
-      "_stores.js"
+      "_stores.js",
+      "_api.js"
     ],
     "css": [
       "_app/immutable/assets/_layout.MhcorssQ.css"
@@ -165,7 +170,8 @@
       "_exports.js",
       "_utils.js",
       "_state.svelte.js",
-      "_authStore.js"
+      "_authStore.js",
+      "_api.js"
     ]
   },
   "src/routes/campaigns/[id]/characters/+page.svelte": {
@@ -180,6 +186,7 @@
       "_utils.js",
       "_state.svelte.js",
       "_authStore.js",
+      "_api.js",
       "_uiStore.js",
       "_firebase.js"
     ]
@@ -193,6 +200,7 @@
       "_ssr.js",
       "_stores.js",
       "_authStore.js",
+      "_api.js",
       "_uiStore.js",
       "_firebase.js"
     ]
@@ -204,6 +212,7 @@
     "isEntry": true,
     "imports": [
       "_ssr.js",
+      "_api.js",
       "_exports.js",
       "_utils.js",
       "_state.svelte.js",

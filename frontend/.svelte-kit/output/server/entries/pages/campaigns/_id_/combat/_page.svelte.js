@@ -1,55 +1,11 @@
 import { c as create_ssr_component, g as createEventDispatcher, f as each, d as add_attribute, e as escape, b as subscribe, o as onDestroy, v as validate_component } from "../../../../../chunks/ssr.js";
 import { p as page } from "../../../../../chunks/stores.js";
 import { u as userStore } from "../../../../../chunks/authStore.js";
+import { o as open5eApi } from "../../../../../chunks/api.js";
 import debounce from "lodash/debounce.js";
 import { h as headerTitle } from "../../../../../chunks/uiStore.js";
 import { getFirestore } from "firebase/firestore";
 import { a as app } from "../../../../../chunks/firebase.js";
-const open5eApi = {
-  searchMonsters: async (query) => {
-    const response = await fetch(
-      `https://api.open5e.com/v1/monsters/?search=${encodeURIComponent(query)}&limit=20`
-    );
-    if (!response.ok) throw new Error("Error buscando criaturas");
-    return response.json();
-  },
-  getMonster: async (slug) => {
-    const response = await fetch(`https://api.open5e.com/v1/monsters/${slug}/`);
-    if (!response.ok) throw new Error("Error obteniendo criatura");
-    return response.json();
-  },
-  monsterToCombatant: (monster, initiative) => ({
-    type: "creature",
-    name: monster.name,
-    initiative,
-    maxHp: monster.hit_points,
-    currentHp: monster.hit_points,
-    armorClass: monster.armor_class,
-    isNpc: true,
-    creatureSource: "open5e"
-  }),
-  searchConditions: async (query) => {
-    const response = await fetch(
-      `https://api.open5e.com/v1/conditions/?search=${encodeURIComponent(query)}&limit=5`
-    );
-    if (!response.ok) throw new Error("Error buscando condiciones");
-    return response.json();
-  },
-  getCondition: async (slug) => {
-    const response = await fetch(`https://api.open5e.com/v1/conditions/${slug}/`);
-    if (!response.ok) throw new Error("Error obteniendo condición");
-    return response.json();
-  },
-  cleanDescription: (html, maxLength = 150) => {
-    const temp = document.createElement("div");
-    temp.innerHTML = html;
-    let text = temp.textContent || temp.innerText || "";
-    if (text.length > maxLength) {
-      text = text.substring(0, maxLength) + "...";
-    }
-    return text;
-  }
-};
 const AddCombatantModal = create_ssr_component(($$result, $$props, $$bindings, slots) => {
   let selectedPlayer;
   let { isOpen = false } = $$props;

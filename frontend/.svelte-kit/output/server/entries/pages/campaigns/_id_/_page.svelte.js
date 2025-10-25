@@ -6,6 +6,7 @@ import "../../../../chunks/utils.js";
 import "@sveltejs/kit/internal/server";
 import "../../../../chunks/state.svelte.js";
 import { u as userStore } from "../../../../chunks/authStore.js";
+import "../../../../chunks/api.js";
 const Page = create_ssr_component(($$result, $$props, $$bindings, slots) => {
   let $$unsubscribe_userStore;
   let $page, $$unsubscribe_page;
