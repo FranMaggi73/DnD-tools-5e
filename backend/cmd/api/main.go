@@ -130,7 +130,3 @@ func main() {
 	log.Printf("🚀 Servidor corriendo en puerto %s", port)
 	r.Run(":" + port)
 }
-
-func startsWithHTTP(origin string) bool {
-	return len(origin) >= 7 && (origin[:7] == "http://" || (len(origin) >= 8 && origin[:8] == "https://"))
-}

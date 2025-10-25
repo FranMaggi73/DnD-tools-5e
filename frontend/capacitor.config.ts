@@ -5,7 +5,13 @@ const config: CapacitorConfig = {
   appName: 'DM Events',
   webDir: 'build',
   server: {
-    androidScheme: 'https'
+    androidScheme: 'https',
+    // ✅ Usar tu backend de producción
+    url: 'https://dnd5etools-73.web.app',
+    cleartext: false
+  },
+  android: {
+    allowMixedContent: false
   }
 };
 

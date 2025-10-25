@@ -6,7 +6,9 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
-    "android": "npm run build && npx cap sync && npx cap open android"
+    "android": "npm run build && npx cap sync && npx cap open android",
+    "android:dev": "npm run build && npx cap sync && npx cap open android",
+    "android:deploy": "npm run build && npx cap copy && npx cap sync"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.0",
@@ -23,7 +25,8 @@
   },
   "dependencies": {
     "@capacitor/android": "^5.5.0",
-    "@capacitor/core": "^5.5.0",
+    "@capacitor/cli": "^7.4.4",
+    "@capacitor/core": "^5.7.8",
     "firebase": "^10.7.0",
     "lodash": "^4.17.21"
   },
