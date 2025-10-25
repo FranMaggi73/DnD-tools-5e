@@ -1,7 +1,9 @@
+// backend/internal/handlers/invitations.go
 package handlers
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"time"
 
@@ -30,7 +32,7 @@ func (h *Handler) GetMyInvitations(c *gin.Context) {
 	iter := h.db.Collection("invitations").
 		Where("toUserId", "==", uid).
 		Where("status", "==", "pending").
-		Documents(ctx) // <-- SIN .OrderBy aquí
+		Documents(ctx)
 
 	var invitations []models.Invitation
 	for {
@@ -106,24 +108,12 @@ func (h *Handler) RespondToInvitation(c *gin.Context) {
 		return
 	}
 
-	// Actualizar status de la invitación
-	newStatus := "rejected"
+	// ===== MEJORA: Eliminar invitación directamente en lugar de actualizar status =====
+	message := "Invitación rechazada"
+
 	if req.Action == "accept" {
-		newStatus = "accepted"
-	}
-
-	// Transacción para actualizar invitación y agregar miembro si acepta
-	err = h.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		// Actualizar invitación
-		if err := tx.Update(invRef, []firestore.Update{
-			{Path: "status", Value: newStatus},
-			{Path: "respondedAt", Value: time.Now()},
-		}); err != nil {
-			return err
-		}
-
-		// Si aceptó, agregar como miembro del evento
-		if req.Action == "accept" {
+		// Transacción para agregar miembro y eliminar invitación
+		err = h.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 			// Obtener datos del usuario
 			userDoc, err := h.db.Collection("users").Doc(uid).Get(ctx)
 			var user models.User
@@ -171,23 +161,78 @@ func (h *Handler) RespondToInvitation(c *gin.Context) {
 
 			// Actualizar playerIds en evento
 			eventRef := h.db.Collection("events").Doc(invitation.CampaignID)
-			return tx.Update(eventRef, []firestore.Update{
+			if err := tx.Update(eventRef, []firestore.Update{
 				{Path: "playerIds", Value: firestore.ArrayUnion(uid)},
-			})
+			}); err != nil {
+				return err
+			}
+
+			// ===== ELIMINAR invitación en lugar de actualizar =====
+			return tx.Delete(invRef)
+		})
+
+		if err != nil {
+			log.Printf("❌ Error aceptando invitación: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error procesando respuesta"})
+			return
 		}
 
-		return nil
-	})
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error procesando respuesta"})
-		return
-	}
-
-	message := "Invitación rechazada"
-	if req.Action == "accept" {
 		message = "Te has unido al evento exitosamente"
+		log.Printf("✅ Invitación aceptada y eliminada: %s", invitationID)
+
+	} else {
+		// Rechazar: simplemente eliminar la invitación
+		if _, err := invRef.Delete(ctx); err != nil {
+			log.Printf("❌ Error rechazando invitación: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error procesando respuesta"})
+			return
+		}
+		log.Printf("🗑️ Invitación rechazada y eliminada: %s", invitationID)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": message})
+}
+
+// ===========================
+// LIMPIEZA DE INVITACIONES ANTIGUAS
+// ===========================
+
+// CleanupOldInvitations elimina invitaciones respondidas hace más de 30 días
+// Esta función puede ser llamada periódicamente por un cron job
+func (h *Handler) CleanupOldInvitations(c *gin.Context) {
+	ctx := context.Background()
+
+	// Fecha límite: 30 días atrás
+	thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+
+	// Buscar invitaciones antiguas aceptadas/rechazadas
+	iter := h.db.Collection("invitations").
+		Where("status", "in", []string{"accepted", "rejected"}).
+		Where("respondedAt", "<", thirtyDaysAgo).
+		Documents(ctx)
+
+	deletedCount := 0
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			continue
+		}
+
+		if _, err := doc.Ref.Delete(ctx); err != nil {
+			log.Printf("Error eliminando invitación antigua: %v", err)
+			continue
+		}
+		deletedCount++
+	}
+
+	log.Printf("✅ Limpieza de invitaciones: %d invitaciones antiguas eliminadas", deletedCount)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":      "Invitaciones antiguas limpiadas",
+		"deletedCount": deletedCount,
+		"olderThan":    "30 días",
+	})
 }

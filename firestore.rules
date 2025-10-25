@@ -2,7 +2,10 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper functions
+    // ===========================
+    // HELPER FUNCTIONS
+    // ===========================
+    
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -19,81 +22,150 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/event_members/$(request.auth.uid + '_' + campaignId));
     }
     
-    // Users collection
+    function getCampaignFromEncounter(encounterId) {
+      return get(/databases/$(database)/documents/encounters/$(encounterId)).data.campaignId;
+    }
+    
+    // ===========================
+    // USERS COLLECTION
+    // ===========================
+    
     match /users/{userId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isOwner(userId);
       allow update: if isAuthenticated() && isOwner(userId);
-      allow delete: if false;
+      allow delete: if false; // Los usuarios no se eliminan
     }
     
-    // Events/Campaigns collection
+    // ===========================
+    // EVENTS/CAMPAIGNS COLLECTION
+    // ===========================
+    
     match /events/{eventId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && resource.data.dmId == request.auth.uid;
-      allow delete: if isAuthenticated() && resource.data.dmId == request.auth.uid;
+      allow create: if isAuthenticated() && 
+                       request.resource.data.dmId == request.auth.uid;
+      allow update: if isAuthenticated() && 
+                       resource.data.dmId == request.auth.uid;
+      allow delete: if isAuthenticated() && 
+                       resource.data.dmId == request.auth.uid;
     }
     
-    // Event members collection
+    // ===========================
+    // EVENT MEMBERS COLLECTION
+    // ===========================
+    
     match /event_members/{memberId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow delete: if isAuthenticated();
+      
+      // Solo el DM puede agregar miembros
+      allow create: if isAuthenticated() && 
+                       isCampaignDM(request.resource.data.campaignId);
+      
+      // Solo el DM puede actualizar miembros
+      allow update: if isAuthenticated() && 
+                       isCampaignDM(resource.data.campaignId);
+      
+      // Solo el DM puede eliminar miembros (o backend en cascada)
+      allow delete: if isAuthenticated() && 
+                       isCampaignDM(resource.data.campaignId);
     }
     
-    // Invitations collection
+    // ===========================
+    // INVITATIONS COLLECTION
+    // ===========================
+    
     match /invitations/{invitationId} {
+      // Solo el destinatario o el remitente pueden ver la invitación
       allow read: if isAuthenticated() && 
         (resource.data.toUserId == request.auth.uid || 
          resource.data.fromUserId == request.auth.uid);
-      allow create: if isAuthenticated();
+      
+      // Solo el DM puede crear invitaciones
+      allow create: if isAuthenticated() && 
+                       isCampaignDM(request.resource.data.campaignId);
+      
+      // Solo el destinatario puede actualizar (aceptar/rechazar)
       allow update: if isAuthenticated() && 
-        resource.data.toUserId == request.auth.uid;
+                       resource.data.toUserId == request.auth.uid;
+      
+      // Backend o remitente pueden eliminar
       allow delete: if isAuthenticated() && 
         (resource.data.toUserId == request.auth.uid || 
          resource.data.fromUserId == request.auth.uid);
     }
     
     // ===========================
-    // PERSONAJES - Permisos para listeners en tiempo real
+    // CHARACTERS COLLECTION
     // ===========================
+    
     match /characters/{characterId} {
-      // Permitir lectura a todos los miembros de la campaña
+      // Todos los miembros de la campaña pueden ver personajes
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      // Actualización permitida para el dueño o el DM
+      
+      // Solo el dueño puede crear su personaje
+      allow create: if isAuthenticated() && 
+                       request.resource.data.userId == request.auth.uid;
+      
+      // El dueño o el DM pueden actualizar
       allow update: if isAuthenticated() && 
         (resource.data.userId == request.auth.uid || 
          isCampaignDM(resource.data.campaignId));
+      
+      // El dueño o el DM pueden eliminar
       allow delete: if isAuthenticated() && 
         (resource.data.userId == request.auth.uid || 
          isCampaignDM(resource.data.campaignId));
     }
     
     // ===========================
-    // ENCUENTROS - Permisos para listeners
+    // ENCOUNTERS COLLECTION
     // ===========================
+    
     match /encounters/{encounterId} {
-      // Lectura permitida para todos los autenticados (para listeners)
+      // Todos los autenticados pueden ver encuentros
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
+      
+      // Solo el DM puede crear encuentros
+      allow create: if isAuthenticated() && 
+                       isCampaignDM(request.resource.data.campaignId);
+      
+      // Solo el DM puede actualizar encuentros
       allow update: if isAuthenticated() && 
-        isCampaignDM(resource.data.campaignId);
+                       isCampaignDM(resource.data.campaignId);
+      
+      // Solo el DM puede eliminar encuentros
       allow delete: if isAuthenticated() && 
-        isCampaignDM(resource.data.campaignId);
+                       isCampaignDM(resource.data.campaignId);
     }
     
     // ===========================
-    // COMBATIENTES - Permisos para listeners
+    // COMBATANTS COLLECTION
     // ===========================
+    
     match /combatants/{combatantId} {
-      // Lectura permitida para todos los autenticados (para listeners)
+      // Todos los autenticados pueden ver combatientes
       allow read: if isAuthenticated();
+      
+      // Solo el DM puede crear combatientes
       allow create: if isAuthenticated();
+                       // Validación de DM se hace en backend
+      
+      // Solo el DM puede actualizar combatientes
       allow update: if isAuthenticated();
+                       // Validación de DM se hace en backend
+      
+      // Solo el DM puede eliminar combatientes
       allow delete: if isAuthenticated();
+                       // Validación de DM se hace en backend
+    }
+    
+    // ===========================
+    // DENY ALL OTHER COLLECTIONS
+    // ===========================
+    
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

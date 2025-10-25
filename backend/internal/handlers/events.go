@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
-	"firebase.google.com/go/v4/auth"
 	"github.com/gin-gonic/gin"
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
@@ -15,15 +14,6 @@ import (
 
 	"github.com/FranMaggi73/dm-events-backend/internal/models"
 )
-
-type Handler struct {
-	db   *firestore.Client
-	auth *auth.Client
-}
-
-func NewHandler(db *firestore.Client, auth *auth.Client) *Handler {
-	return &Handler{db: db, auth: auth}
-}
 
 // ===========================
 // USUARIOS
@@ -64,24 +54,20 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 	}
 	ctx := context.Background()
 
-	// Bind request temprano (validación)
 	var req models.CreateCampaignRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Intentamos obtener el doc del usuario
 	userRef := h.db.Collection("users").Doc(uid)
 	userDoc, err := userRef.Get(ctx)
 	var user models.User
 
 	if err != nil {
-		// Si no existe, creamos el documento de usuario usando Firebase Auth
 		if status.Code(err) == codes.NotFound {
 			log.Printf("CreateEvent: users doc not found for uid=%s, creating from Auth", uid)
 
-			// obtener info desde Firebase Auth
 			fbUser, authErr := h.auth.GetUser(ctx, uid)
 			if authErr != nil {
 				log.Printf("CreateEvent: failed to GetUser from Auth for uid=%s: %v", uid, authErr)
@@ -111,7 +97,6 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 			return
 		}
 	} else {
-		// Si userDoc existe, parsearlo
 		if err := userDoc.DataTo(&user); err != nil {
 			log.Printf("CreateEvent: DataTo user failed uid=%s: %v", uid, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando usuario"})
@@ -119,13 +104,11 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 		}
 	}
 
-	// Revisar límite de campañas
 	if user.CampaignCount >= 3 {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Has alcanzado el límite de 3 campañas"})
 		return
 	}
 
-	// Crear campaña
 	campaignRef := h.db.Collection("events").NewDoc()
 	campaign := models.Campaign{
 		ID:        campaignRef.ID,
@@ -137,7 +120,6 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 		PlayerIDs: []string{},
 	}
 
-	// Transacción para crear campaña + miembro DM + incrementar contador
 	err = h.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		if err := tx.Set(campaignRef, campaign); err != nil {
 			return err
@@ -179,7 +161,6 @@ func (h *Handler) GetUserEvents(c *gin.Context) {
 	}
 	ctx := context.Background()
 
-	// Buscar campañas donde el usuario es miembro (DM o jugador)
 	memberIter := h.db.Collection("event_members").
 		Where("userId", "==", uid).
 		Documents(ctx)
@@ -202,7 +183,6 @@ func (h *Handler) GetUserEvents(c *gin.Context) {
 		eventIDs[member.CampaignID] = true
 	}
 
-	// Obtener detalles de las campañas
 	var campaigns []models.Campaign
 	for eventID := range eventIDs {
 		eventDoc, err := h.db.Collection("events").Doc(eventID).Get(ctx)
@@ -242,6 +222,10 @@ func (h *Handler) GetEvent(c *gin.Context) {
 	c.JSON(http.StatusOK, campaign)
 }
 
+// ===========================
+// ELIMINACIÓN EN CASCADA OPTIMIZADA
+// ===========================
+
 func (h *Handler) DeleteEvent(c *gin.Context) {
 	uid := c.GetString("uid")
 	if uid == "" {
@@ -268,40 +252,119 @@ func (h *Handler) DeleteEvent(c *gin.Context) {
 		return
 	}
 
-	// Transacción: eliminar campaña + miembros + decrementar contador
-	err = h.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		if err := tx.Delete(h.db.Collection("events").Doc(eventID)); err != nil {
-			return err
+	log.Printf("🗑️ Iniciando eliminación en cascada de campaña: %s", eventID)
+
+	// ===== ELIMINACIÓN EN CASCADA =====
+	var deletedCount int
+
+	// 1. Eliminar encuentros activos e inactivos
+	encountersIter := h.db.Collection("encounters").
+		Where("campaignId", "==", eventID).
+		Documents(ctx)
+
+	for {
+		encounterDoc, err := encountersIter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			log.Printf("Error iterando encuentros: %v", err)
+			continue
 		}
 
-		iter := h.db.Collection("event_members").
-			Where("campaignId", "==", eventID).
+		encounterId := encounterDoc.Ref.ID
+
+		// 1a. Eliminar combatientes del encuentro
+		combatantsIter := h.db.Collection("combatants").
+			Where("encounterId", "==", encounterId).
 			Documents(ctx)
+
 		for {
-			doc, err := iter.Next()
+			combatantDoc, err := combatantsIter.Next()
 			if err == iterator.Done {
 				break
 			}
-			if err != nil {
-				return err
-			}
-			if err := tx.Delete(doc.Ref); err != nil {
-				return err
+			if err == nil {
+				combatantDoc.Ref.Delete(ctx)
+				deletedCount++
 			}
 		}
 
-		userRef := h.db.Collection("users").Doc(uid)
-		return tx.Update(userRef, []firestore.Update{
-			{Path: "campaignCount", Value: firestore.Increment(-1)},
-		})
-	})
+		// 1b. Eliminar el encuentro
+		encounterDoc.Ref.Delete(ctx)
+		deletedCount++
+	}
 
-	if err != nil {
+	// 2. Eliminar personajes de la campaña
+	charactersIter := h.db.Collection("characters").
+		Where("campaignId", "==", eventID).
+		Documents(ctx)
+
+	for {
+		charDoc, err := charactersIter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err == nil {
+			charDoc.Ref.Delete(ctx)
+			deletedCount++
+		}
+	}
+
+	// 3. Eliminar invitaciones pendientes
+	invitationsIter := h.db.Collection("invitations").
+		Where("campaignId", "==", eventID).
+		Documents(ctx)
+
+	for {
+		invDoc, err := invitationsIter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err == nil {
+			invDoc.Ref.Delete(ctx)
+			deletedCount++
+		}
+	}
+
+	// 4. Eliminar miembros de la campaña
+	membersIter := h.db.Collection("event_members").
+		Where("campaignId", "==", eventID).
+		Documents(ctx)
+
+	for {
+		memberDoc, err := membersIter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err == nil {
+			memberDoc.Ref.Delete(ctx)
+			deletedCount++
+		}
+	}
+
+	// 5. Eliminar la campaña y decrementar contador
+	if _, err := h.db.Collection("events").Doc(eventID).Delete(ctx); err != nil {
+		log.Printf("Error eliminando campaña: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error eliminando campaña"})
 		return
 	}
+	deletedCount++
 
-	c.JSON(http.StatusOK, gin.H{"message": "Campaña eliminada"})
+	// 6. Actualizar contador del usuario
+	userRef := h.db.Collection("users").Doc(uid)
+	if _, err := userRef.Update(ctx, []firestore.Update{
+		{Path: "campaignCount", Value: firestore.Increment(-1)},
+	}); err != nil {
+		log.Printf("Error decrementando campaignCount: %v", err)
+	}
+
+	log.Printf("✅ Eliminación en cascada completada: %d documentos eliminados", deletedCount)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":          "Campaña eliminada exitosamente",
+		"deletedDocuments": deletedCount,
+	})
 }
 
 // ===========================
@@ -367,7 +430,6 @@ func (h *Handler) InvitePlayer(c *gin.Context) {
 		return
 	}
 
-	// Verificar que la campaña existe y el usuario es el DM
 	eventDoc, err := h.db.Collection("events").Doc(eventID).Get(ctx)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Campaña no encontrada"})
@@ -385,7 +447,6 @@ func (h *Handler) InvitePlayer(c *gin.Context) {
 		return
 	}
 
-	// Buscar usuario por email
 	userRecord, err := h.auth.GetUserByEmail(ctx, req.UserEmail)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Usuario no encontrado con ese email"})
@@ -399,7 +460,6 @@ func (h *Handler) InvitePlayer(c *gin.Context) {
 		return
 	}
 
-	// Verificar que no esté ya en la campaña
 	existingMember := h.db.Collection("event_members").
 		Where("campaignId", "==", eventID).
 		Where("userId", "==", playerUID).
@@ -412,7 +472,6 @@ func (h *Handler) InvitePlayer(c *gin.Context) {
 		return
 	}
 
-	// Verificar que no tenga invitación pendiente
 	existingInv := h.db.Collection("invitations").
 		Where("campaignId", "==", eventID).
 		Where("toUserId", "==", playerUID).
@@ -426,7 +485,6 @@ func (h *Handler) InvitePlayer(c *gin.Context) {
 		return
 	}
 
-	// Obtener datos del DM
 	dmDoc, err := h.db.Collection("users").Doc(uid).Get(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error obteniendo datos del DM"})
@@ -439,7 +497,6 @@ func (h *Handler) InvitePlayer(c *gin.Context) {
 		return
 	}
 
-	// Crear invitación
 	invRef := h.db.Collection("invitations").NewDoc()
 	invitation := models.Invitation{
 		ID:           invRef.ID,
@@ -497,6 +554,28 @@ func (h *Handler) RemovePlayer(c *gin.Context) {
 		return
 	}
 
+	// ===== ELIMINACIÓN EN CASCADA AL REMOVER JUGADOR =====
+	log.Printf("🗑️ Removiendo jugador %s de campaña %s", playerID, eventID)
+
+	// 1. Eliminar personajes del jugador en esta campaña
+	charactersIter := h.db.Collection("characters").
+		Where("campaignId", "==", eventID).
+		Where("userId", "==", playerID).
+		Documents(ctx)
+
+	deletedChars := 0
+	for {
+		charDoc, err := charactersIter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err == nil {
+			charDoc.Ref.Delete(ctx)
+			deletedChars++
+		}
+	}
+
+	// 2. Eliminar miembro de event_members
 	iter := h.db.Collection("event_members").
 		Where("campaignId", "==", eventID).
 		Where("userId", "==", playerID).
@@ -517,6 +596,7 @@ func (h *Handler) RemovePlayer(c *gin.Context) {
 		return
 	}
 
+	// 3. Actualizar playerIds en campaña
 	if _, err := h.db.Collection("events").Doc(eventID).Update(ctx, []firestore.Update{
 		{Path: "playerIds", Value: firestore.ArrayRemove(playerID)},
 	}); err != nil {
@@ -524,5 +604,10 @@ func (h *Handler) RemovePlayer(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Jugador eliminado"})
+	log.Printf("✅ Jugador removido. Personajes eliminados: %d", deletedChars)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":           "Jugador eliminado",
+		"deletedCharacters": deletedChars,
+	})
 }
