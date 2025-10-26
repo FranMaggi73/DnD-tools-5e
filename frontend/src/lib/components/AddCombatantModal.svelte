@@ -22,8 +22,8 @@
     if (!selectedPlayer) return;
 
     dispatch('add', {
-      type: 'character', // ✅ Corregido: era 'player'
-      characterId: selectedPlayer.id, // ✅ Corregido: era 'id'
+      type: 'character',
+      characterId: selectedPlayer.id,
       name: selectedPlayer.name,
       maxHp: selectedPlayer.maxHp,
       armorClass: selectedPlayer.armorClass,
@@ -39,6 +39,7 @@
   let suggestions: Monster[] = [];
   let selectedMonster: Monster | null = null;
   let loading = false;
+  let noResults = false;
 
   // Campos autocompletables del monstruo
   let name = '';
@@ -50,21 +51,26 @@
   let alignment = '';
 
   const handleSearch = debounce(async () => {
-    if (!searchQuery.trim()) {
+    const query = searchQuery.trim();
+    if (!query) {
       suggestions = [];
+      noResults = false;
       return;
     }
     loading = true;
+    noResults = false;
     try {
-      const result = await open5eApi.searchMonsters(searchQuery);
-      suggestions = result.results.slice(0, 3);
+      const result = await open5eApi.searchMonsters(query);
+      suggestions = result.results || [];
+      noResults = suggestions.length === 0;
     } catch (err) {
-      console.error(err);
+      console.error('Error buscando monstruos:', err);
       suggestions = [];
+      noResults = true;
     } finally {
       loading = false;
     }
-  }, 300);
+  }, 500);
 
   async function selectSuggestion(monster: Monster) {
     selectedMonster = await open5eApi.getMonster(monster.slug);
@@ -105,6 +111,7 @@
     selectedMonster = null;
     searchQuery = '';
     suggestions = [];
+    noResults = false;
     name = '';
     initiative = 0;
     maxHp = 0;
@@ -113,6 +120,7 @@
     type = '';
     size = '';
     alignment = '';
+    loading = false;
     dispatch('close');
   }
 </script>
@@ -120,9 +128,9 @@
 {#if isOpen}
 <div class="modal modal-open z-50">
   <!-- Contenedor del modal -->
-  <div class="modal-box card-parchment w-11/12 max-w-3xl h-[80vh] md:h-[70vh] relative flex flex-col">
+  <div class="modal-box card-parchment w-11/12 max-w-3xl h-11/12 relative flex flex-col">
 
-        <!-- HEADER FIJO: título + tabs + close -->
+    <!-- HEADER FIJO: título + tabs + close -->
     <div class="flex flex-col md:flex-row justify-between items-center p-4 border-b-2 border-secondary gap-2 md:gap-4">
       <!-- Título -->
       <h3 class="font-bold text-2xl md:text-3xl font-medieval text-neutral flex-1 text-center md:text-left">
@@ -203,27 +211,66 @@
             <input
               type="text"
               bind:value={searchQuery}
-              placeholder="Ej: goblin, dragon..."
+              placeholder="Ej: kobold, goblin, dragon..."
               class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"
               on:input={handleSearch}
             />
+            <label class="label">
+              <span class="label-text-alt text-neutral/60 italic">
+                💡 Prueba con nombres en inglés (kobold, goblin, orc)
+              </span>
+            </label>
           </div>
 
-          {#if suggestions.length > 0}
-            <div class="grid grid-cols-1 gap-2 mb-4 max-h-48 overflow-y-auto">
-              {#each suggestions as s}
-                <button
-                  on:click={() => selectSuggestion(s)}
-                  class="btn btn-ghost text-left border border-primary/30 hover:bg-primary/20 flex justify-between w-full"
-                >
-                  <span>{s.name}</span>
-                  <span class="text-xs text-neutral/60">CR {s.challenge_rating}</span>
-                </button>
-              {/each}
+          <!-- Loading indicator -->
+          {#if loading}
+            <div class="flex justify-center items-center py-4">
+              <span class="loading loading-spinner loading-md text-secondary"></span>
+              <span class="ml-3 text-neutral/70">Buscando criaturas...</span>
             </div>
           {/if}
 
-          <!-- Formulario monstruo -->
+          <!-- No results message -->
+          {#if noResults && !loading}
+            <div class="alert bg-warning/20 border-warning/40">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-warning" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+              </svg>
+              <div>
+                <p class="font-bold">No se encontraron resultados</p>
+                <p class="text-xs">Intenta con otro nombre o crea el monstruo manualmente</p>
+              </div>
+            </div>
+          {/if}
+
+          <!-- Suggestions -->
+          {#if suggestions.length > 0 && !loading}
+            <div class="bg-neutral/10 rounded-lg border border-primary/30 p-3">
+              <p class="text-xs font-medieval text-neutral/70 mb-2">
+                📖 {suggestions.length} criatura{suggestions.length !== 1 ? 's' : ''} encontrada{suggestions.length !== 1 ? 's' : ''}
+              </p>
+              <div class="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto">
+                {#each suggestions as s}
+                  <button
+                    on:click={() => selectSuggestion(s)}
+                    class="btn btn-ghost text-left border border-primary/30 hover:bg-primary/20 
+                           flex justify-between w-full p-3 h-auto min-h-[3rem]"
+                  >
+                    <div class="flex-1">
+                      <span class="font-bold text-neutral block">{s.name}</span>
+                      <span class="text-xs text-neutral/60">
+                        {s.type} | CR {s.challenge_rating}
+                      </span>
+                    </div>
+                    <span class="text-xs badge badge-sm badge-primary">
+                      Seleccionar
+                    </span>
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+          <!-- Formulario monstruo (siempre visible) -->
           <div class="space-y-4">
             <div class="form-control">
               <label class="label">
@@ -232,6 +279,7 @@
               <input
                 type="text"
                 bind:value={name}
+                placeholder="Nombre de la criatura"
                 class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"
               />
             </div>
@@ -274,7 +322,7 @@
     </div>
 
     <!-- FOOTER FIJO -->
-    <div class="flex justify-center gap-4 p-4 border-t-2 border-secondary flex-col md:flex-row">
+    <div class="flex justify-center gap-4 pt-4 border-t-2 border-secondary flex-col md:flex-row">
       <button
         on:click={handleClose}
         class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval w-full md:w-auto"

@@ -15,29 +15,35 @@ const AddCombatantModal = create_ssr_component(($$result, $$props, $$bindings, s
   let selectedPlayerId = "";
   let searchQuery = "";
   let suggestions = [];
+  let noResults = false;
   debounce(
     async () => {
-      if (!searchQuery.trim()) {
+      const query = searchQuery.trim();
+      if (!query) {
         suggestions = [];
+        noResults = false;
         return;
       }
+      noResults = false;
       try {
-        const result = await open5eApi.searchMonsters(searchQuery);
-        suggestions = result.results.slice(0, 3);
+        const result = await open5eApi.searchMonsters(query);
+        suggestions = result.results || [];
+        noResults = suggestions.length === 0;
       } catch (err) {
-        console.error(err);
+        console.error("Error buscando monstruos:", err);
         suggestions = [];
+        noResults = true;
       } finally {
       }
     },
-    300
+    500
   );
   if ($$props.isOpen === void 0 && $$bindings.isOpen && isOpen !== void 0) $$bindings.isOpen(isOpen);
   if ($$props.players === void 0 && $$bindings.players && players !== void 0) $$bindings.players(players);
   selectedPlayer = players.find((p) => p.id === selectedPlayerId);
-  return `${isOpen ? `<div class="modal modal-open z-50"> <div class="modal-box card-parchment w-11/12 max-w-3xl h-[80vh] md:h-[70vh] relative flex flex-col"> <div class="flex flex-col md:flex-row justify-between items-center p-4 border-b-2 border-secondary gap-2 md:gap-4"> <h3 class="font-bold text-2xl md:text-3xl font-medieval text-neutral flex-1 text-center md:text-left" data-svelte-h="svelte-157e7j1">⚔️ Agregar Combatiente</h3>  <div class="flex gap-2"><button class="${"btn btn-sm font-medieval " + escape("btn-primary", true)}">🧝 Jugador</button> <button class="${"btn btn-sm font-medieval " + escape("btn-outline", true)}">🐉 Monstruo</button></div>  <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 md:static" data-svelte-h="svelte-1r1r6u3">✕</button></div>  <div class="flex-1 overflow-y-auto p-4 space-y-4">${` <div class="space-y-4"><div class="form-control"><label class="label" data-svelte-h="svelte-1lzlsw9"><span class="label-text font-medieval text-neutral">Seleccionar Jugador</span></label> <select class="select select-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"><option value="" disabled selected data-svelte-h="svelte-ws9sqz">-- Elegir jugador --</option>${each(players, (p) => {
+  return `${isOpen ? `<div class="modal modal-open z-50"> <div class="modal-box card-parchment w-11/12 max-w-3xl h-11/12 relative flex flex-col"> <div class="flex flex-col md:flex-row justify-between items-center p-4 border-b-2 border-secondary gap-2 md:gap-4"> <h3 class="font-bold text-2xl md:text-3xl font-medieval text-neutral flex-1 text-center md:text-left" data-svelte-h="svelte-157e7j1">⚔️ Agregar Combatiente</h3>  <div class="flex gap-2"><button class="${"btn btn-sm font-medieval " + escape("btn-primary", true)}">🧝 Jugador</button> <button class="${"btn btn-sm font-medieval " + escape("btn-outline", true)}">🐉 Monstruo</button></div>  <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 md:static" data-svelte-h="svelte-1r1r6u3">✕</button></div>  <div class="flex-1 overflow-y-auto p-4 space-y-4">${` <div class="space-y-4"><div class="form-control"><label class="label" data-svelte-h="svelte-1lzlsw9"><span class="label-text font-medieval text-neutral">Seleccionar Jugador</span></label> <select class="select select-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"><option value="" disabled selected data-svelte-h="svelte-ws9sqz">-- Elegir jugador --</option>${each(players, (p) => {
     return `<option${add_attribute("value", p.id, 0)}>${escape(p.name)}</option>`;
-  })}</select></div> <div class="form-control"><label class="label" data-svelte-h="svelte-1wwr5wg"><span class="label-text font-medieval text-neutral">Iniciativa</span></label> <input type="number" min="1" max="100" step="1" required class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"${add_attribute("value", initiative, 0)}></div> <div class="card bg-neutral/20 border border-primary/40 p-4 mt-2"><div class="flex items-center gap-4"><div><p class="text-lg font-bold text-neutral">${escape(selectedPlayer?.name || "Elegir jugador")}</p> <p class="text-sm text-neutral/70">HP: ${escape(selectedPlayer?.maxHp || 0)} | AC: ${escape(selectedPlayer?.armorClass || 0)}</p></div></div></div></div>`}</div>  <div class="flex justify-center gap-4 p-4 border-t-2 border-secondary flex-col md:flex-row"><button class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval w-full md:w-auto" data-svelte-h="svelte-toewbe">Cancelar</button> <button class="btn btn-dnd w-full md:w-auto" ${"disabled"}><span class="text-xl" data-svelte-h="svelte-v5ojki">⚔️</span> Agregar al Combate</button></div></div></div>` : ``}`;
+  })}</select></div> <div class="form-control"><label class="label" data-svelte-h="svelte-1wwr5wg"><span class="label-text font-medieval text-neutral">Iniciativa</span></label> <input type="number" min="1" max="100" step="1" required class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"${add_attribute("value", initiative, 0)}></div> <div class="card bg-neutral/20 border border-primary/40 p-4 mt-2"><div class="flex items-center gap-4"><div><p class="text-lg font-bold text-neutral">${escape(selectedPlayer?.name || "Elegir jugador")}</p> <p class="text-sm text-neutral/70">HP: ${escape(selectedPlayer?.maxHp || 0)} | AC: ${escape(selectedPlayer?.armorClass || 0)}</p></div></div></div></div>`}</div>  <div class="flex justify-center gap-4 pt-4 border-t-2 border-secondary flex-col md:flex-row"><button class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval w-full md:w-auto" data-svelte-h="svelte-toewbe">Cancelar</button> <button class="btn btn-dnd w-full md:w-auto" ${"disabled"}><span class="text-xl" data-svelte-h="svelte-v5ojki">⚔️</span> Agregar al Combate</button></div></div></div>` : ``}`;
 });
 const HPModal = create_ssr_component(($$result, $$props, $$bindings, slots) => {
   let hpPercentage;

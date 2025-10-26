@@ -3,11 +3,28 @@ console.log("🔧 Entorno:", "production");
 console.log("🌐 API URL:", API_BASE_URL);
 const open5eApi = {
   searchMonsters: async (query) => {
+    const searchQuery = query.trim().toLowerCase();
     const response = await fetch(
-      `https://api.open5e.com/v1/monsters/?search=${encodeURIComponent(query)}&limit=20`
+      `https://api.open5e.com/v1/monsters/?search=${encodeURIComponent(searchQuery)}&limit=50`
     );
     if (!response.ok) throw new Error("Error buscando criaturas");
-    return response.json();
+    const data = await response.json();
+    if (data.results) {
+      data.results = data.results.filter((m) => {
+        const name = m.name.toLowerCase();
+        const type = m.type?.toLowerCase() || "";
+        return name.includes(searchQuery) || type.includes(searchQuery);
+      }).sort((a, b) => {
+        const aName = a.name.toLowerCase();
+        const bName = b.name.toLowerCase();
+        const aStarts = aName.startsWith(searchQuery);
+        const bStarts = bName.startsWith(searchQuery);
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+        return aName.length - bName.length;
+      }).slice(0, 20);
+    }
+    return data;
   },
   getMonster: async (slug) => {
     const response = await fetch(`https://api.open5e.com/v1/monsters/${slug}/`);
