@@ -4,6 +4,7 @@
 
   export let isOpen: boolean = false;
   export let combatant: Combatant | null = null;
+  export let isDM: boolean = false; // 👈 NUEVO
 
   const dispatch = createEventDispatcher();
 
@@ -40,7 +41,8 @@
   }
 </script>
 
-{#if isOpen && combatant}
+<!-- 👇 VERIFICAR isDM -->
+{#if isOpen && combatant && isDM}
   <div class="modal modal-open z-50">
     <div class="card-parchment border-2 sm:border-4 border-secondary mx-2 sm:mx-4 relative 
                 w-[95vw] sm:w-[90vw] md:w-3/4 lg:w-1/2 
@@ -54,14 +56,14 @@
       </button>
 
       <!-- Header compacto -->
-      <div class="p-3 sm:p-4 flex-shrink-0 bg-gradient-to-b from-[#f4e4c1] to-transparent">
+      <div class="p-3 sm:p-4 flex-shrink-0 bg-gradient-to-b from-[#f4e4c1] to-transparent border-b-2 border-secondary">
         <h3 class="font-bold text-xl sm:text-2xl font-medieval text-neutral text-center mb-2 sm:mb-3">
           💚 Gestión de HP
         </h3>
 
         <!-- Info del Combatiente -->
         <div class="bg-gradient-to-r from-primary/10 to-accent/10 p-2 sm:p-3 rounded-lg border border-primary/30 flex items-center gap-2 sm:gap-3">
-          <div class="avatar">
+          <div class="avatar flex-shrink-0">
             <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-full ring-2 ring-secondary">
               <div class="bg-primary/20 flex items-center justify-center">
                 <span class="text-lg sm:text-xl">{combatant.isNpc ? '👹' : '🧙‍♂️'}</span>
@@ -134,8 +136,9 @@
               type="number" 
               bind:value={customValue}
               placeholder="Ej: 15"
-              class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 
-                     flex-1 text-center text-lg sm:text-2xl font-bold"
+              class="input input-sm sm:input-md input-bordered bg-[#2d241c] text-base-content border-primary/50 
+                     flex-1 text-center text-lg sm:text-2xl font-bold
+                     focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/50"
               min="0"
             />
             <div class="grid grid-cols-2 sm:flex gap-2 flex-1">
@@ -159,6 +162,23 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+{:else if isOpen && combatant && !isDM}
+  <!-- Mensaje para jugadores -->
+  <div class="modal modal-open z-50">
+    <div class="card-parchment border-4 border-error w-11/12 max-w-md text-center p-8">
+      <div class="text-6xl mb-4">🚫</div>
+      <h3 class="text-2xl font-medieval text-neutral mb-3">Acceso Denegado</h3>
+      <p class="text-neutral/70 font-body mb-6">
+        Solo el Dungeon Master puede gestionar los puntos de vida.
+      </p>
+      <button 
+        on:click={resetAndClose}
+        class="btn btn-dnd"
+      >
+        Entendido
+      </button>
     </div>
   </div>
 {/if}

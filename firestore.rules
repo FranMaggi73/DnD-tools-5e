@@ -165,14 +165,13 @@ service cloud.firestore {
     // ===========================
     
     match /notes/{noteId} {
-      // Leer: autor o si es compartida
+      // Leer: autor O es compartida (cualquier autenticado puede ver notas compartidas)
       allow read: if isAuthenticated() && 
         (resource.data.authorId == request.auth.uid || 
          resource.data.isShared == true);
       
-      // Crear: miembros de la campaña
+      // Crear: autenticado Y es el autor
       allow create: if isAuthenticated() && 
-                       isCampaignMember(request.resource.data.campaignId) &&
                        request.resource.data.authorId == request.auth.uid;
       
       // Actualizar: solo el autor
@@ -183,7 +182,6 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && 
                        resource.data.authorId == request.auth.uid;
     }
-    
     // ===========================
     // DENY ALL OTHER COLLECTIONS
     // ===========================

@@ -424,6 +424,7 @@
 <HPModal 
   bind:isOpen={showHPModal}
   combatant={selectedCombatant}
+  isDM={!!isDM}  
   on:apply={handleApplyHP}
   on:close={() => { showHPModal = false; selectedCombatant = null; }}
 />
@@ -431,11 +432,11 @@
 <ConditionModal 
   bind:isOpen={showConditionModal}
   combatant={selectedCombatant}
+  isDM={!!isDM}  
   on:add={handleAddCondition}
   on:remove={handleRemoveCondition}
   on:close={() => { showConditionModal = false; selectedCombatant = null; }}
 />
-
 <AddCombatantModal 
   bind:isOpen={showAddCombatantModal}
   players={characters}

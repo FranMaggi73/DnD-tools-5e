@@ -6,6 +6,7 @@
 
   export let isOpen: boolean = false;
   export let combatant: Combatant | null = null;
+  export let isDM: boolean = false; // 👈 NUEVO
 
   const dispatch = createEventDispatcher();
 
@@ -33,7 +34,7 @@
   }, 300);
 
   function addCondition(conditionName: string) {
-    if (!combatant || !conditionName.trim()) return;
+    if (!combatant || !conditionName.trim() || !isDM) return; // 👈 VERIFICAR isDM
     
     const currentConditions = Array.isArray(combatant.conditions) ? combatant.conditions : [];
     if (currentConditions.includes(conditionName)) {
@@ -48,7 +49,7 @@
   }
 
   function removeCondition(conditionName: string) {
-    if (!combatant) return;
+    if (!combatant || !isDM) return; // 👈 VERIFICAR isDM
     console.log('Removiendo condición:', conditionName);
     dispatch('remove', conditionName);
   }
@@ -66,7 +67,8 @@
   }
 </script>
 
-{#if isOpen && combatant}
+<!-- 👇 VERIFICAR isDM -->
+{#if isOpen && combatant && isDM}
   <div class="modal modal-open z-50" on:keydown={handleKeydown}>
     <div class="card-parchment border-4 border-secondary w-5/6 h-5/6 mx-4 relative flex flex-col">
       <!-- Botón cerrar -->
@@ -233,6 +235,46 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+{:else if isOpen && combatant && !isDM}
+  <!-- Mensaje para jugadores que intenten ver condiciones (modo lectura) -->
+  <div class="modal modal-open z-50" on:keydown={handleKeydown}>
+    <div class="card-parchment border-4 border-secondary w-11/12 max-w-md relative p-6">
+      <button 
+        class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" 
+        on:click={handleClose}
+      >✕</button>
+      
+      <h3 class="font-bold text-2xl font-medieval text-neutral text-center mb-4">
+        ⚠️ Estados de {combatant.name}
+      </h3>
+
+      {#if combatant.conditions && Array.isArray(combatant.conditions) && combatant.conditions.length > 0}
+        <div class="space-y-2">
+          {#each combatant.conditions as condition}
+            <div class="bg-warning/20 rounded px-3 py-2 border border-warning/40">
+              <span class="font-medieval text-sm text-neutral">{condition}</span>
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <div class="text-center py-6">
+          <div class="text-4xl mb-2">😌</div>
+          <p class="text-neutral/70 font-body">Sin estados activos</p>
+        </div>
+      {/if}
+
+      <p class="text-xs text-center text-neutral/60 italic mt-4">
+        Solo el DM puede modificar estados
+      </p>
+
+      <button 
+        on:click={handleClose}
+        class="btn btn-dnd w-full mt-4"
+      >
+        Cerrar
+      </button>
     </div>
   </div>
 {/if}

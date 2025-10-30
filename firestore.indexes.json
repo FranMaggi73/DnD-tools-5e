@@ -78,7 +78,7 @@
         }
       ]
     },
- {
+    {
       "collectionGroup": "event_members",
       "queryScope": "COLLECTION",
       "fields": [
@@ -105,8 +105,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "updatedAt",
-          "order": "DESCENDING"
+          "fieldPath": "isShared",
+          "order": "ASCENDING"
         }
       ]
     },
@@ -121,10 +121,6 @@
         {
           "fieldPath": "isShared",
           "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "updatedAt",
-          "order": "DESCENDING"
         }
       ]
     }
