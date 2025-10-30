@@ -12,6 +12,9 @@
 	"/campaigns/[id]/combat": [
 		"src/routes/+layout.ts"
 	],
+	"/campaigns/[id]/notes": [
+		"src/routes/+layout.ts"
+	],
 	"/dashboard": [
 		"src/routes/+layout.ts"
 	],

@@ -161,6 +161,30 @@ service cloud.firestore {
     }
     
     // ===========================
+    // NOTES COLLECTION
+    // ===========================
+    
+    match /notes/{noteId} {
+      // Leer: autor o si es compartida
+      allow read: if isAuthenticated() && 
+        (resource.data.authorId == request.auth.uid || 
+         resource.data.isShared == true);
+      
+      // Crear: miembros de la campaña
+      allow create: if isAuthenticated() && 
+                       isCampaignMember(request.resource.data.campaignId) &&
+                       request.resource.data.authorId == request.auth.uid;
+      
+      // Actualizar: solo el autor
+      allow update: if isAuthenticated() && 
+                       resource.data.authorId == request.auth.uid;
+      
+      // Eliminar: solo el autor
+      allow delete: if isAuthenticated() && 
+                       resource.data.authorId == request.auth.uid;
+    }
+    
+    // ===========================
     // DENY ALL OTHER COLLECTIONS
     // ===========================
     

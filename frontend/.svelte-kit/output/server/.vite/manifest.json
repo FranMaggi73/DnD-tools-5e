@@ -137,7 +137,7 @@
       "_api.js"
     ],
     "css": [
-      "_app/immutable/assets/_layout.DWAsJ-hE.css"
+      "_app/immutable/assets/_layout.YbIQlqwR.css"
     ]
   },
   "src/routes/+layout.ts": {
@@ -203,6 +203,23 @@
       "_api.js",
       "_uiStore.js",
       "_firebase.js"
+    ]
+  },
+  "src/routes/campaigns/[id]/notes/+page.svelte": {
+    "file": "entries/pages/campaigns/_id_/notes/_page.svelte.js",
+    "name": "entries/pages/campaigns/_id_/notes/_page.svelte",
+    "src": "src/routes/campaigns/[id]/notes/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_ssr.js",
+      "_stores.js",
+      "_authStore.js",
+      "_api.js",
+      "_uiStore.js",
+      "_firebase.js"
+    ],
+    "css": [
+      "_app/immutable/assets/_page.AlbUYr0i.css"
     ]
   },
   "src/routes/dashboard/+page.svelte": {

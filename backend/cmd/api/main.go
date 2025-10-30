@@ -137,9 +137,17 @@ func main() {
 		// ===== TURNOS =====
 		protected.POST("/encounters/:encounterId/next-turn", pm.RequireEncounterDM(), h.NextTurn)
 
+		// ===== NOTAS =====
+		protected.POST("/campaigns/:id/notes", pm.RequireCampaignMember(), h.CreateNote)
+		protected.GET("/campaigns/:id/notes", pm.RequireCampaignMember(), h.GetCampaignNotes)
+		protected.GET("/notes/:noteId", h.GetNote)
+		protected.PUT("/notes/:noteId", h.UpdateNote)
+		protected.DELETE("/notes/:noteId", h.DeleteNote)
+
 		// ===== CACHÉ MANAGEMENT =====
 		protected.POST("/cache/clear", h.ClearCache)
 		protected.GET("/cache/stats", h.GetCacheStats)
+
 	}
 
 	port := os.Getenv("PORT")

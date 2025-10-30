@@ -14,6 +14,7 @@ const Sidebar = create_ssr_component(($$result, $$props, $$bindings, slots) => {
   let currentPath;
   let isCombatPage;
   let isCharactersPage;
+  let isNotesPage;
   let isCampaignPage;
   let $page, $$unsubscribe_page;
   $$unsubscribe_page = subscribe(page, (value) => $page = value);
@@ -25,6 +26,7 @@ const Sidebar = create_ssr_component(($$result, $$props, $$bindings, slots) => {
   currentPath = $page.url.pathname;
   isCombatPage = currentPath === `/campaigns/${campaignId}/combat`;
   isCharactersPage = currentPath === `/campaigns/${campaignId}/characters`;
+  isNotesPage = currentPath === `/campaigns/${campaignId}/notes`;
   isCampaignPage = currentPath === `/campaigns/${campaignId}`;
   $$unsubscribe_page();
   return ` ${isOpen ? `<div class="fixed inset-0 bg-black/40 z-40" aria-hidden="true"></div>` : ``} <div${add_attribute(
@@ -51,6 +53,12 @@ const Sidebar = create_ssr_component(($$result, $$props, $$bindings, slots) => {
         label: "Personajes",
         icon: "🧙‍♂️",
         active: isCharactersPage
+      },
+      {
+        path: `/campaigns/${campaignId}/notes`,
+        label: "Notas",
+        icon: "📝",
+        active: isNotesPage
       }
     ],
     (item, i) => {

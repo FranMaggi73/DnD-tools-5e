@@ -153,3 +153,37 @@ type UpdateCombatantRequest struct {
 	Conditions []string `json:"conditions,omitempty"`
 	Initiative *int     `json:"initiative,omitempty"`
 }
+
+// ===========================
+// NOTAS
+// ===========================
+
+type Note struct {
+	ID         string    `firestore:"id" json:"id"`
+	CampaignID string    `firestore:"campaignId" json:"campaignId"`
+	AuthorID   string    `firestore:"authorId" json:"authorId"`
+	AuthorName string    `firestore:"authorName" json:"authorName"`
+	Title      string    `firestore:"title" json:"title"`
+	Content    string    `firestore:"content" json:"content"`
+	IsShared   bool      `firestore:"isShared" json:"isShared"` // true = nota del DM compartida con todos
+	Category   string    `firestore:"category" json:"category"` // "session", "npc", "location", "plot", "other"
+	Tags       []string  `firestore:"tags" json:"tags"`         // ["importante", "combate", "tesoro"]
+	CreatedAt  time.Time `firestore:"createdAt" json:"createdAt"`
+	UpdatedAt  time.Time `firestore:"updatedAt" json:"updatedAt"`
+}
+
+type CreateNoteRequest struct {
+	Title    string   `json:"title" binding:"required"`
+	Content  string   `json:"content"`
+	IsShared bool     `json:"isShared"` // Solo DM puede crear notas compartidas
+	Category string   `json:"category"`
+	Tags     []string `json:"tags"`
+}
+
+type UpdateNoteRequest struct {
+	Title    string   `json:"title"`
+	Content  string   `json:"content"`
+	IsShared bool     `json:"isShared"`
+	Category string   `json:"category"`
+	Tags     []string `json:"tags"`
+}

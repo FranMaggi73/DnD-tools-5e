@@ -11,6 +11,7 @@ import type {
   MonsterSearchResult,
   ConditionSearchResult,
   Condition,
+  Note,  // 👈 AGREGAR ESTO
 } from '$lib/types';
 
 // ✅ DETECCIÓN AUTOMÁTICA: usa localhost en desarrollo, producción en build
@@ -179,6 +180,43 @@ export const api = {
   nextTurn: (encounterId: string) =>
     fetchWithAuth<Encounter>(`/encounters/${encounterId}/next-turn`, {
       method: 'POST',
+    }),
+
+  // Notas
+  // Notas
+  createNote: (campaignId: string, data: {
+    title: string;
+    content: string;
+    isShared: boolean;
+    category: string;
+    tags: string[];
+  }) =>
+    fetchWithAuth<Note>(`/campaigns/${campaignId}/notes`, {  // 👈 AGREGAR <Note>
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getCampaignNotes: (campaignId: string) =>
+    fetchWithAuth<Note[]>(`/campaigns/${campaignId}/notes`),  // 👈 AGREGAR <Note[]>
+
+  getNote: (noteId: string) =>
+    fetchWithAuth<Note>(`/notes/${noteId}`),  // 👈 AGREGAR <Note>
+
+  updateNote: (noteId: string, data: {
+    title?: string;
+    content?: string;
+    isShared?: boolean;
+    category?: string;
+    tags?: string[];
+  }) =>
+    fetchWithAuth<Note>(`/notes/${noteId}`, {  // 👈 AGREGAR <Note>
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  deleteNote: (noteId: string) =>
+    fetchWithAuth<{ message: string }>(`/notes/${noteId}`, {
+      method: 'DELETE',
     }),
 };
 

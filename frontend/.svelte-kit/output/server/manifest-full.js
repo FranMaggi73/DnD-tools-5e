@@ -10,7 +10,7 @@ return {
 	assets: new Set([]),
 	mimeTypes: {},
 	_: {
-		client: {start:"_app/immutable/entry/start.BAkUE6nQ.js",app:"_app/immutable/entry/app.C1rbUbwG.js",imports:["_app/immutable/entry/start.BAkUE6nQ.js","_app/immutable/chunks/4AD-5CNy.js","_app/immutable/chunks/B11dj0TC.js","_app/immutable/entry/app.C1rbUbwG.js","_app/immutable/chunks/B11dj0TC.js","_app/immutable/chunks/IHki7fMi.js"],stylesheets:[],fonts:[],uses_env_dynamic_public:false},
+		client: {start:"_app/immutable/entry/start.-Zoqxdm0.js",app:"_app/immutable/entry/app.B-4rTRcL.js",imports:["_app/immutable/entry/start.-Zoqxdm0.js","_app/immutable/chunks/B8bFgK_i.js","_app/immutable/chunks/xl8dgHUM.js","_app/immutable/entry/app.B-4rTRcL.js","_app/immutable/chunks/xl8dgHUM.js","_app/immutable/chunks/IHki7fMi.js"],stylesheets:[],fonts:[],uses_env_dynamic_public:false},
 		nodes: [
 			__memo(() => import('./nodes/0.js')),
 			__memo(() => import('./nodes/1.js')),
@@ -19,7 +19,8 @@ return {
 			__memo(() => import('./nodes/4.js')),
 			__memo(() => import('./nodes/5.js')),
 			__memo(() => import('./nodes/6.js')),
-			__memo(() => import('./nodes/7.js'))
+			__memo(() => import('./nodes/7.js')),
+			__memo(() => import('./nodes/8.js'))
 		],
 		remotes: {
 			
@@ -54,17 +55,24 @@ return {
 				endpoint: null
 			},
 			{
+				id: "/campaigns/[id]/notes",
+				pattern: /^\/campaigns\/([^/]+?)\/notes\/?$/,
+				params: [{"name":"id","optional":false,"rest":false,"chained":false}],
+				page: { layouts: [0,], errors: [1,], leaf: 6 },
+				endpoint: null
+			},
+			{
 				id: "/dashboard",
 				pattern: /^\/dashboard\/?$/,
 				params: [],
-				page: { layouts: [0,], errors: [1,], leaf: 6 },
+				page: { layouts: [0,], errors: [1,], leaf: 7 },
 				endpoint: null
 			},
 			{
 				id: "/login",
 				pattern: /^\/login\/?$/,
 				params: [],
-				page: { layouts: [0,], errors: [1,], leaf: 7 },
+				page: { layouts: [0,], errors: [1,], leaf: 8 },
 				endpoint: null
 			}
 		],

@@ -11,6 +11,7 @@
   $: currentPath = $page.url.pathname;
   $: isCombatPage = currentPath === `/campaigns/${campaignId}/combat`;
   $: isCharactersPage = currentPath === `/campaigns/${campaignId}/characters`;
+  $: isNotesPage = currentPath === `/campaigns/${campaignId}/notes`;
   $: isCampaignPage = currentPath === `/campaigns/${campaignId}`;
 
   function closeSidebar() {
@@ -67,7 +68,8 @@
       {#each [
         { path: `/campaigns/${campaignId}`, label: 'Home', icon: '🏠', active: isCampaignPage },
         { path: `/campaigns/${campaignId}/combat`, label: 'Combate', icon: '⚔️', active: isCombatPage },
-        { path: `/campaigns/${campaignId}/characters`, label: 'Personajes', icon: '🧙‍♂️', active: isCharactersPage }
+        { path: `/campaigns/${campaignId}/characters`, label: 'Personajes', icon: '🧙‍♂️', active: isCharactersPage },
+        { path: `/campaigns/${campaignId}/notes`, label: 'Notas', icon: '📝', active: isNotesPage },
       ] as item, i}
         <button
           bind:this={btnRefs[i]}

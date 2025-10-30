@@ -141,3 +141,17 @@ export interface ConditionSearchResult {
   previous: string | null;
   results: Condition[];
 }
+
+export interface Note {
+  id: string;
+  campaignId: string;
+  authorId: string;
+  authorName: string;
+  title: string;
+  content: string;
+  isShared: boolean;
+  category: string;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
