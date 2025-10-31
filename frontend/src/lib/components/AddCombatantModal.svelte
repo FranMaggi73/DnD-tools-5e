@@ -223,32 +223,43 @@
 </script>
 
 {#if isOpen}
-<div class="modal modal-open z-50">
-  <!-- Contenedor del modal -->
+<div 
+  class="modal modal-open z-50" 
+  role="dialog" 
+  aria-modal="true" 
+  aria-labelledby="modal-title"
+  on:keydown={(e) => e.key === 'Escape' && handleClose()}
+>
   <div class="modal-box card-parchment w-11/12 max-w-3xl h-11/12 relative flex flex-col">
-
-    <!-- HEADER FIJO: título + tabs + close -->
     <div class="flex flex-col md:flex-row justify-between items-center p-4 border-b-2 border-secondary gap-2 md:gap-4">
-      <!-- Título -->
-      <h3 class="font-bold text-2xl md:text-3xl font-medieval text-neutral flex-1 text-center md:text-left">
+      <h3 
+        id="modal-title"
+        class="font-bold text-2xl md:text-3xl font-medieval text-neutral flex-1 text-center md:text-left"
+      >
         ⚔️ Agregar Combatiente
       </h3>
-      <!-- Tabs -->
-      <div class="flex gap-2">
+      
+      <div class="flex gap-2" role="tablist" aria-label="Tipo de combatiente">
         <button
+          role="tab"
+          aria-selected={activeTab === 'player'}
+          aria-controls="player-panel"
           class="btn btn-sm font-medieval {activeTab === 'player' ? 'btn-primary' : 'btn-outline'}"
           on:click={() => (activeTab = 'player')}
         >🧝 Jugador</button>
         <button
+          role="tab"
+          aria-selected={activeTab === 'monster'}
+          aria-controls="monster-panel"
           class="btn btn-sm font-medieval {activeTab === 'monster' ? 'btn-primary' : 'btn-outline'}"
           on:click={() => (activeTab = 'monster')}
         >🐉 Monstruo</button>
       </div>
 
-      <!-- Botón cerrar -->
       <button
         class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 md:static"
         on:click={handleClose}
+        aria-label="Cerrar modal"
       >✕</button>
     </div>
 

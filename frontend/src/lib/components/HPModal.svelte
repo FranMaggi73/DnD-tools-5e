@@ -41,26 +41,31 @@
   }
 </script>
 
-<!-- 👇 VERIFICAR isDM -->
 {#if isOpen && combatant && isDM}
-  <div class="modal modal-open z-50">
+  <div 
+    class="modal modal-open z-50"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="hp-modal-title"
+    on:keydown={(e) => e.key === 'Escape' && resetAndClose()}
+  >
     <div class="card-parchment border-2 sm:border-4 border-secondary mx-2 sm:mx-4 relative 
                 w-[95vw] sm:w-[90vw] md:w-3/4 lg:w-1/2 
                 max-h-[90vh] flex flex-col">
-      <!-- Botón cerrar -->
+      
       <button 
         class="btn btn-xs sm:btn-sm btn-circle btn-ghost absolute right-2 sm:right-3 top-2 sm:top-3 z-10 hover:bg-error/20" 
         on:click={resetAndClose}
-      >
-        ✕
-      </button>
+        aria-label="Cerrar modal"
+      >✕</button>
 
-      <!-- Header compacto -->
       <div class="p-3 sm:p-4 flex-shrink-0 bg-gradient-to-b from-[#f4e4c1] to-transparent border-b-2 border-secondary">
-        <h3 class="font-bold text-xl sm:text-2xl font-medieval text-neutral text-center mb-2 sm:mb-3">
+        <h3 
+          id="hp-modal-title"
+          class="font-bold text-xl sm:text-2xl font-medieval text-neutral text-center mb-2 sm:mb-3"
+        >
           💚 Gestión de HP
         </h3>
-
         <!-- Info del Combatiente -->
         <div class="bg-gradient-to-r from-primary/10 to-accent/10 p-2 sm:p-3 rounded-lg border border-primary/30 flex items-center gap-2 sm:gap-3">
           <div class="avatar flex-shrink-0">

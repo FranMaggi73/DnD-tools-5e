@@ -587,7 +587,14 @@
 
 <!-- Modal Crear Nota -->
 {#if showCreateModal}
-  <div class="modal modal-open z-50" on:click={() => { showCreateModal = false; resetForm(); }}>
+  <div 
+    class="modal modal-open z-50" 
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="create-note-title"
+    on:click={() => { showCreateModal = false; resetForm(); }}
+    on:keydown={(e) => e.key === 'Escape' && (showCreateModal = false, resetForm())}
+  >
     <div 
       class="card-parchment border-2 sm:border-4 border-secondary 
              w-[95vw] sm:w-[90vw] md:w-3/4 lg:w-2/3 xl:w-1/2 max-w-3xl 
@@ -599,13 +606,16 @@
         <button 
           class="btn btn-xs sm:btn-sm btn-circle btn-ghost absolute right-2 top-2 hover:bg-error/20" 
           on:click={() => { showCreateModal = false; resetForm(); }}
+          aria-label="Cerrar modal"
         >✕</button>
         
-        <h3 class="font-bold text-xl sm:text-2xl md:text-3xl font-medieval text-neutral text-center pr-8">
+        <h3 
+          id="create-note-title"
+          class="font-bold text-xl sm:text-2xl md:text-3xl font-medieval text-neutral text-center pr-8"
+        >
           ✨ Nueva Nota
         </h3>
       </div>
-
       <div class="flex-1 overflow-y-auto p-3 sm:p-4 md:p-5 space-y-3 sm:space-y-4 custom-scrollbar">
         
         <div class="form-control">

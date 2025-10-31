@@ -255,6 +255,7 @@ func (h *Handler) EndEncounter(c *gin.Context) {
 // COMBATIENTES
 // ===========================
 
+// REEMPLAZAR handleAddCombatant (línea ~228) con transacción
 func (h *Handler) AddCombatant(c *gin.Context) {
 	uid := c.GetString("uid")
 	if uid == "" {
@@ -270,93 +271,107 @@ func (h *Handler) AddCombatant(c *gin.Context) {
 		return
 	}
 
-	encounterDoc, err := h.db.Collection("encounters").Doc(encounterID).Get(ctx)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Encuentro no encontrado"})
-		return
-	}
+	// ✅ USAR TRANSACCIÓN
+	combatantRef := h.db.Collection("combatants").NewDoc()
 
-	var encounter models.Encounter
-	if err := encounterDoc.DataTo(&encounter); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando encuentro"})
-		return
-	}
+	err := h.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		// 1. Verificar que el encuentro existe
+		encounterDoc, err := tx.Get(h.db.Collection("encounters").Doc(encounterID))
+		if err != nil {
+			return fmt.Errorf("encuentro no encontrado")
+		}
 
-	campaignDoc, err := h.db.Collection("events").Doc(encounter.CampaignID).Get(ctx)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Campaña no encontrada"})
-		return
-	}
+		var encounter models.Encounter
+		if err := encounterDoc.DataTo(&encounter); err != nil {
+			return err
+		}
 
-	var campaign models.Campaign
-	if err := campaignDoc.DataTo(&campaign); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando campaña"})
-		return
-	}
+		// 2. Verificar permisos
+		campaignDoc, err := h.db.Collection("events").Doc(encounter.CampaignID).Get(ctx)
+		if err != nil {
+			return err
+		}
 
-	if campaign.DmID != uid {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Solo el DM puede agregar combatientes"})
-		return
-	}
+		var campaign models.Campaign
+		if err := campaignDoc.DataTo(&campaign); err != nil {
+			return err
+		}
 
-	var name string
-	var imageURL string
-	var characterID string
-	var conditions []string
+		if campaign.DmID != uid {
+			return fmt.Errorf("solo el DM puede agregar combatientes")
+		}
 
-	if (req.Type == "character" || req.Type == "player") && req.CharacterID != "" {
-		characterID = req.CharacterID
+		// 3. Preparar datos del combatiente
+		var name string
+		var imageURL string
+		var characterID string
+		var conditions []string
 
-		charDoc, err := h.db.Collection("characters").Doc(req.CharacterID).Get(ctx)
-		if err == nil {
-			var char models.Character
-			if charDoc.DataTo(&char) == nil {
-				name = char.Name
-				imageURL = char.ImageURL
-				conditions = char.Conditions
+		if (req.Type == "character" || req.Type == "player") && req.CharacterID != "" {
+			characterID = req.CharacterID
 
-				if req.MaxHP == 0 {
-					req.MaxHP = char.MaxHP
-				}
-				if req.CurrentHP == 0 {
-					req.CurrentHP = char.CurrentHP
-				}
-				if req.ArmorClass == 0 {
-					req.ArmorClass = char.ArmorClass
+			charDoc, err := h.db.Collection("characters").Doc(req.CharacterID).Get(ctx)
+			if err == nil {
+				var char models.Character
+				if charDoc.DataTo(&char) == nil {
+					name = char.Name
+					imageURL = char.ImageURL
+					conditions = char.Conditions
+
+					if req.MaxHP == 0 {
+						req.MaxHP = char.MaxHP
+					}
+					if req.CurrentHP == 0 {
+						req.CurrentHP = char.CurrentHP
+					}
+					if req.ArmorClass == 0 {
+						req.ArmorClass = char.ArmorClass
+					}
 				}
 			}
+		} else {
+			name = req.Name
+			imageURL = req.ImageURL
+			conditions = []string{}
 		}
-	} else {
-		name = req.Name
-		imageURL = req.ImageURL
-		conditions = []string{}
-	}
 
-	combatantRef := h.db.Collection("combatants").NewDoc()
-	combatant := models.Combatant{
-		ID:          combatantRef.ID,
-		EncounterID: encounterID,
-		Type:        req.Type,
-		CharacterID: characterID,
-		Name:        name,
-		Initiative:  req.Initiative,
-		MaxHP:       req.MaxHP,
-		CurrentHP:   req.CurrentHP,
-		ArmorClass:  req.ArmorClass,
-		Conditions:  conditions,
-		ImageURL:    imageURL,
-		IsNPC:       req.IsNPC,
-		CreatedAt:   time.Now(),
-	}
+		combatant := models.Combatant{
+			ID:          combatantRef.ID,
+			EncounterID: encounterID,
+			Type:        req.Type,
+			CharacterID: characterID,
+			Name:        name,
+			Initiative:  req.Initiative,
+			MaxHP:       req.MaxHP,
+			CurrentHP:   req.CurrentHP,
+			ArmorClass:  req.ArmorClass,
+			Conditions:  conditions,
+			ImageURL:    imageURL,
+			IsNPC:       req.IsNPC,
+			CreatedAt:   time.Now(),
+		}
 
-	if combatant.CurrentHP == 0 {
-		combatant.CurrentHP = combatant.MaxHP
-	}
+		if combatant.CurrentHP == 0 {
+			combatant.CurrentHP = combatant.MaxHP
+		}
 
-	if _, err := combatantRef.Set(ctx, combatant); err != nil {
+		// 4. Crear combatiente dentro de la transacción
+		return tx.Set(combatantRef, combatant)
+	})
+
+	if err != nil {
+		if err.Error() == "solo el DM puede agregar combatientes" {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error agregando combatiente"})
 		return
 	}
+
+	// Obtener combatiente creado
+	combatantDoc, _ := combatantRef.Get(ctx)
+	var combatant models.Combatant
+	combatantDoc.DataTo(&combatant)
 
 	c.JSON(http.StatusCreated, combatant)
 }
@@ -561,34 +576,27 @@ func (h *Handler) RemoveCombatant(c *gin.Context) {
 // ===========================
 
 func (h *Handler) NextTurn(c *gin.Context) {
-	uid := c.GetString("uid")
-	if uid == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
-		return
-	}
 	encounterID := c.Param("encounterId")
 	ctx := context.Background()
 
-	encounterDoc, err := h.db.Collection("encounters").Doc(encounterID).Get(ctx)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Encuentro no encontrado"})
-		return
+	// Obtener encuentro del contexto (ya verificado por middleware)
+	encounter, ok := c.Get("encounter")
+	if !ok {
+		encounterDoc, err := h.db.Collection("encounters").Doc(encounterID).Get(ctx)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Encuentro no encontrado"})
+			return
+		}
+
+		var enc models.Encounter
+		if err := encounterDoc.DataTo(&enc); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando encuentro"})
+			return
+		}
+		encounter = &enc
 	}
 
-	var encounter models.Encounter
-	if err := encounterDoc.DataTo(&encounter); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando encuentro"})
-		return
-	}
-
-	campaignDoc, _ := h.db.Collection("events").Doc(encounter.CampaignID).Get(ctx)
-	var campaign models.Campaign
-	campaignDoc.DataTo(&campaign)
-
-	if campaign.DmID != uid {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Solo el DM puede avanzar turnos"})
-		return
-	}
+	enc := encounter.(*models.Encounter)
 
 	iter := h.db.Collection("combatants").
 		Where("encounterId", "==", encounterID).
@@ -610,8 +618,8 @@ func (h *Handler) NextTurn(c *gin.Context) {
 		return
 	}
 
-	newTurnIndex := encounter.TurnIndex + 1
-	newRound := encounter.Round
+	newTurnIndex := enc.TurnIndex + 1
+	newRound := enc.Round
 
 	if newTurnIndex >= combatantCount {
 		newTurnIndex = 0
@@ -637,26 +645,9 @@ func (h *Handler) NextTurn(c *gin.Context) {
 }
 
 func (h *Handler) ResetEncounter(c *gin.Context) {
-	uid := c.GetString("uid")
-	if uid == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
-		return
-	}
+	// ✅ Ya no necesita verificar permisos
 	encounterID := c.Param("encounterId")
 	ctx := context.Background()
-
-	encounterDoc, _ := h.db.Collection("encounters").Doc(encounterID).Get(ctx)
-	var encounter models.Encounter
-	encounterDoc.DataTo(&encounter)
-
-	campaignDoc, _ := h.db.Collection("events").Doc(encounter.CampaignID).Get(ctx)
-	var campaign models.Campaign
-	campaignDoc.DataTo(&campaign)
-
-	if campaign.DmID != uid {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Solo el DM puede reiniciar encuentros"})
-		return
-	}
 
 	updates := []firestore.Update{
 		{Path: "round", Value: 1},
@@ -664,7 +655,10 @@ func (h *Handler) ResetEncounter(c *gin.Context) {
 		{Path: "updatedAt", Value: time.Now()},
 	}
 
-	h.db.Collection("encounters").Doc(encounterID).Update(ctx, updates)
+	if _, err := h.db.Collection("encounters").Doc(encounterID).Update(ctx, updates); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error reiniciando encuentro"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Encuentro reiniciado"})
 }

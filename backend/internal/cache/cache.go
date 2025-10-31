@@ -89,11 +89,48 @@ func (c *Cache) InvalidatePattern(pattern string) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
+	// ✅ Crear lista de keys a eliminar primero
+	keysToDelete := make([]string, 0)
 	for key := range c.items {
 		if containsPattern(key, pattern) {
-			delete(c.items, key)
+			keysToDelete = append(keysToDelete, key)
 		}
 	}
+
+	// ✅ Eliminar después de soltar el lock de lectura
+	for _, key := range keysToDelete {
+		delete(c.items, key)
+	}
+}
+
+// InvalidateCampaignSafe invalida con locks apropiados
+func (c *Cache) InvalidateCampaignSafe(campaignID string) {
+	c.mutex.Lock()
+	keysToDelete := make([]string, 0)
+
+	// Buscar todas las keys relacionadas
+	patterns := []string{
+		"campaign:" + campaignID,
+		"members:" + campaignID,
+		"characters:" + campaignID,
+	}
+
+	for key := range c.items {
+		for _, pattern := range patterns {
+			if containsPattern(key, pattern) {
+				keysToDelete = append(keysToDelete, key)
+				break
+			}
+		}
+	}
+	c.mutex.Unlock()
+
+	// Eliminar con locks individuales
+	c.mutex.Lock()
+	for _, key := range keysToDelete {
+		delete(c.items, key)
+	}
+	c.mutex.Unlock()
 }
 
 // cleanupExpired elimina items expirados periódicamente

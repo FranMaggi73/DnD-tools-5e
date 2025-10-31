@@ -67,24 +67,28 @@
   }
 </script>
 
-<!-- 👇 VERIFICAR isDM -->
 {#if isOpen && combatant && isDM}
-  <div class="modal modal-open z-50" on:keydown={handleKeydown}>
+  <div 
+    class="modal modal-open z-50" 
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="condition-modal-title"
+    on:keydown={handleKeydown}
+  >
     <div class="card-parchment border-4 border-secondary w-5/6 h-5/6 mx-4 relative flex flex-col">
-      <!-- Botón cerrar -->
       <button 
         class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3 z-10 hover:bg-error/20" 
         on:click={handleClose}
-      >
-        ✕
-      </button>
+        aria-label="Cerrar modal"
+      >✕</button>
 
-      <!-- Header compacto y fijo -->
       <div class="p-4 flex-shrink-0 bg-gradient-to-b from-[#f4e4c1] to-transparent">
-        <h3 class="font-bold text-2xl font-medieval text-neutral text-center mb-3">
+        <h3 
+          id="condition-modal-title"
+          class="font-bold text-2xl font-medieval text-neutral text-center mb-3"
+        >
           ⚠️ Estados de Combate
         </h3>
-
         <!-- Info del Combatiente - Más compacta -->
         <div class="bg-gradient-to-r from-primary/10 to-accent/10 p-3 rounded-lg border border-primary/30 flex items-center gap-3">
           <div class="avatar">

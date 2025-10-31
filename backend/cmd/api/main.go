@@ -41,9 +41,8 @@ func main() {
 	}
 
 	// ===== INICIALIZAR CACHÉ (SIMPLIFICADO) =====
-	// Solo cachear datos que cambian poco y son costosos de obtener
-	cacheInstance := cache.NewCache(30 * time.Second) // TTL más corto
-	log.Println("✅ Caché en memoria inicializado (TTL: 30 segundos)")
+	cacheInstance := cache.NewCache(5 * time.Minute)
+	log.Println("✅ Caché en memoria inicializado (TTL: 5 minutos)")
 
 	// ===== RATE LIMITER CON REDIS =====
 	var rateLimiter middleware.RateLimiter
