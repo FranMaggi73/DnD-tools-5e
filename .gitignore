@@ -68,6 +68,9 @@ node_modules/
 # dotenv environment variables file
 .env
 
+# redis
+redis-config.env
+
 # dataconnect generated files
 .dataconnect
 backend/cmd/api/serviceAccountKey.json
