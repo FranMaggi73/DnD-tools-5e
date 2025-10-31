@@ -86,14 +86,15 @@ type Character struct {
 	UpdatedAt  time.Time `firestore:"updatedAt" json:"updatedAt"`
 }
 
+// ✅ MODIFICAR CreateCharacterRequest
 type CreateCharacterRequest struct {
-	Name       string `json:"name" binding:"required"`
-	Class      string `json:"class" binding:"required"`
-	Level      int    `json:"level" binding:"required"`
-	MaxHP      int    `json:"maxHp" binding:"required"`
-	ArmorClass int    `json:"armorClass" binding:"required"`
-	Initiative int    `json:"initiative"`
-	ImageURL   string `json:"imageUrl"`
+	Name       string `json:"name" binding:"required,min=2,max=50"`
+	Class      string `json:"class" binding:"required,min=2,max=50"`
+	Level      int    `json:"level" binding:"required,min=1,max=20"`
+	MaxHP      int    `json:"maxHp" binding:"required,min=1,max=999"`
+	ArmorClass int    `json:"armorClass" binding:"required,min=1,max=30"`
+	Initiative int    `json:"initiative" binding:"min=-5,max=15"`
+	ImageURL   string `json:"imageUrl" binding:"max=500"`
 }
 
 // ===========================
@@ -112,7 +113,7 @@ type Encounter struct {
 }
 
 type CreateEncounterRequest struct {
-	Name string `json:"name" binding:"required"`
+	Name string `json:"name" binding:"required,min=3,max=100"`
 }
 
 // ===========================
@@ -137,17 +138,16 @@ type Combatant struct {
 }
 
 type AddCombatantRequest struct {
-	Type        string `json:"type" binding:"required"` // "character" o "creature"
-	CharacterID string `json:"characterId,omitempty"`   // Si es PJ
-	Name        string `json:"name"`
-	Initiative  int    `json:"initiative" binding:"required"`
-	MaxHP       int    `json:"maxHp" binding:"required"`
-	CurrentHP   int    `json:"currentHp"`
-	ArmorClass  int    `json:"armorClass" binding:"required"`
-	ImageURL    string `json:"imageUrl"`
+	Type        string `json:"type" binding:"required,oneof=character creature player"`
+	CharacterID string `json:"characterId,omitempty"`
+	Name        string `json:"name" binding:"max=50"`
+	Initiative  int    `json:"initiative" binding:"required,min=1,max=100"`
+	MaxHP       int    `json:"maxHp" binding:"required,min=1,max=9999"`
+	CurrentHP   int    `json:"currentHp" binding:"min=0"`
+	ArmorClass  int    `json:"armorClass" binding:"required,min=1,max=99"`
+	ImageURL    string `json:"imageUrl" binding:"max=500"`
 	IsNPC       bool   `json:"isNpc"`
 }
-
 type UpdateCombatantRequest struct {
 	CurrentHP  *int     `json:"currentHp,omitempty"`
 	Conditions []string `json:"conditions,omitempty"`
@@ -165,25 +165,25 @@ type Note struct {
 	AuthorName string    `firestore:"authorName" json:"authorName"`
 	Title      string    `firestore:"title" json:"title"`
 	Content    string    `firestore:"content" json:"content"`
-	IsShared   bool      `firestore:"isShared" json:"isShared"` // true = nota del DM compartida con todos
-	Category   string    `firestore:"category" json:"category"` // "session", "npc", "location", "plot", "other"
-	Tags       []string  `firestore:"tags" json:"tags"`         // ["importante", "combate", "tesoro"]
+	IsShared   bool      `firestore:"isShared" json:"isShared"`
+	Category   string    `firestore:"category" json:"category"`
+	Tags       []string  `firestore:"tags" json:"tags"`
 	CreatedAt  time.Time `firestore:"createdAt" json:"createdAt"`
 	UpdatedAt  time.Time `firestore:"updatedAt" json:"updatedAt"`
 }
 
 type CreateNoteRequest struct {
-	Title    string   `json:"title" binding:"required"`
-	Content  string   `json:"content"`
-	IsShared bool     `json:"isShared"` // Solo DM puede crear notas compartidas
-	Category string   `json:"category"`
-	Tags     []string `json:"tags"`
+	Title    string   `json:"title" binding:"required,min=1,max=200"`
+	Content  string   `json:"content" binding:"max=10000"`
+	IsShared bool     `json:"isShared"`
+	Category string   `json:"category" binding:"required,oneof=session npc location plot other"`
+	Tags     []string `json:"tags" binding:"max=10,dive,max=30"`
 }
 
 type UpdateNoteRequest struct {
-	Title    string   `json:"title"`
-	Content  string   `json:"content"`
+	Title    string   `json:"title" binding:"required,min=1,max=200"`
+	Content  string   `json:"content" binding:"max=10000"`
 	IsShared bool     `json:"isShared"`
-	Category string   `json:"category"`
-	Tags     []string `json:"tags"`
+	Category string   `json:"category" binding:"required,oneof=session npc location plot other"`
+	Tags     []string `json:"tags" binding:"max=10,dive,max=30"`
 }

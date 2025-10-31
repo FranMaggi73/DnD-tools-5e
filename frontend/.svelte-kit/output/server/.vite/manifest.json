@@ -96,16 +96,6 @@
       "_environment.js"
     ]
   },
-  "node_modules/@sveltejs/kit/src/runtime/components/svelte-4/error.svelte": {
-    "file": "entries/fallbacks/error.svelte.js",
-    "name": "entries/fallbacks/error.svelte",
-    "src": "node_modules/@sveltejs/kit/src/runtime/components/svelte-4/error.svelte",
-    "isEntry": true,
-    "imports": [
-      "_ssr.js",
-      "_stores.js"
-    ]
-  },
   "node_modules/@sveltejs/kit/src/runtime/server/index.js": {
     "file": "index.js",
     "name": "index",
@@ -118,6 +108,19 @@
       "_utils.js",
       "_index.js",
       "_internal.js"
+    ]
+  },
+  "src/routes/+error.svelte": {
+    "file": "entries/pages/_error.svelte.js",
+    "name": "entries/pages/_error.svelte",
+    "src": "src/routes/+error.svelte",
+    "isEntry": true,
+    "imports": [
+      "_ssr.js",
+      "_stores.js",
+      "_exports.js",
+      "_utils.js",
+      "_state.svelte.js"
     ]
   },
   "src/routes/+layout.svelte": {
@@ -137,7 +140,7 @@
       "_api.js"
     ],
     "css": [
-      "_app/immutable/assets/_layout.BrCCT4m-.css"
+      "_app/immutable/assets/_layout.C1s3yGFk.css"
     ]
   },
   "src/routes/+layout.ts": {

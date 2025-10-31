@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -18,6 +19,104 @@ import (
 	"github.com/FranMaggi73/dm-events-backend/internal/middleware"
 )
 
+// ===== RATE LIMITER =====
+type RateLimiter struct {
+	requests map[string][]time.Time
+	mu       sync.Mutex
+	limit    int
+	window   time.Duration
+}
+
+func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
+	rl := &RateLimiter{
+		requests: make(map[string][]time.Time),
+		limit:    limit,
+		window:   window,
+	}
+
+	// Cleanup cada minuto
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			rl.cleanup()
+		}
+	}()
+
+	return rl
+}
+
+func (rl *RateLimiter) Allow(key string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	windowStart := now.Add(-rl.window)
+
+	// Filtrar requests antiguos
+	if times, exists := rl.requests[key]; exists {
+		valid := []time.Time{}
+		for _, t := range times {
+			if t.After(windowStart) {
+				valid = append(valid, t)
+			}
+		}
+		rl.requests[key] = valid
+	}
+
+	// Verificar límite
+	if len(rl.requests[key]) >= rl.limit {
+		return false
+	}
+
+	// Agregar request
+	rl.requests[key] = append(rl.requests[key], now)
+	return true
+}
+
+func (rl *RateLimiter) cleanup() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	windowStart := now.Add(-rl.window)
+
+	for key, times := range rl.requests {
+		valid := []time.Time{}
+		for _, t := range times {
+			if t.After(windowStart) {
+				valid = append(valid, t)
+			}
+		}
+		if len(valid) == 0 {
+			delete(rl.requests, key)
+		} else {
+			rl.requests[key] = valid
+		}
+	}
+}
+
+// Middleware de rate limiting
+func RateLimitMiddleware(limiter *RateLimiter) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		uid := c.GetString("uid")
+		if uid == "" {
+			c.Next()
+			return
+		}
+
+		if !limiter.Allow(uid) {
+			c.JSON(429, gin.H{
+				"error": "Demasiadas peticiones. Por favor, espera un momento antes de intentar de nuevo.",
+			})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
 func main() {
 	ctx := context.Background()
 
@@ -28,23 +127,24 @@ func main() {
 		log.Fatalf("Error inicializando Firebase: %v", err)
 	}
 
-	// Cliente de Firestore
 	firestoreClient, err := app.Firestore(ctx)
 	if err != nil {
 		log.Fatalf("Error obteniendo cliente Firestore: %v", err)
 	}
 	defer firestoreClient.Close()
 
-	// Cliente de Auth
 	authClient, err := app.Auth(ctx)
 	if err != nil {
 		log.Fatalf("Error obteniendo cliente Auth: %v", err)
 	}
 
 	// ===== INICIALIZAR CACHÉ =====
-	// TTL de 5 minutos para datos que cambian ocasionalmente
 	cacheInstance := cache.NewCache(5 * time.Minute)
 	log.Println("✅ Caché en memoria inicializado (TTL: 5 minutos)")
+
+	// ===== RATE LIMITER =====
+	rateLimiter := NewRateLimiter(20, 1*time.Minute) // 20 requests por minuto
+	log.Println("✅ Rate limiter inicializado (20 req/min por usuario)")
 
 	// ===== ROUTER GIN =====
 	r := gin.Default()
@@ -72,7 +172,7 @@ func main() {
 
 	r.Use(cors.New(config))
 
-	// ===== HANDLERS Y MIDDLEWARE DE PERMISOS =====
+	// ===== HANDLERS Y MIDDLEWARE =====
 	h := handlers.NewHandler(firestoreClient, authClient, cacheInstance)
 	pm := middleware.NewPermissionsMiddleware(firestoreClient, cacheInstance)
 
@@ -80,10 +180,26 @@ func main() {
 	public := r.Group("/api")
 	{
 		public.GET("/health", func(c *gin.Context) {
+			// ✅ HEALTH CHECK MEJORADO
+			healthCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+
+			firestoreStatus := "ok"
+			_, err := firestoreClient.Collection("users").Limit(1).Documents(healthCtx).Next()
+			if err != nil && err != iterator.Done {
+				firestoreStatus = "degraded"
+			}
+
 			stats := cacheInstance.Stats()
+
 			c.JSON(200, gin.H{
-				"status":      "ok",
-				"env":         env,
+				"status":    "ok",
+				"env":       env,
+				"timestamp": time.Now().Format(time.RFC3339),
+				"services": gin.H{
+					"firestore": firestoreStatus,
+					"cache":     "ok",
+				},
 				"cache_stats": stats,
 			})
 		})
@@ -96,17 +212,15 @@ func main() {
 		// ===== USUARIOS =====
 		protected.GET("/users/me", h.GetCurrentUser)
 
-		// ===== CAMPAÑAS =====
-		protected.POST("/campaigns", h.CreateEvent)
+		// ===== CAMPAÑAS (con rate limiting) =====
+		protected.POST("/campaigns", RateLimitMiddleware(rateLimiter), h.CreateEvent)
 		protected.GET("/campaigns", h.GetUserEvents)
-
-		// Endpoint optimizado con goroutines y caché
 		protected.GET("/campaigns/:id/full", pm.RequireCampaignMember(), h.GetCampaignFullData)
-
 		protected.GET("/campaigns/:id", h.GetEvent)
 		protected.DELETE("/campaigns/:id", pm.RequireCampaignDM(), h.DeleteEvent)
+
 		// ===== MIEMBROS DE CAMPAÑA =====
-		protected.POST("/campaigns/:id/invite", pm.RequireCampaignDM(), h.InvitePlayer)
+		protected.POST("/campaigns/:id/invite", pm.RequireCampaignDM(), RateLimitMiddleware(rateLimiter), h.InvitePlayer)
 		protected.DELETE("/campaigns/:id/players/:userId", pm.RequireCampaignDM(), h.RemovePlayer)
 		protected.GET("/campaigns/:id/members", h.GetEventMembers)
 
@@ -114,24 +228,21 @@ func main() {
 		protected.GET("/invitations", h.GetMyInvitations)
 		protected.POST("/invitations/:id/respond", h.RespondToInvitation)
 
-		// ===== PERSONAJES =====
-		protected.POST("/campaigns/:id/characters", pm.RequireCampaignMember(), h.CreateCharacter)
+		// ===== PERSONAJES (con rate limiting) =====
+		protected.POST("/campaigns/:id/characters", pm.RequireCampaignMember(), RateLimitMiddleware(rateLimiter), h.CreateCharacter)
 		protected.GET("/campaigns/:id/characters", h.GetCampaignCharacters)
 		protected.PUT("/characters/:charId", pm.RequireCharacterOwnerOrDM(), h.UpdateCharacter)
 		protected.DELETE("/characters/:charId", pm.RequireCharacterOwnerOrDM(), h.DeleteCharacter)
 
-		// ===== ENCUENTROS =====
-		protected.POST("/campaigns/:id/encounters", pm.RequireCampaignDM(), h.CreateEncounter)
+		// ===== ENCUENTROS (con rate limiting) =====
+		protected.POST("/campaigns/:id/encounters", pm.RequireCampaignDM(), RateLimitMiddleware(rateLimiter), h.CreateEncounter)
 		protected.GET("/campaigns/:id/encounters/active", h.GetActiveEncounter)
-
-		// Endpoint optimizado con goroutines
 		protected.GET("/campaigns/:id/combat/full", pm.RequireCampaignMember(), h.GetCombatFullData)
-
 		protected.DELETE("/encounters/:encounterId", pm.RequireEncounterDM(), h.EndEncounter)
 		protected.POST("/encounters/:encounterId/reset", pm.RequireEncounterDM(), h.ResetEncounter)
 
-		// ===== COMBATIENTES =====
-		protected.POST("/encounters/:encounterId/combatants", pm.RequireEncounterDM(), h.AddCombatant)
+		// ===== COMBATIENTES (con rate limiting en POST) =====
+		protected.POST("/encounters/:encounterId/combatants", pm.RequireEncounterDM(), RateLimitMiddleware(rateLimiter), h.AddCombatant)
 		protected.GET("/encounters/:encounterId/combatants", h.GetCombatants)
 		protected.PUT("/combatants/:combatantId", h.UpdateCombatant)
 		protected.DELETE("/combatants/:combatantId", h.RemoveCombatant)
@@ -139,8 +250,8 @@ func main() {
 		// ===== TURNOS =====
 		protected.POST("/encounters/:encounterId/next-turn", pm.RequireEncounterDM(), h.NextTurn)
 
-		// ===== NOTAS =====
-		protected.POST("/campaigns/:id/notes", pm.RequireCampaignMember(), h.CreateNote)
+		// ===== NOTAS (con rate limiting en POST) =====
+		protected.POST("/campaigns/:id/notes", pm.RequireCampaignMember(), RateLimitMiddleware(rateLimiter), h.CreateNote)
 		protected.GET("/campaigns/:id/notes", pm.RequireCampaignMember(), h.GetCampaignNotes)
 		protected.GET("/notes/:noteId", h.GetNote)
 		protected.PUT("/notes/:noteId", h.UpdateNote)
@@ -149,19 +260,14 @@ func main() {
 		// ===== CACHÉ MANAGEMENT =====
 		protected.POST("/cache/clear", h.ClearCache)
 		protected.GET("/cache/stats", h.GetCacheStats)
-
 	}
 
-	// ===== CRON JOB PARA LIMPIEZA AUTOMÁTICA =====
+	// ===== CRON JOB =====
 	go func() {
-		// Esperar 1 hora antes de la primera ejecución
 		time.Sleep(1 * time.Hour)
-
-		// Ejecutar cada 24 horas
 		ticker := time.NewTicker(24 * time.Hour)
 		defer ticker.Stop()
 
-		// Primera ejecución inmediata después del delay
 		cleanupOldData(firestoreClient, ctx)
 
 		for range ticker.C {
@@ -179,10 +285,12 @@ func main() {
 	log.Printf("🚀 Servidor corriendo en puerto %s", port)
 	log.Printf("✨ Optimizaciones activas:")
 	log.Printf("   - Caché en memoria (TTL: 5 min)")
+	log.Printf("   - Rate limiting (20 req/min por usuario)")
 	log.Printf("   - Middleware de permisos centralizado")
 	log.Printf("   - Queries paralelas con goroutines")
 	log.Printf("   - Eliminación en cascada")
 	log.Printf("   - Limpieza automática de datos antiguos")
+	log.Printf("   - Validaciones de input mejoradas")
 
 	r.Run(":" + port)
 }
