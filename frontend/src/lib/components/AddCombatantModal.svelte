@@ -3,6 +3,13 @@
   import debounce from 'lodash/debounce';
   import { open5eApi } from '$lib/api/api';
   import type { Monster, Character } from '$lib/types';
+  // ===== IMPORTAR VALIDACIONES =====
+  import { 
+    validateHP, 
+    validateArmorClass, 
+    validateInitiative,
+    validateCharacterName 
+  } from '$lib/utils/validation';
 
   export let isOpen: boolean = false;
   export let players: Character[] = [];
@@ -17,22 +24,6 @@
   // === MODO JUGADOR ===
   let selectedPlayerId: string = '';
   $: selectedPlayer = players.find((p) => p.id === selectedPlayerId);
-
-  function handleAddPlayer() {
-    if (!selectedPlayer) return;
-
-    dispatch('add', {
-      type: 'character',
-      characterId: selectedPlayer.id,
-      name: selectedPlayer.name,
-      maxHp: selectedPlayer.maxHp,
-      armorClass: selectedPlayer.armorClass,
-      initiative,
-      isNpc: false
-    });
-
-    handleClose();
-  }
 
   // === MODO MONSTRUO ===
   let searchQuery = '';
@@ -49,6 +40,98 @@
   let type = '';
   let size = '';
   let alignment = '';
+
+  // ===== ESTADOS DE VALIDACIÓN =====
+  let validationErrors = {
+    name: '',
+    initiative: '',
+    maxHp: '',
+    armorClass: ''
+  };
+
+  let touched = {
+    name: false,
+    initiative: false,
+    maxHp: false,
+    armorClass: false
+  };
+
+  // ===== VALIDACIÓN REACTIVA =====
+  $: if (touched.name && activeTab === 'monster' && name) {
+    const result = validateCharacterName(name);
+    validationErrors.name = result.valid ? '' : result.error || '';
+  }
+
+  $: if (touched.initiative && initiative !== null) {
+    const result = validateInitiative(initiative);
+    validationErrors.initiative = result.valid ? '' : result.error || '';
+  }
+
+  $: if (touched.maxHp && maxHp !== null) {
+    const result = validateHP(maxHp);
+    validationErrors.maxHp = result.valid ? '' : result.error || '';
+  }
+
+  $: if (touched.armorClass && armorClass !== null) {
+    const result = validateArmorClass(armorClass);
+    validationErrors.armorClass = result.valid ? '' : result.error || '';
+  }
+
+  // Validación del formulario según el tab activo
+  $: isPlayerValid = selectedPlayer && initiative >= 1 && !validationErrors.initiative;
+
+  $: isMonsterValid = !validationErrors.name && !validationErrors.initiative && 
+                      !validationErrors.maxHp && !validationErrors.armorClass &&
+                      name.trim() && maxHp > 0 && armorClass > 0 && initiative >= 1;
+
+  function handleBlur(field: keyof typeof touched) {
+    touched[field] = true;
+  }
+
+  function validateCombatantForm(): boolean {
+    if (activeTab === 'player') {
+      touched.initiative = true;
+      const initValidation = validateInitiative(initiative);
+      validationErrors.initiative = initValidation.error || '';
+      return initValidation.valid && selectedPlayer !== undefined;
+    } else {
+      // Marcar todos como tocados
+      Object.keys(touched).forEach(key => {
+        touched[key as keyof typeof touched] = true;
+      });
+
+      const nameValidation = validateCharacterName(name);
+      const initValidation = validateInitiative(initiative);
+      const hpValidation = validateHP(maxHp);
+      const acValidation = validateArmorClass(armorClass);
+
+      validationErrors.name = nameValidation.error || '';
+      validationErrors.initiative = initValidation.error || '';
+      validationErrors.maxHp = hpValidation.error || '';
+      validationErrors.armorClass = acValidation.error || '';
+
+      return nameValidation.valid && initValidation.valid && 
+             hpValidation.valid && acValidation.valid;
+    }
+  }
+
+  function handleAddPlayer() {
+    if (!validateCombatantForm()) return;
+    
+    if (!selectedPlayer) return;
+
+    dispatch('add', {
+      type: 'character',
+      characterId: selectedPlayer.id,
+      name: selectedPlayer.name,
+      maxHp: selectedPlayer.maxHp,
+      armorClass: selectedPlayer.armorClass,
+      initiative,
+      isNpc: false
+    });
+
+    handleClose();
+  }
 
   const handleSearch = debounce(async () => {
     const query = searchQuery.trim();
@@ -85,10 +168,15 @@
 
     suggestions = [];
     searchQuery = '';
+    
+    // Marcar como tocados después de autocompletar
+    touched.name = true;
+    touched.maxHp = true;
+    touched.armorClass = true;
   }
 
   function handleAddMonster() {
-    if (!name || !maxHp || !armorClass) return;
+    if (!validateCombatantForm()) return;
 
     dispatch('add', {
       type: 'creature',
@@ -121,6 +209,15 @@
     size = '';
     alignment = '';
     loading = false;
+    
+    // Reset validaciones
+    Object.keys(touched).forEach(key => {
+      touched[key as keyof typeof touched] = false;
+    });
+    Object.keys(validationErrors).forEach(key => {
+      validationErrors[key as keyof typeof validationErrors] = '';
+    });
+    
     dispatch('close');
   }
 </script>
@@ -162,7 +259,9 @@
         <div class="space-y-4">
           <div class="form-control">
             <label class="label">
-              <span class="label-text font-medieval text-neutral">Seleccionar Jugador</span>
+              <span class="label-text font-medieval text-neutral">
+                Seleccionar Jugador <span class="text-error">*</span>
+              </span>
             </label>
             <select
               bind:value={selectedPlayerId}
@@ -177,7 +276,9 @@
 
           <div class="form-control">
             <label class="label">
-              <span class="label-text font-medieval text-neutral">Iniciativa</span>
+              <span class="label-text font-medieval text-neutral">
+                Iniciativa <span class="text-error">*</span>
+              </span>
             </label>
             <input
               type="number"
@@ -186,8 +287,24 @@
               step="1"
               required
               bind:value={initiative}
-              class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"
+              on:blur={() => handleBlur('initiative')}
+              class="input input-bordered bg-[#2d241c] text-base-content 
+                     {validationErrors.initiative && touched.initiative ? 'border-error border-2' : 'border-primary/50'} 
+                     w-full focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/50"
             />
+            {#if validationErrors.initiative && touched.initiative}
+              <label class="label">
+                <span class="label-text-alt text-error text-xs">
+                  ⚠️ {validationErrors.initiative}
+                </span>
+              </label>
+            {:else}
+              <label class="label">
+                <span class="label-text-alt text-neutral/60 italic text-xs">
+                  Valor de iniciativa tirado (1-100)
+                </span>
+              </label>
+            {/if}
           </div>
 
           <div class="card bg-neutral/20 border border-primary/40 p-4 mt-2">
@@ -270,50 +387,107 @@
               </div>
             </div>
           {/if}
+
           <!-- Formulario monstruo (siempre visible) -->
           <div class="space-y-4">
             <div class="form-control">
               <label class="label">
-                <span class="label-text font-medieval text-neutral">Nombre</span>
+                <span class="label-text font-medieval text-neutral">
+                  Nombre <span class="text-error">*</span>
+                </span>
               </label>
               <input
                 type="text"
                 bind:value={name}
+                on:blur={() => handleBlur('name')}
                 placeholder="Nombre de la criatura"
-                class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"
+                class="input input-bordered bg-[#2d241c] text-base-content 
+                       {validationErrors.name && touched.name ? 'border-error border-2' : 'border-primary/50'} 
+                       w-full focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/50"
               />
+              {#if validationErrors.name && touched.name}
+                <label class="label">
+                  <span class="label-text-alt text-error text-xs">
+                    ⚠️ {validationErrors.name}
+                  </span>
+                </label>
+              {/if}
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               <div class="form-control">
                 <label class="label">
-                  <span class="label-text font-medieval text-neutral">Iniciativa</span>
+                  <span class="label-text font-medieval text-neutral">
+                    Iniciativa <span class="text-error">*</span>
+                  </span>
                 </label>
                 <input
                   type="number"
                   bind:value={initiative}
-                  class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"
+                  on:blur={() => handleBlur('initiative')}
+                  min="1"
+                  max="100"
+                  class="input input-bordered bg-[#2d241c] text-base-content 
+                         {validationErrors.initiative && touched.initiative ? 'border-error border-2' : 'border-primary/50'} 
+                         w-full focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/50"
                 />
+                {#if validationErrors.initiative && touched.initiative}
+                  <label class="label">
+                    <span class="label-text-alt text-error text-xs">
+                      {validationErrors.initiative}
+                    </span>
+                  </label>
+                {/if}
               </div>
+
               <div class="form-control">
                 <label class="label">
-                  <span class="label-text font-medieval text-neutral">HP Máximo</span>
+                  <span class="label-text font-medieval text-neutral">
+                    HP Máximo <span class="text-error">*</span>
+                  </span>
                 </label>
                 <input
                   type="number"
                   bind:value={maxHp}
-                  class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"
+                  on:blur={() => handleBlur('maxHp')}
+                  min="1"
+                  max="999"
+                  class="input input-bordered bg-[#2d241c] text-base-content 
+                         {validationErrors.maxHp && touched.maxHp ? 'border-error border-2' : 'border-primary/50'} 
+                         w-full focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/50"
                 />
+                {#if validationErrors.maxHp && touched.maxHp}
+                  <label class="label">
+                    <span class="label-text-alt text-error text-xs">
+                      {validationErrors.maxHp}
+                    </span>
+                  </label>
+                {/if}
               </div>
+
               <div class="form-control">
                 <label class="label">
-                  <span class="label-text font-medieval text-neutral">AC</span>
+                  <span class="label-text font-medieval text-neutral">
+                    AC <span class="text-error">*</span>
+                  </span>
                 </label>
                 <input
                   type="number"
                   bind:value={armorClass}
-                  class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full"
+                  on:blur={() => handleBlur('armorClass')}
+                  min="1"
+                  max="30"
+                  class="input input-bordered bg-[#2d241c] text-base-content 
+                         {validationErrors.armorClass && touched.armorClass ? 'border-error border-2' : 'border-primary/50'} 
+                         w-full focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/50"
                 />
+                {#if validationErrors.armorClass && touched.armorClass}
+                  <label class="label">
+                    <span class="label-text-alt text-error text-xs">
+                      {validationErrors.armorClass}
+                    </span>
+                  </label>
+                {/if}
               </div>
             </div>
           </div>
@@ -330,10 +504,7 @@
       <button
         on:click={activeTab === 'player' ? handleAddPlayer : handleAddMonster}
         class="btn btn-dnd w-full md:w-auto"
-        disabled={
-          (activeTab === 'player' && (!selectedPlayer || initiative < 1)) ||
-          (activeTab === 'monster' && (!name || !maxHp || !armorClass || initiative < 1))
-        }
+        disabled={activeTab === 'player' ? !isPlayerValid : !isMonsterValid}
       >
         <span class="text-xl">⚔️</span> Agregar al Combate
       </button>

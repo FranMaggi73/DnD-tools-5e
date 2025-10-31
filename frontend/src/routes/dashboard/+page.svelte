@@ -4,6 +4,7 @@
   import { goto } from '$app/navigation';
   import type { Campaign, CampaignMembers } from '$lib/types';
   import { headerTitle } from '$lib/stores/uiStore';
+  import { validateCampaignName } from '$lib/utils/validation';
 
   headerTitle.set('🎲 Grimorio de Aventuras');
 
@@ -13,6 +14,18 @@
   let showCreateModal = false;
   let newCampaign = { name: '' };
   let error = '';
+  
+  // Estados de validación
+  let validationError = '';
+  let touched = false;
+
+  // Validación reactiva
+  $: if (touched && newCampaign.name) {
+    const result = validateCampaignName(newCampaign.name);
+    validationError = result.valid ? '' : result.error || '';
+  }
+
+  $: isValid = !validationError && newCampaign.name.trim();
 
   onMount(async () => {
     await loadCampaigns();
@@ -51,22 +64,40 @@
     }
   }
 
+  function handleInputChange() {
+    touched = true;
+  }
+
   async function createCampaign() {
+    touched = true;
+    
+    const validation = validateCampaignName(newCampaign.name);
+    if (!validation.valid) {
+      validationError = validation.error || '';
+      return;
+    }
+
     try {
       error = '';
-      if (!newCampaign.name || !newCampaign.name.trim()) {
-        error = 'El nombre de la campaña no puede estar vacío.';
-        return;
-      }
       await api.createCampaign({ name: newCampaign.name.trim() });
       showCreateModal = false;
       newCampaign = { name: '' };
+      touched = false;
+      validationError = '';
       await loadCampaigns();
     } catch (err: any) {
       error = err?.message ?? String(err);
     }
   }
+
+  function handleCloseModal() {
+    showCreateModal = false;
+    newCampaign = { name: '' };
+    touched = false;
+    validationError = '';
+  }
 </script>
+
 <div class="container mx-auto justify-center items-center flex flex-col p-6 lg:p-8">
   <div class="mb-8 text-center">
     <h1 class="text-4xl lg:text-5xl font-bold text-secondary title-ornament mx-4 mb-3 text-shadow">
@@ -76,6 +107,7 @@
       "Las aventuras aguardan a quienes se atreven a explorar..."
     </p>
   </div>
+
   {#if error}
     <div class="alert bg-error/20 border-2 border-error mb-6">
       <svg xmlns="http://www.w3.org/2000/svg" class="stroke-error shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
@@ -185,23 +217,39 @@
       <!-- Input -->
       <div class="form-control w-full flex-1">
         <label class="label">
-          <span class="label-text font-medieval text-neutral text-lg">Nombre de la Campaña</span>
+          <span class="label-text font-medieval text-neutral text-lg">
+            Nombre de la Campaña <span class="text-error">*</span>
+          </span>
         </label>
         <input 
           type="text" 
           bind:value={newCampaign.name}
+          on:input={handleInputChange}
           placeholder="Ej: La Mina Perdida de Phandelver"
-          class="input input-medieval w-full text-lg font-body"
+          class="input bg-[#2d241c] text-base-content border-2 
+                 {validationError && touched ? 'border-error' : 'border-primary/50'} 
+                 w-full text-lg font-body 
+                 focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/50"
         />
-        <label class="label">
-          <span class="label-text-alt text-neutral/60 italic">Elige un nombre épico para tu aventura</span>
-        </label>
+        {#if validationError && touched}
+          <label class="label">
+            <span class="label-text-alt text-error">
+              <span class="text-lg">⚠️</span> {validationError}
+            </span>
+          </label>
+        {:else}
+          <label class="label">
+            <span class="label-text-alt text-neutral/60 italic">
+              Elige un nombre épico para tu aventura (3-100 caracteres)
+            </span>
+          </label>
+        {/if}
       </div>
 
       <!-- Botones -->
       <div class="mt-6 flex justify-center gap-4">
         <button 
-          on:click={() => { showCreateModal = false; newCampaign = { name: '' }; }} 
+          on:click={handleCloseModal}
           class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval w-32"
         >
           Cancelar
@@ -209,7 +257,7 @@
         <button 
           on:click={createCampaign} 
           class="btn btn-dnd w-32 disabled:opacity-50 disabled:cursor-not-allowed"
-          disabled={!newCampaign.name || !newCampaign.name.trim()}
+          disabled={!isValid}
         >
           <span class="text-xl">✨</span>
           Crear
@@ -218,4 +266,3 @@
     </div>
   </div>
 {/if}
-

@@ -5,12 +5,76 @@
   import { api } from '$lib/api/api';
   import { headerTitle } from '$lib/stores/uiStore';
   import type { Campaign, Note } from '$lib/types';
-  
   // Firestore real-time
-  import { getFirestore, collection, query, where, onSnapshot, or } from 'firebase/firestore';
+  import { getFirestore, collection, query, where, onSnapshot } from 'firebase/firestore';
   import { app } from '$lib/firebase';
 
   headerTitle.set('📝 Notas');
+
+  import { 
+    validateNoteTitle, 
+    validateNoteContent, 
+    validateNoteTags,
+    validateAll 
+  } from '$lib/utils/validation';
+
+  // Estados de validación
+  let validationErrors = {
+    title: '',
+    content: '',
+    tags: ''
+  };
+
+  let touched = {
+    title: false,
+    content: false,
+    tags: false
+  };
+
+  // Validación reactiva
+  $: if (touched.title) {
+    const result = validateNoteTitle(form.title);
+    validationErrors.title = result.valid ? '' : result.error || '';
+  }
+
+  $: if (touched.content) {
+    const result = validateNoteContent(form.content);
+    validationErrors.content = result.valid ? '' : result.error || '';
+  }
+
+  $: if (touched.tags) {
+    const result = validateNoteTags(form.tags);
+    validationErrors.tags = result.valid ? '' : result.error || '';
+  }
+
+  $: isFormValid = !validationErrors.title && !validationErrors.content && 
+                   !validationErrors.tags && form.title.trim();
+
+  function handleBlur(field: keyof typeof touched) {
+    touched[field] = true;
+  }
+
+  function validateNoteForm(): boolean {
+    // Marcar todos como tocados
+    Object.keys(touched).forEach(key => {
+      touched[key as keyof typeof touched] = true;
+    });
+
+    const titleValidation = validateNoteTitle(form.title);
+    const contentValidation = validateNoteContent(form.content);
+    const tagsValidation = validateNoteTags(form.tags);
+
+    const validation = validateAll(titleValidation, contentValidation, tagsValidation);
+
+    if (!validation.valid) {
+      validationErrors.title = titleValidation.error || '';
+      validationErrors.content = contentValidation.error || '';
+      validationErrors.tags = tagsValidation.error || '';
+      return false;
+    }
+
+    return true;
+  }
 
   $: campaignId = $page.params.id || '';
 
@@ -23,7 +87,7 @@
   // Filtros
   let searchQuery = '';
   let filterCategory = 'all';
-  let filterShared = 'all'; // 'all', 'personal', 'shared'
+  let filterShared = 'all';
 
   // Modales
   let showCreateModal = false;
@@ -95,104 +159,103 @@
     }
   }
 
-function setupNotesListener() {
-  if (!$userStore) return;
-  
-  try {
-    loading = true;
+  function setupNotesListener() {
+    if (!$userStore) return;
     
-    let personalNotes: Note[] = [];
-    let sharedNotes: Note[] = [];
-    let loadedPersonal = false; // ✅ FLAGS PARA EVITAR BUG
-    let loadedShared = false;
-    
-    const notesRef = collection(db, 'notes');
-    
-    const personalQuery = query(
-      notesRef,
-      where('campaignId', '==', campaignId),
-      where('authorId', '==', $userStore.uid),
-      where('isShared', '==', false)
-    );
-    
-    const sharedQuery = query(
-      notesRef,
-      where('campaignId', '==', campaignId),
-      where('isShared', '==', true)
-    );
-    
-    const unsubPersonal = onSnapshot(
-      personalQuery,
-      (snapshot) => {
-        personalNotes = snapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            ...data,
-            createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-            updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-          } as Note;
-        });
-        
-        loadedPersonal = true; // ✅ MARCAR COMO CARGADO
-        combineNotes();
-      },
-      (err) => {
-        console.error('Error en listener de notas personales:', err);
-        error = err.message;
-        loading = false;
+    try {
+      loading = true;
+      
+      let personalNotes: Note[] = [];
+      let sharedNotes: Note[] = [];
+      let loadedPersonal = false;
+      let loadedShared = false;
+      
+      const notesRef = collection(db, 'notes');
+      
+      const personalQuery = query(
+        notesRef,
+        where('campaignId', '==', campaignId),
+        where('authorId', '==', $userStore.uid),
+        where('isShared', '==', false)
+      );
+      
+      const sharedQuery = query(
+        notesRef,
+        where('campaignId', '==', campaignId),
+        where('isShared', '==', true)
+      );
+      
+      const unsubPersonal = onSnapshot(
+        personalQuery,
+        (snapshot) => {
+          personalNotes = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              ...data,
+              createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+              updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+            } as Note;
+          });
+          
+          loadedPersonal = true;
+          combineNotes();
+        },
+        (err) => {
+          console.error('Error en listener de notas personales:', err);
+          error = err.message;
+          loading = false;
+        }
+      );
+      
+      const unsubShared = onSnapshot(
+        sharedQuery,
+        (snapshot) => {
+          sharedNotes = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              ...data,
+              createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+              updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+            } as Note;
+          });
+          
+          loadedShared = true;
+          combineNotes();
+        },
+        (err) => {
+          console.error('Error en listener de notas compartidas:', err);
+          error = err.message;
+          loading = false;
+        }
+      );
+      
+      function combineNotes() {
+        if (loadedPersonal && loadedShared) {
+          const allNotes = [...personalNotes, ...sharedNotes];
+          const uniqueNotes = Array.from(
+            new Map(allNotes.map(note => [note.id, note])).values()
+          );
+          
+          notes = uniqueNotes.sort((a, b) => 
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+          );
+          
+          loading = false;
+        }
       }
-    );
-    
-    const unsubShared = onSnapshot(
-      sharedQuery,
-      (snapshot) => {
-        sharedNotes = snapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            ...data,
-            createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-            updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-          } as Note;
-        });
-        
-        loadedShared = true; // ✅ MARCAR COMO CARGADO
-        combineNotes();
-      },
-      (err) => {
-        console.error('Error en listener de notas compartidas:', err);
-        error = err.message;
-        loading = false;
-      }
-    );
-    
-    function combineNotes() {
-      // ✅ SOLO MARCAR COMO LOADED DESPUÉS DE AMBAS QUERIES INICIALES
-      if (loadedPersonal && loadedShared) {
-        const allNotes = [...personalNotes, ...sharedNotes];
-        const uniqueNotes = Array.from(
-          new Map(allNotes.map(note => [note.id, note])).values()
-        );
-        
-        notes = uniqueNotes.sort((a, b) => 
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-        );
-        
-        loading = false; // ✅ SOLO APAGAR LOADING UNA VEZ
-      }
+      
+      notesUnsubscribe = () => {
+        unsubPersonal();
+        unsubShared();
+      };
+      
+    } catch (err: any) {
+      error = err.message;
+      loading = false;
     }
-    
-    notesUnsubscribe = () => {
-      unsubPersonal();
-      unsubShared();
-    };
-    
-  } catch (err: any) {
-    error = err.message;
-    loading = false;
   }
-}
 
   function openCreateModal() {
     resetForm();
@@ -220,13 +283,33 @@ function setupNotesListener() {
       tags: [],
     };
     tagInput = '';
+    
+    // Reset validaciones
+    Object.keys(touched).forEach(key => {
+      touched[key as keyof typeof touched] = false;
+    });
+    Object.keys(validationErrors).forEach(key => {
+      validationErrors[key as keyof typeof validationErrors] = '';
+    });
   }
 
   function addTag() {
     if (!tagInput.trim()) return;
     const tag = tagInput.trim().toLowerCase();
+    
+    // Validar antes de agregar
+    const newTags = [...form.tags, tag];
+    const validation = validateNoteTags(newTags);
+    
+    if (!validation.valid) {
+      validationErrors.tags = validation.error || '';
+      touched.tags = true;
+      return;
+    }
+    
     if (!form.tags.includes(tag)) {
-      form.tags = [...form.tags, tag];
+      form.tags = newTags;
+      validationErrors.tags = '';
     }
     tagInput = '';
   }
@@ -236,7 +319,7 @@ function setupNotesListener() {
   }
 
   async function handleCreate() {
-    if (!form.title.trim()) return;
+    if (!validateNoteForm()) return;
     
     try {
       await api.createNote(campaignId, form);
@@ -248,7 +331,7 @@ function setupNotesListener() {
   }
 
   async function handleUpdate() {
-    if (!editingNote || !form.title.trim()) return;
+    if (!editingNote || !validateNoteForm()) return;
     
     try {
       await api.updateNote(editingNote.id, form);
@@ -274,27 +357,26 @@ function setupNotesListener() {
     return categories.find(c => c.value === category)?.icon || '📝';
   }
 
-function formatDate(dateStr: string): string {
-  try {
-    const date = new Date(dateStr);
-    
-    // Verificar si la fecha es válida
-    if (isNaN(date.getTime())) {
+  function formatDate(dateStr: string): string {
+    try {
+      const date = new Date(dateStr);
+      
+      if (isNaN(date.getTime())) {
+        return 'Fecha no disponible';
+      }
+      
+      return date.toLocaleDateString('es', { 
+        day: '2-digit', 
+        month: 'short', 
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (err) {
+      console.error('Error formateando fecha:', err);
       return 'Fecha no disponible';
     }
-    
-    return date.toLocaleDateString('es', { 
-      day: '2-digit', 
-      month: 'short', 
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  } catch (err) {
-    console.error('Error formateando fecha:', err);
-    return 'Fecha no disponible';
   }
-}
 </script>
 
 <div class="min-h-screen p-4 md:p-6">
@@ -303,7 +385,6 @@ function formatDate(dateStr: string): string {
     <!-- Header -->
     <div class="mb-6">
       <div class="relative">
-        <!-- Botón flotante solo visible en desktop -->
         <button 
           on:click={openCreateModal}
           class="btn btn-dnd hidden sm:block absolute right-0 top-0"
@@ -312,7 +393,6 @@ function formatDate(dateStr: string): string {
           Nueva Nota
         </button>
         
-        <!-- Contenido centrado -->
         <div class="text-center">
           <h1 class="text-3xl md:text-4xl font-bold text-secondary title-ornament">
             📝 Notas
@@ -323,7 +403,6 @@ function formatDate(dateStr: string): string {
         </div>
       </div>
       
-      <!-- Botón centrado solo visible en móvil -->
       <div class="flex justify-center mt-4 sm:hidden">
         <button 
           on:click={openCreateModal}
@@ -352,7 +431,6 @@ function formatDate(dateStr: string): string {
       <div class="card-parchment p-4 mb-6">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           
-          <!-- Búsqueda -->
           <div class="form-control">
             <label class="label">
               <span class="label-text font-medieval text-neutral">🔍 Buscar</span>
@@ -365,7 +443,6 @@ function formatDate(dateStr: string): string {
             />
           </div>
 
-          <!-- Categoría -->
           <div class="form-control">
             <label class="label">
               <span class="label-text font-medieval text-neutral">Categoría</span>
@@ -381,7 +458,6 @@ function formatDate(dateStr: string): string {
             </select>
           </div>
 
-          <!-- Tipo -->
           <div class="form-control">
             <label class="label">
               <span class="label-text font-medieval text-neutral">Tipo</span>
@@ -397,7 +473,6 @@ function formatDate(dateStr: string): string {
           </div>
         </div>
 
-        <!-- Contador -->
         <div class="mt-3 text-sm text-neutral/60 font-body text-center">
           Mostrando {filteredNotes.length} de {notes.length} notas
         </div>
@@ -422,7 +497,6 @@ function formatDate(dateStr: string): string {
             <div class="card-parchment corner-ornament hover:shadow-xl transition-all">
               <div class="card-body p-4">
                 
-                <!-- Header con badges -->
                 <div class="flex items-start justify-between mb-2">
                   <div class="flex items-center gap-2 flex-1 min-w-0">
                     <span class="text-2xl">{getCategoryIcon(note.category)}</span>
@@ -444,7 +518,6 @@ function formatDate(dateStr: string): string {
                   </div>
                 </div>
 
-                <!-- Badges -->
                 <div class="flex flex-wrap gap-1 mb-3">
                   {#if note.isShared}
                     <div class="badge badge-success badge-sm">🌐 Compartida</div>
@@ -457,12 +530,10 @@ function formatDate(dateStr: string): string {
                   {/if}
                 </div>
 
-                <!-- Content Preview -->
                 <div class="text-sm text-neutral/80 font-body mb-3 line-clamp-3">
                   {note.content || 'Sin contenido'}
                 </div>
 
-                <!-- Tags -->
                 {#if note.tags && note.tags.length > 0}
                   <div class="flex flex-wrap gap-1 mb-3">
                     {#each note.tags.slice(0, 3) as tag}
@@ -474,7 +545,6 @@ function formatDate(dateStr: string): string {
                   </div>
                 {/if}
 
-                <!-- Footer -->
                 <div class="text-xs text-neutral/60 font-body">
                   <div>✍️ {note.authorName}</div>
                   <div>🕐 {formatDate(note.updatedAt)}</div>
@@ -488,7 +558,7 @@ function formatDate(dateStr: string): string {
   </div>
 </div>
 
-<!-- Modal Crear Nota - MEJORADO -->
+<!-- Modal Crear Nota -->
 {#if showCreateModal}
   <div class="modal modal-open z-50" on:click={() => { showCreateModal = false; resetForm(); }}>
     <div 
@@ -498,7 +568,6 @@ function formatDate(dateStr: string): string {
       on:click|stopPropagation
     >
       
-      <!-- Header -->
       <div class="p-3 sm:p-4 md:p-5 border-b-2 border-secondary flex-shrink-0 bg-gradient-to-b from-[#f4e4c1] to-transparent">
         <button 
           class="btn btn-xs sm:btn-sm btn-circle btn-ghost absolute right-2 top-2 hover:bg-error/20" 
@@ -510,10 +579,8 @@ function formatDate(dateStr: string): string {
         </h3>
       </div>
 
-      <!-- Content Scrollable -->
       <div class="flex-1 overflow-y-auto p-3 sm:p-4 md:p-5 space-y-3 sm:space-y-4 custom-scrollbar">
         
-        <!-- Título -->
         <div class="form-control">
           <label class="label pb-1">
             <span class="label-text font-medieval text-neutral text-sm sm:text-base md:text-lg">
@@ -523,15 +590,21 @@ function formatDate(dateStr: string): string {
           <input 
             type="text" 
             bind:value={form.title}
+            on:blur={() => handleBlur('title')}
             placeholder="Ej: Encuentro con el dragón rojo"
             class="input input-sm sm:input-md input-bordered bg-[#2d241c] text-base-content border-primary/50 
-                   focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/50"
+                   focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/50
+                   {validationErrors.title ? 'border-error' : ''}"
             required
             autofocus
           />
+          {#if validationErrors.title}
+            <label class="label">
+              <span class="label-text-alt text-error">{validationErrors.title}</span>
+            </label>
+          {/if}
         </div>
 
-        <!-- Categoría y Compartido -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
           <div class="form-control">
             <label class="label pb-1">
@@ -569,26 +642,32 @@ function formatDate(dateStr: string): string {
           {/if}
         </div>
 
-        <!-- Contenido -->
         <div class="form-control">
           <label class="label pb-1">
             <span class="label-text font-medieval text-neutral text-sm sm:text-base md:text-lg">Contenido</span>
           </label>
           <textarea 
             bind:value={form.content}
+            on:blur={() => handleBlur('content')}
             placeholder="Escribe aquí el contenido de tu nota..."
             class="textarea textarea-sm sm:textarea-md textarea-bordered bg-[#2d241c] text-base-content border-primary/50 
                    h-32 sm:h-40 md:h-48 resize-none
-                   focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/50"
+                   focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/50
+                   {validationErrors.content ? 'border-error' : ''}"
           ></textarea>
-          <label class="label pt-1">
-            <span class="label-text-alt text-neutral/60 italic text-xs">
-              Puedes usar este espacio para escribir detalles extensos
-            </span>
-          </label>
+          {#if validationErrors.content}
+            <label class="label">
+              <span class="label-text-alt text-error">{validationErrors.content}</span>
+            </label>
+          {:else}
+            <label class="label pt-1">
+              <span class="label-text-alt text-neutral/60 italic text-xs">
+                Puedes usar este espacio para escribir detalles extensos
+              </span>
+            </label>
+          {/if}
         </div>
 
-        <!-- Tags -->
         <div class="form-control">
           <label class="label pb-1">
             <span class="label-text font-medieval text-neutral text-sm sm:text-base">🏷️ Etiquetas</span>
@@ -612,6 +691,12 @@ function formatDate(dateStr: string): string {
             </button>
           </div>
           
+          {#if validationErrors.tags}
+            <label class="label">
+              <span class="label-text-alt text-error">{validationErrors.tags}</span>
+            </label>
+          {/if}
+          
           {#if form.tags.length > 0}
             <div class="flex flex-wrap gap-1.5 sm:gap-2 mt-2 p-2 bg-neutral/10 rounded-lg border border-primary/20">
               {#each form.tags as tag}
@@ -625,7 +710,7 @@ function formatDate(dateStr: string): string {
                 </div>
               {/each}
             </div>
-          {:else}
+          {:else if !validationErrors.tags}
             <label class="label pt-1">
               <span class="label-text-alt text-neutral/60 italic text-xs">
                 Agrega etiquetas para organizar mejor tus notas
@@ -635,7 +720,6 @@ function formatDate(dateStr: string): string {
         </div>
       </div>
 
-      <!-- Footer -->
       <div class="flex flex-col-reverse sm:flex-row justify-center gap-2 sm:gap-4 p-3 sm:p-4 md:p-5 
                   border-t-2 border-secondary flex-shrink-0 bg-gradient-to-t from-[#f4e4c1] to-transparent">
         <button 
@@ -648,7 +732,7 @@ function formatDate(dateStr: string): string {
         <button 
           on:click={handleCreate}
           class="btn btn-sm sm:btn-md btn-dnd w-full sm:w-auto"
-          disabled={!form.title.trim()}
+          disabled={!isFormValid}
         >
           <span class="text-lg sm:text-xl">💾</span>
           Crear Nota
@@ -658,7 +742,7 @@ function formatDate(dateStr: string): string {
   </div>
 {/if}
 
-<!-- Modal Editar Nota - MEJORADO (mismo estilo) -->
+<!-- Modal Editar Nota -->
 {#if showEditModal && editingNote}
   <div class="modal modal-open z-50" on:click={() => { showEditModal = false; editingNote = null; resetForm(); }}>
     <div 
@@ -668,7 +752,6 @@ function formatDate(dateStr: string): string {
       on:click|stopPropagation
     >
       
-      <!-- Header -->
       <div class="p-3 sm:p-4 md:p-5 border-b-2 border-secondary flex-shrink-0 bg-gradient-to-b from-[#f4e4c1] to-transparent">
         <button 
           class="btn btn-xs sm:btn-sm btn-circle btn-ghost absolute right-2 top-2 hover:bg-error/20" 
@@ -680,7 +763,6 @@ function formatDate(dateStr: string): string {
         </h3>
       </div>
 
-      <!-- Content Scrollable (mismo contenido que crear) -->
       <div class="flex-1 overflow-y-auto p-3 sm:p-4 md:p-5 space-y-3 sm:space-y-4 custom-scrollbar">
         
         <div class="form-control">
@@ -692,11 +774,18 @@ function formatDate(dateStr: string): string {
           <input 
             type="text" 
             bind:value={form.title}
+            on:blur={() => handleBlur('title')}
             placeholder="Ej: Encuentro con el dragón rojo"
             class="input input-sm sm:input-md input-bordered bg-[#2d241c] text-base-content border-primary/50 
-                   focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/50"
+                   focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/50
+                   {validationErrors.title ? 'border-error' : ''}"
             required
           />
+          {#if validationErrors.title}
+            <label class="label">
+              <span class="label-text-alt text-error">{validationErrors.title}</span>
+            </label>
+          {/if}
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
@@ -742,11 +831,18 @@ function formatDate(dateStr: string): string {
           </label>
           <textarea 
             bind:value={form.content}
+            on:blur={() => handleBlur('content')}
             placeholder="Escribe aquí el contenido de tu nota..."
             class="textarea textarea-sm sm:textarea-md textarea-bordered bg-[#2d241c] text-base-content border-primary/50 
                    h-32 sm:h-40 md:h-48 resize-none
-                   focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/50"
+                   focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/50
+                   {validationErrors.content ? 'border-error' : ''}"
           ></textarea>
+          {#if validationErrors.content}
+            <label class="label">
+              <span class="label-text-alt text-error">{validationErrors.content}</span>
+            </label>
+          {/if}
         </div>
 
         <div class="form-control">
@@ -772,6 +868,12 @@ function formatDate(dateStr: string): string {
             </button>
           </div>
           
+          {#if validationErrors.tags}
+            <label class="label">
+              <span class="label-text-alt text-error">{validationErrors.tags}</span>
+            </label>
+          {/if}
+          
           {#if form.tags.length > 0}
             <div class="flex flex-wrap gap-1.5 sm:gap-2 mt-2 p-2 bg-neutral/10 rounded-lg border border-primary/20">
               {#each form.tags as tag}
@@ -789,7 +891,6 @@ function formatDate(dateStr: string): string {
         </div>
       </div>
 
-      <!-- Footer -->
       <div class="flex flex-col-reverse sm:flex-row justify-center gap-2 sm:gap-4 p-3 sm:p-4 md:p-5 
                   border-t-2 border-secondary flex-shrink-0 bg-gradient-to-t from-[#f4e4c1] to-transparent">
         <button 
@@ -802,7 +903,7 @@ function formatDate(dateStr: string): string {
         <button 
           on:click={handleUpdate}
           class="btn btn-sm sm:btn-md btn-dnd w-full sm:w-auto"
-          disabled={!form.title.trim()}
+          disabled={!isFormValid}
         >
           <span class="text-lg sm:text-xl">💾</span>
           Guardar Cambios

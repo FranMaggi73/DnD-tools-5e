@@ -16,6 +16,25 @@
 
   headerTitle.set('Combate');
 
+  import { validateEncounterName } from '$lib/utils/validation';
+
+  // Estado de validación para encuentro
+  let encounterValidationError = '';
+  let encounterTouched = false;
+
+  // Validación reactiva
+  $: if (encounterTouched && encounterName) {
+    const result = validateEncounterName(encounterName);
+    encounterValidationError = result.valid ? '' : result.error || '';
+  }
+
+  $: isEncounterValid = !encounterValidationError && encounterName.trim();
+
+  function handleEncounterInput() {
+    encounterTouched = true;
+  }
+
+
   $: campaignId = $page.params.id || '';
 
   let campaign: Campaign | null = null;
@@ -147,16 +166,24 @@
   }
 
   async function createEncounter() {
-    if (!encounterName.trim()) return;
-    try {
-      await api.createEncounter(campaignId, encounterName);
-      showCreateEncounterModal = false;
-      encounterName = '';
-      // No necesitamos recargar, el listener lo hará automáticamente
-    } catch (err: any) {
-      error = err.message;
-    }
+  encounterTouched = true;
+  
+  const validation = validateEncounterName(encounterName);
+  if (!validation.valid) {
+    encounterValidationError = validation.error || '';
+    return;
   }
+  
+  try {
+    await api.createEncounter(campaignId, encounterName);
+    showCreateEncounterModal = false;
+    encounterName = '';
+    encounterTouched = false;
+    encounterValidationError = '';
+  } catch (err: any) {
+    error = err.message;
+  }
+}
 
   async function endEncounter() {
     if (!encounter || !confirm('¿Finalizar este encuentro? Los HP actuales se guardarán en los personajes.')) return;
@@ -200,6 +227,13 @@
     selectedCombatant = event.detail;
     showConditionModal = true;
     showHPModal = false;
+  }
+
+  function closeEncounterModal() {
+    showCreateEncounterModal = false;
+    encounterName = '';
+    encounterTouched = false;
+    encounterValidationError = '';
   }
 
   async function handleApplyHP(event: CustomEvent) {
@@ -391,19 +425,39 @@
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text font-medieval text-neutral text-lg">Nombre del Encuentro</span>
+          <span class="label-text font-medieval text-neutral text-lg">
+            Nombre del Encuentro <span class="text-error">*</span>
+          </span>
         </label>
         <input 
           type="text" 
           bind:value={encounterName}
+          on:input={handleEncounterInput}
           placeholder="Ej: Emboscada de Orcos"
-          class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 text-lg"
+          class="input input-bordered bg-[#2d241c] text-base-content 
+                 {encounterValidationError && encounterTouched ? 'border-error border-2' : 'border-primary/50'} 
+                 text-lg focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/50"
         />
+        
+        <!-- Mostrar mensaje de error o ayuda -->
+        {#if encounterValidationError && encounterTouched}
+          <label class="label">
+            <span class="label-text-alt text-error">
+              <span class="text-lg">⚠️</span> {encounterValidationError}
+            </span>
+          </label>
+        {:else}
+          <label class="label">
+            <span class="label-text-alt text-neutral/60 italic">
+              Nombre del encuentro (3-100 caracteres)
+            </span>
+          </label>
+        {/if}
       </div>
 
       <div class="modal-action justify-center gap-4">
         <button 
-          on:click={() => { showCreateEncounterModal = false; encounterName = ''; }}
+          on:click={closeEncounterModal}
           class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval"
         >
           Cancelar
@@ -411,7 +465,7 @@
         <button 
           on:click={createEncounter}
           class="btn btn-dnd"
-          disabled={!encounterName.trim()}
+          disabled={!isEncounterValid}
         >
           <span class="text-xl">⚔️</span>
           Iniciar Combate
