@@ -83,6 +83,7 @@
   let filteredNotes: Note[] = [];
   let loading = true;
   let error = '';
+  let isAddingTag = false; 
 
   // Filtros
   let searchQuery = '';
@@ -294,11 +295,32 @@
   }
 
   function addTag() {
-    if (!tagInput.trim()) return;
-    const tag = tagInput.trim().toLowerCase();
-    
+  // Prevenir múltiples ejecuciones simultáneas
+  if (isAddingTag) {
+    console.log('Tag addition already in progress');
+    return;
+  }
+
+  const trimmedTag = tagInput.trim().toLowerCase();
+  
+  // Validaciones previas
+  if (!trimmedTag) {
+    return;
+  }
+  
+  // ✅ VERIFICAR DUPLICADO ANTES DE VALIDAR
+  if (form.tags.includes(trimmedTag)) {
+    validationErrors.tags = `La etiqueta "${trimmedTag}" ya existe`;
+    touched.tags = true;
+    tagInput = ''; // Limpiar input
+    return;
+  }
+  
+  isAddingTag = true; // Bloquear
+  
+  try {
     // Validar antes de agregar
-    const newTags = [...form.tags, tag];
+    const newTags = [...form.tags, trimmedTag];
     const validation = validateNoteTags(newTags);
     
     if (!validation.valid) {
@@ -307,13 +329,18 @@
       return;
     }
     
-    if (!form.tags.includes(tag)) {
-      form.tags = newTags;
-      validationErrors.tags = '';
-    }
+    // Agregar tag si pasó todas las validaciones
+    form.tags = newTags;
+    validationErrors.tags = '';
     tagInput = '';
+    
+  } finally {
+    // Siempre desbloquear después de 100ms
+    setTimeout(() => {
+      isAddingTag = false;
+    }, 100);
   }
-
+}
   function removeTag(tag: string) {
     form.tags = form.tags.filter(t => t !== tag);
   }

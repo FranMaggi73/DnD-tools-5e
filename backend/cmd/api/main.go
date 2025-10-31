@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"os"
-	"sync"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -17,105 +16,8 @@ import (
 	"github.com/FranMaggi73/dm-events-backend/internal/cache"
 	"github.com/FranMaggi73/dm-events-backend/internal/handlers"
 	"github.com/FranMaggi73/dm-events-backend/internal/middleware"
+	"github.com/FranMaggi73/dm-events-backend/internal/ratelimit"
 )
-
-// ===== RATE LIMITER =====
-type RateLimiter struct {
-	requests map[string][]time.Time
-	mu       sync.Mutex
-	limit    int
-	window   time.Duration
-}
-
-func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
-	rl := &RateLimiter{
-		requests: make(map[string][]time.Time),
-		limit:    limit,
-		window:   window,
-	}
-
-	// Cleanup cada minuto
-	go func() {
-		ticker := time.NewTicker(1 * time.Minute)
-		defer ticker.Stop()
-		for range ticker.C {
-			rl.cleanup()
-		}
-	}()
-
-	return rl
-}
-
-func (rl *RateLimiter) Allow(key string) bool {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-
-	now := time.Now()
-	windowStart := now.Add(-rl.window)
-
-	// Filtrar requests antiguos
-	if times, exists := rl.requests[key]; exists {
-		valid := []time.Time{}
-		for _, t := range times {
-			if t.After(windowStart) {
-				valid = append(valid, t)
-			}
-		}
-		rl.requests[key] = valid
-	}
-
-	// Verificar límite
-	if len(rl.requests[key]) >= rl.limit {
-		return false
-	}
-
-	// Agregar request
-	rl.requests[key] = append(rl.requests[key], now)
-	return true
-}
-
-func (rl *RateLimiter) cleanup() {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-
-	now := time.Now()
-	windowStart := now.Add(-rl.window)
-
-	for key, times := range rl.requests {
-		valid := []time.Time{}
-		for _, t := range times {
-			if t.After(windowStart) {
-				valid = append(valid, t)
-			}
-		}
-		if len(valid) == 0 {
-			delete(rl.requests, key)
-		} else {
-			rl.requests[key] = valid
-		}
-	}
-}
-
-// Middleware de rate limiting
-func RateLimitMiddleware(limiter *RateLimiter) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		uid := c.GetString("uid")
-		if uid == "" {
-			c.Next()
-			return
-		}
-
-		if !limiter.Allow(uid) {
-			c.JSON(429, gin.H{
-				"error": "Demasiadas peticiones. Por favor, espera un momento antes de intentar de nuevo.",
-			})
-			c.Abort()
-			return
-		}
-
-		c.Next()
-	}
-}
 
 func main() {
 	ctx := context.Background()
@@ -138,14 +40,31 @@ func main() {
 		log.Fatalf("Error obteniendo cliente Auth: %v", err)
 	}
 
-	// ===== INICIALIZAR CACHÉ =====
-	cacheInstance := cache.NewCache(5 * time.Minute)
-	log.Println("✅ Caché en memoria inicializado (TTL: 5 minutos)")
+	// ===== INICIALIZAR CACHÉ (SIMPLIFICADO) =====
+	// Solo cachear datos que cambian poco y son costosos de obtener
+	cacheInstance := cache.NewCache(30 * time.Second) // TTL más corto
+	log.Println("✅ Caché en memoria inicializado (TTL: 30 segundos)")
 
-	// ===== RATE LIMITER =====
-	rateLimiter := NewRateLimiter(20, 1*time.Minute) // 20 requests por minuto
-	log.Println("✅ Rate limiter inicializado (20 req/min por usuario)")
+	// ===== RATE LIMITER CON REDIS =====
+	var rateLimiter middleware.RateLimiter
 
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL != "" {
+		// Intentar conectar a Redis
+		redisLimiter, err := ratelimit.NewRedisLimiter(redisURL, 20, 1*time.Minute)
+		if err != nil {
+			log.Printf("⚠️  No se pudo conectar a Redis: %v", err)
+			log.Println("⚠️  Usando rate limiter en memoria (no compartido entre instancias)")
+			rateLimiter = middleware.NewInMemoryLimiter(20, 1*time.Minute)
+		} else {
+			rateLimiter = redisLimiter
+			log.Println("✅ Rate limiter con Redis inicializado")
+			defer redisLimiter.Close()
+		}
+	} else {
+		log.Println("⚠️  REDIS_URL no configurado, usando rate limiter en memoria")
+		rateLimiter = middleware.NewInMemoryLimiter(20, 1*time.Minute)
+	}
 	// ===== ROUTER GIN =====
 	r := gin.Default()
 
@@ -180,7 +99,6 @@ func main() {
 	public := r.Group("/api")
 	{
 		public.GET("/health", func(c *gin.Context) {
-			// ✅ HEALTH CHECK MEJORADO
 			healthCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			defer cancel()
 
@@ -199,6 +117,7 @@ func main() {
 				"services": gin.H{
 					"firestore": firestoreStatus,
 					"cache":     "ok",
+					"redis":     redisURL != "",
 				},
 				"cache_stats": stats,
 			})
@@ -213,14 +132,14 @@ func main() {
 		protected.GET("/users/me", h.GetCurrentUser)
 
 		// ===== CAMPAÑAS (con rate limiting) =====
-		protected.POST("/campaigns", RateLimitMiddleware(rateLimiter), h.CreateEvent)
+		protected.POST("/campaigns", middleware.RateLimitMiddleware(rateLimiter), h.CreateEvent)
 		protected.GET("/campaigns", h.GetUserEvents)
 		protected.GET("/campaigns/:id/full", pm.RequireCampaignMember(), h.GetCampaignFullData)
 		protected.GET("/campaigns/:id", h.GetEvent)
 		protected.DELETE("/campaigns/:id", pm.RequireCampaignDM(), h.DeleteEvent)
 
 		// ===== MIEMBROS DE CAMPAÑA =====
-		protected.POST("/campaigns/:id/invite", pm.RequireCampaignDM(), RateLimitMiddleware(rateLimiter), h.InvitePlayer)
+		protected.POST("/campaigns/:id/invite", pm.RequireCampaignDM(), middleware.RateLimitMiddleware(rateLimiter), h.InvitePlayer)
 		protected.DELETE("/campaigns/:id/players/:userId", pm.RequireCampaignDM(), h.RemovePlayer)
 		protected.GET("/campaigns/:id/members", h.GetEventMembers)
 
@@ -229,20 +148,20 @@ func main() {
 		protected.POST("/invitations/:id/respond", h.RespondToInvitation)
 
 		// ===== PERSONAJES (con rate limiting) =====
-		protected.POST("/campaigns/:id/characters", pm.RequireCampaignMember(), RateLimitMiddleware(rateLimiter), h.CreateCharacter)
+		protected.POST("/campaigns/:id/characters", pm.RequireCampaignMember(), middleware.RateLimitMiddleware(rateLimiter), h.CreateCharacter)
 		protected.GET("/campaigns/:id/characters", h.GetCampaignCharacters)
 		protected.PUT("/characters/:charId", pm.RequireCharacterOwnerOrDM(), h.UpdateCharacter)
 		protected.DELETE("/characters/:charId", pm.RequireCharacterOwnerOrDM(), h.DeleteCharacter)
 
 		// ===== ENCUENTROS (con rate limiting) =====
-		protected.POST("/campaigns/:id/encounters", pm.RequireCampaignDM(), RateLimitMiddleware(rateLimiter), h.CreateEncounter)
+		protected.POST("/campaigns/:id/encounters", pm.RequireCampaignDM(), middleware.RateLimitMiddleware(rateLimiter), h.CreateEncounter)
 		protected.GET("/campaigns/:id/encounters/active", h.GetActiveEncounter)
 		protected.GET("/campaigns/:id/combat/full", pm.RequireCampaignMember(), h.GetCombatFullData)
 		protected.DELETE("/encounters/:encounterId", pm.RequireEncounterDM(), h.EndEncounter)
 		protected.POST("/encounters/:encounterId/reset", pm.RequireEncounterDM(), h.ResetEncounter)
 
 		// ===== COMBATIENTES (con rate limiting en POST) =====
-		protected.POST("/encounters/:encounterId/combatants", pm.RequireEncounterDM(), RateLimitMiddleware(rateLimiter), h.AddCombatant)
+		protected.POST("/encounters/:encounterId/combatants", pm.RequireEncounterDM(), middleware.RateLimitMiddleware(rateLimiter), h.AddCombatant)
 		protected.GET("/encounters/:encounterId/combatants", h.GetCombatants)
 		protected.PUT("/combatants/:combatantId", h.UpdateCombatant)
 		protected.DELETE("/combatants/:combatantId", h.RemoveCombatant)
@@ -251,7 +170,7 @@ func main() {
 		protected.POST("/encounters/:encounterId/next-turn", pm.RequireEncounterDM(), h.NextTurn)
 
 		// ===== NOTAS (con rate limiting en POST) =====
-		protected.POST("/campaigns/:id/notes", pm.RequireCampaignMember(), RateLimitMiddleware(rateLimiter), h.CreateNote)
+		protected.POST("/campaigns/:id/notes", pm.RequireCampaignMember(), middleware.RateLimitMiddleware(rateLimiter), h.CreateNote)
 		protected.GET("/campaigns/:id/notes", pm.RequireCampaignMember(), h.GetCampaignNotes)
 		protected.GET("/notes/:noteId", h.GetNote)
 		protected.PUT("/notes/:noteId", h.UpdateNote)
@@ -284,8 +203,13 @@ func main() {
 
 	log.Printf("🚀 Servidor corriendo en puerto %s", port)
 	log.Printf("✨ Optimizaciones activas:")
-	log.Printf("   - Caché en memoria (TTL: 5 min)")
-	log.Printf("   - Rate limiting (20 req/min por usuario)")
+	log.Printf("   - Caché en memoria (TTL: 30 seg, solo para permisos)")
+	log.Printf("   - Rate limiting (%s): 20 req/min por usuario", func() string {
+		if redisURL != "" {
+			return "Redis"
+		}
+		return "in-memory"
+	}())
 	log.Printf("   - Middleware de permisos centralizado")
 	log.Printf("   - Queries paralelas con goroutines")
 	log.Printf("   - Eliminación en cascada")

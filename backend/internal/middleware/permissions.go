@@ -28,7 +28,7 @@ func NewPermissionsMiddleware(db *firestore.Client, c *cache.Cache) *Permissions
 }
 
 // ===========================
-// MIDDLEWARE DE PERMISOS
+// MIDDLEWARE DE PERMISOS (OPTIMIZADO)
 // ===========================
 
 // RequireCampaignDM verifica que el usuario sea el DM de la campaña
@@ -50,7 +50,7 @@ func (pm *PermissionsMiddleware) RequireCampaignDM() gin.HandlerFunc {
 
 		ctx := context.Background()
 
-		// Intentar obtener de caché
+		// 1. Verificar caché de campaña (solo para obtener DM ID rápido)
 		campaign, found := pm.cache.GetCampaign(campaignID)
 		if !found {
 			// Cache miss: buscar en Firestore
@@ -72,14 +72,14 @@ func (pm *PermissionsMiddleware) RequireCampaignDM() gin.HandlerFunc {
 			pm.cache.SetCampaign(campaign)
 		}
 
-		// Verificar permisos
+		// 2. Verificar permisos
 		if campaign.DmID != uid {
 			c.JSON(http.StatusForbidden, gin.H{"error": "Solo el DM puede realizar esta acción"})
 			c.Abort()
 			return
 		}
 
-		// Guardar campaña en contexto para reuso
+		// 3. Guardar campaña en contexto para reuso
 		c.Set("campaign", campaign)
 		c.Next()
 	}
@@ -104,7 +104,7 @@ func (pm *PermissionsMiddleware) RequireCampaignMember() gin.HandlerFunc {
 
 		ctx := context.Background()
 
-		// Verificar si es miembro
+		// Verificar si es miembro (siempre consulta Firestore, es rápido)
 		memberIter := pm.db.Collection("event_members").
 			Where("campaignId", "==", campaignID).
 			Where("userId", "==", uid).
@@ -118,7 +118,7 @@ func (pm *PermissionsMiddleware) RequireCampaignMember() gin.HandlerFunc {
 			return
 		}
 
-		// Obtener y guardar campaña para reuso
+		// Obtener campaña de caché si está disponible (opcional, para contexto)
 		campaign, found := pm.cache.GetCampaign(campaignID)
 		if !found {
 			doc, err := pm.db.Collection("events").Doc(campaignID).Get(ctx)
@@ -157,7 +157,7 @@ func (pm *PermissionsMiddleware) RequireCharacterOwnerOrDM() gin.HandlerFunc {
 
 		ctx := context.Background()
 
-		// Obtener personaje
+		// Obtener personaje (no cacheamos personajes porque cambian frecuentemente)
 		charDoc, err := pm.db.Collection("characters").Doc(charID).Get(ctx)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Personaje no encontrado"})
@@ -231,7 +231,7 @@ func (pm *PermissionsMiddleware) RequireEncounterDM() gin.HandlerFunc {
 
 		ctx := context.Background()
 
-		// Intentar obtener de caché
+		// Obtener encuentro (cacheamos porque se consulta frecuentemente en combate)
 		encounter, found := pm.cache.GetEncounter(encounterID)
 		if !found {
 			encounterDoc, err := pm.db.Collection("encounters").Doc(encounterID).Get(ctx)
