@@ -6,9 +6,11 @@ import (
 	"os"
 	"time"
 
+	"cloud.google.com/go/firestore"
 	firebase "firebase.google.com/go/v4"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
 	"github.com/FranMaggi73/dm-events-backend/internal/cache"
@@ -150,6 +152,25 @@ func main() {
 
 	}
 
+	// ===== CRON JOB PARA LIMPIEZA AUTOMÁTICA =====
+	go func() {
+		// Esperar 1 hora antes de la primera ejecución
+		time.Sleep(1 * time.Hour)
+
+		// Ejecutar cada 24 horas
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+
+		// Primera ejecución inmediata después del delay
+		cleanupOldData(firestoreClient, ctx)
+
+		for range ticker.C {
+			cleanupOldData(firestoreClient, ctx)
+		}
+	}()
+
+	log.Printf("🕐 Limpieza automática programada (cada 24 horas)")
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -161,6 +182,125 @@ func main() {
 	log.Printf("   - Middleware de permisos centralizado")
 	log.Printf("   - Queries paralelas con goroutines")
 	log.Printf("   - Eliminación en cascada")
+	log.Printf("   - Limpieza automática de datos antiguos")
 
 	r.Run(":" + port)
+}
+
+// ===================================================================
+// FUNCIÓN DE LIMPIEZA AUTOMÁTICA
+// ===================================================================
+
+func cleanupOldData(db *firestore.Client, ctx context.Context) {
+	log.Println("🧹 Iniciando limpieza automática...")
+
+	totalDeleted := 0
+
+	// ===== 1. ELIMINAR INVITACIONES RESPONDIDAS HACE MÁS DE 30 DÍAS =====
+	thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+
+	invitationsIter := db.Collection("invitations").
+		Where("respondedAt", "<", thirtyDaysAgo).
+		Documents(ctx)
+
+	deletedInvitations := 0
+	batch := db.Batch()
+
+	for {
+		doc, err := invitationsIter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			continue
+		}
+
+		var inv map[string]interface{}
+		if err := doc.DataTo(&inv); err != nil {
+			continue
+		}
+
+		// Solo eliminar si tiene status (accepted/rejected)
+		if status, ok := inv["status"].(string); ok {
+			if status == "accepted" || status == "rejected" {
+				batch.Delete(doc.Ref)
+				deletedInvitations++
+
+				if deletedInvitations >= 400 {
+					if _, err := batch.Commit(ctx); err != nil {
+						log.Printf("❌ Error limpiando invitaciones: %v", err)
+					}
+					totalDeleted += deletedInvitations
+					batch = db.Batch()
+					deletedInvitations = 0
+				}
+			}
+		}
+	}
+
+	if deletedInvitations > 0 {
+		if _, err := batch.Commit(ctx); err != nil {
+			log.Printf("❌ Error en commit final de invitaciones: %v", err)
+		} else {
+			totalDeleted += deletedInvitations
+			log.Printf("✅ %d invitaciones antiguas eliminadas", deletedInvitations)
+		}
+	}
+
+	// ===== 2. LIMPIAR ENCUENTROS INACTIVOS SIN COMBATIENTES =====
+	encountersIter := db.Collection("encounters").
+		Where("isActive", "==", false).
+		Documents(ctx)
+
+	deletedEncounters := 0
+	encounterBatch := db.Batch()
+
+	for {
+		doc, err := encountersIter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			continue
+		}
+
+		// Verificar que no tenga combatientes
+		combatantsIter := db.Collection("combatants").
+			Where("encounterId", "==", doc.Ref.ID).
+			Limit(1).
+			Documents(ctx)
+
+		_, err = combatantsIter.Next()
+		if err != iterator.Done {
+			continue // Tiene combatientes, no eliminar
+		}
+
+		encounterBatch.Delete(doc.Ref)
+		deletedEncounters++
+
+		if deletedEncounters >= 400 {
+			if _, err := encounterBatch.Commit(ctx); err != nil {
+				log.Printf("❌ Error limpiando encuentros: %v", err)
+			}
+			totalDeleted += deletedEncounters
+			encounterBatch = db.Batch()
+			deletedEncounters = 0
+		}
+	}
+
+	if deletedEncounters > 0 {
+		if _, err := encounterBatch.Commit(ctx); err != nil {
+			log.Printf("❌ Error en commit final de encuentros: %v", err)
+		} else {
+			totalDeleted += deletedEncounters
+			log.Printf("✅ %d encuentros huérfanos eliminados", deletedEncounters)
+		}
+	}
+
+	// ===== RESUMEN =====
+	if totalDeleted > 0 {
+		log.Printf("✅ Limpieza completada: %d documentos eliminados en total", totalDeleted)
+	} else {
+		log.Println("✅ Limpieza completada: No había documentos para eliminar")
+	}
 }

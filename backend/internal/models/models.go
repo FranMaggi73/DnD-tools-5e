@@ -31,7 +31,7 @@ type Campaign struct {
 
 // Request para crear campaña
 type CreateCampaignRequest struct {
-	Name string `json:"name" binding:"required"`
+	Name string `json:"name" binding:"required,min=3,max=100"`
 }
 
 // ===========================

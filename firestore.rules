@@ -144,20 +144,29 @@ service cloud.firestore {
     // ===========================
     
     match /combatants/{combatantId} {
-      // Todos los autenticados pueden ver combatientes
+      // Leer: todos los autenticados pueden ver combatientes
       allow read: if isAuthenticated();
       
-      // Solo el DM puede crear combatientes
-      allow create: if isAuthenticated();
-                       // Validación de DM se hace en backend
+      // Crear: solo el DM de la campaña del encuentro
+      allow create: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/encounters/$(request.resource.data.encounterId)) &&
+        isCampaignDM(
+          get(/databases/$(database)/documents/encounters/$(request.resource.data.encounterId)).data.campaignId
+        );
       
-      // Solo el DM puede actualizar combatientes
-      allow update: if isAuthenticated();
-                       // Validación de DM se hace en backend
+      // Actualizar: solo el DM de la campaña
+      allow update: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/encounters/$(resource.data.encounterId)) &&
+        isCampaignDM(
+          get(/databases/$(database)/documents/encounters/$(resource.data.encounterId)).data.campaignId
+        );
       
-      // Solo el DM puede eliminar combatientes
-      allow delete: if isAuthenticated();
-                       // Validación de DM se hace en backend
+      // Eliminar: solo el DM de la campaña
+      allow delete: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/encounters/$(resource.data.encounterId)) &&
+        isCampaignDM(
+          get(/databases/$(database)/documents/encounters/$(resource.data.encounterId)).data.campaignId
+        );
     }
     
     // ===========================

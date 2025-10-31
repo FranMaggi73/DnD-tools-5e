@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"sort"
@@ -197,12 +198,19 @@ func (h *Handler) EndEncounter(c *gin.Context) {
 			continue
 		}
 
-		// Sincronizar personajes (guardar HP y condiciones)
+		// ✅ Sincronizar personajes (guardar HP Y CONDICIONES)
 		if combatant.CharacterID != "" && (combatant.Type == "character" || combatant.Type == "player") {
 			characterRef := h.db.Collection("characters").Doc(combatant.CharacterID)
+
+			// Asegurar que conditions no sea nil
+			conditions := combatant.Conditions
+			if conditions == nil {
+				conditions = []string{}
+			}
+
 			batch.Update(characterRef, []firestore.Update{
 				{Path: "currentHp", Value: combatant.CurrentHP},
-				{Path: "conditions", Value: combatant.Conditions},
+				{Path: "conditions", Value: conditions}, // ✅ SINCRONIZAR CONDICIONES
 				{Path: "updatedAt", Value: time.Now()},
 			})
 			syncedChars++
@@ -405,90 +413,104 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 		return
 	}
 
-	combatantDoc, err := h.db.Collection("combatants").Doc(combatantID).Get(ctx)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Combatiente no encontrado"})
-		return
-	}
+	combatantRef := h.db.Collection("combatants").Doc(combatantID)
 
-	var combatant models.Combatant
-	if err := combatantDoc.DataTo(&combatant); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando combatiente"})
-		return
-	}
-
-	encounterDoc, err := h.db.Collection("encounters").Doc(combatant.EncounterID).Get(ctx)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Encuentro no encontrado"})
-		return
-	}
-
-	var encounter models.Encounter
-	encounterDoc.DataTo(&encounter)
-
-	campaignDoc, err := h.db.Collection("events").Doc(encounter.CampaignID).Get(ctx)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Campaña no encontrada"})
-		return
-	}
-
-	var campaign models.Campaign
-	campaignDoc.DataTo(&campaign)
-
-	if campaign.DmID != uid {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Solo el DM puede actualizar combatientes"})
-		return
-	}
-
-	// ===== SINCRONIZACIÓN BIDIRECCIONAL OPTIMIZADA CON BATCH =====
-	batch := h.db.Batch()
-	combatantUpdates := []firestore.Update{}
-
-	if req.CurrentHP != nil {
-		combatantUpdates = append(combatantUpdates, firestore.Update{Path: "currentHp", Value: *req.CurrentHP})
-	}
-
-	if req.Conditions != nil {
-		combatantUpdates = append(combatantUpdates, firestore.Update{Path: "conditions", Value: req.Conditions})
-	}
-
-	if req.Initiative != nil {
-		combatantUpdates = append(combatantUpdates, firestore.Update{Path: "initiative", Value: *req.Initiative})
-	}
-
-	if len(combatantUpdates) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No hay datos para actualizar"})
-		return
-	}
-
-	// Actualizar combatiente
-	batch.Update(h.db.Collection("combatants").Doc(combatantID), combatantUpdates)
-
-	// Sincronizar con personaje si aplica
-	if combatant.CharacterID != "" && (combatant.Type == "character" || combatant.Type == "player") {
-		characterUpdates := []firestore.Update{
-			{Path: "updatedAt", Value: time.Now()},
+	// ✅ USAR TRANSACCIÓN PARA SINCRONIZACIÓN ATÓMICA
+	err := h.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		// 1. Leer combatiente
+		combatantDoc, err := tx.Get(combatantRef)
+		if err != nil {
+			return err
 		}
 
+		var combatant models.Combatant
+		if err := combatantDoc.DataTo(&combatant); err != nil {
+			return err
+		}
+
+		// 2. Verificar permisos
+		encounterDoc, err := h.db.Collection("encounters").Doc(combatant.EncounterID).Get(ctx)
+		if err != nil {
+			return err
+		}
+
+		var encounter models.Encounter
+		encounterDoc.DataTo(&encounter)
+
+		campaignDoc, err := h.db.Collection("events").Doc(encounter.CampaignID).Get(ctx)
+		if err != nil {
+			return err
+		}
+
+		var campaign models.Campaign
+		campaignDoc.DataTo(&campaign)
+
+		if campaign.DmID != uid {
+			return fmt.Errorf("solo el DM puede actualizar combatientes")
+		}
+
+		// 3. Preparar updates
+		combatantUpdates := []firestore.Update{}
+
 		if req.CurrentHP != nil {
-			characterUpdates = append(characterUpdates, firestore.Update{Path: "currentHp", Value: *req.CurrentHP})
+			combatantUpdates = append(combatantUpdates, firestore.Update{Path: "currentHp", Value: *req.CurrentHP})
 		}
 
 		if req.Conditions != nil {
-			characterUpdates = append(characterUpdates, firestore.Update{Path: "conditions", Value: req.Conditions})
+			combatantUpdates = append(combatantUpdates, firestore.Update{Path: "conditions", Value: req.Conditions})
 		}
 
-		batch.Update(h.db.Collection("characters").Doc(combatant.CharacterID), characterUpdates)
-	}
+		if req.Initiative != nil {
+			combatantUpdates = append(combatantUpdates, firestore.Update{Path: "initiative", Value: *req.Initiative})
+		}
 
-	// Commit batch
-	if _, err := batch.Commit(ctx); err != nil {
+		if len(combatantUpdates) == 0 {
+			return fmt.Errorf("no hay datos para actualizar")
+		}
+
+		// ✅ 4. ACTUALIZAR COMBATIENTE Y PERSONAJE EN LA MISMA TRANSACCIÓN
+		if err := tx.Update(combatantRef, combatantUpdates); err != nil {
+			return err
+		}
+
+		// 5. Sincronizar con personaje si aplica
+		if combatant.CharacterID != "" && (combatant.Type == "character" || combatant.Type == "player") {
+			characterRef := h.db.Collection("characters").Doc(combatant.CharacterID)
+			characterUpdates := []firestore.Update{
+				{Path: "updatedAt", Value: time.Now()},
+			}
+
+			if req.CurrentHP != nil {
+				characterUpdates = append(characterUpdates, firestore.Update{Path: "currentHp", Value: *req.CurrentHP})
+			}
+
+			if req.Conditions != nil {
+				characterUpdates = append(characterUpdates, firestore.Update{Path: "conditions", Value: req.Conditions})
+			}
+
+			if err := tx.Update(characterRef, characterUpdates); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		if err.Error() == "solo el DM puede actualizar combatientes" {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		if err.Error() == "no hay datos para actualizar" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error actualizando combatiente"})
 		return
 	}
 
 	// Obtener combatiente actualizado
-	updatedDoc, _ := h.db.Collection("combatants").Doc(combatantID).Get(ctx)
+	updatedDoc, _ := combatantRef.Get(ctx)
 	var updated models.Combatant
 	updatedDoc.DataTo(&updated)
 

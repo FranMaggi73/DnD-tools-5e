@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -18,7 +19,6 @@ import (
 // ===========================
 
 // CreateCharacter - Crear un nuevo personaje en una campaña
-// CreateCharacter - Crear un nuevo personaje en una campaña (ACTUALIZADO)
 func (h *Handler) CreateCharacter(c *gin.Context) {
 	uid := c.GetString("uid")
 	if uid == "" {
@@ -34,55 +34,72 @@ func (h *Handler) CreateCharacter(c *gin.Context) {
 		return
 	}
 
-	// Verificar que el usuario es miembro de la campaña
-	memberIter := h.db.Collection("event_members").
-		Where("campaignId", "==", campaignID).
-		Where("userId", "==", uid).
-		Limit(1).
-		Documents(ctx)
-
-	_, err := memberIter.Next()
-	if err == iterator.Done {
-		c.JSON(http.StatusForbidden, gin.H{"error": "No eres miembro de esta campaña"})
-		return
-	}
-
-	// Verificar que el usuario no tenga ya un personaje en esta campaña
-	existingChar := h.db.Collection("characters").
-		Where("campaignId", "==", campaignID).
-		Where("userId", "==", uid).
-		Limit(1).
-		Documents(ctx)
-
-	_, err = existingChar.Next()
-	if err != iterator.Done {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Ya tienes un personaje en esta campaña"})
-		return
-	}
-
-	// Crear personaje
 	charRef := h.db.Collection("characters").NewDoc()
-	character := models.Character{
-		ID:         charRef.ID,
-		CampaignID: campaignID,
-		UserID:     uid,
-		Name:       req.Name,
-		Class:      req.Class,
-		Level:      req.Level,
-		MaxHP:      req.MaxHP,
-		CurrentHP:  req.MaxHP, // Empieza con HP máximo
-		ArmorClass: req.ArmorClass,
-		Initiative: req.Initiative,
-		Conditions: []string{}, // 👈 NUEVO: Inicializar array vacío
-		ImageURL:   req.ImageURL,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
-	}
 
-	if _, err := charRef.Set(ctx, character); err != nil {
+	// ✅ USAR TRANSACCIÓN PARA EVITAR DUPLICADOS
+	err := h.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		// 1. Verificar que es miembro
+		memberIter := h.db.Collection("event_members").
+			Where("campaignId", "==", campaignID).
+			Where("userId", "==", uid).
+			Limit(1).
+			Documents(ctx)
+
+		_, err := memberIter.Next()
+		if err == iterator.Done {
+			return fmt.Errorf("no eres miembro de esta campaña")
+		}
+
+		// ✅ 2. VERIFICAR DUPLICADO DENTRO DE LA TRANSACCIÓN
+		existingIter := h.db.Collection("characters").
+			Where("campaignId", "==", campaignID).
+			Where("userId", "==", uid).
+			Limit(1).
+			Documents(ctx)
+
+		_, err = existingIter.Next()
+		if err != iterator.Done {
+			return fmt.Errorf("ya tienes un personaje en esta campaña")
+		}
+
+		// 3. Crear personaje
+		character := models.Character{
+			ID:         charRef.ID,
+			CampaignID: campaignID,
+			UserID:     uid,
+			Name:       req.Name,
+			Class:      req.Class,
+			Level:      req.Level,
+			MaxHP:      req.MaxHP,
+			CurrentHP:  req.MaxHP,
+			ArmorClass: req.ArmorClass,
+			Initiative: req.Initiative,
+			Conditions: []string{},
+			ImageURL:   req.ImageURL,
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
+		}
+
+		return tx.Set(charRef, character)
+	})
+
+	if err != nil {
+		if err.Error() == "no eres miembro de esta campaña" {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		if err.Error() == "ya tienes un personaje en esta campaña" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creando personaje"})
 		return
 	}
+
+	// Obtener personaje creado
+	charDoc, _ := charRef.Get(ctx)
+	var character models.Character
+	charDoc.DataTo(&character)
 
 	c.JSON(http.StatusCreated, character)
 }

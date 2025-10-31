@@ -101,14 +101,13 @@ function setupNotesListener() {
   try {
     loading = true;
     
-    // Array para almacenar notas de ambas queries
     let personalNotes: Note[] = [];
     let sharedNotes: Note[] = [];
-    let loadedQueries = 0;
+    let loadedPersonal = false; // ✅ FLAGS PARA EVITAR BUG
+    let loadedShared = false;
     
     const notesRef = collection(db, 'notes');
     
-    // Query 1: Notas personales del usuario
     const personalQuery = query(
       notesRef,
       where('campaignId', '==', campaignId),
@@ -116,14 +115,12 @@ function setupNotesListener() {
       where('isShared', '==', false)
     );
     
-    // Query 2: Notas compartidas de la campaña
     const sharedQuery = query(
       notesRef,
       where('campaignId', '==', campaignId),
       where('isShared', '==', true)
     );
     
-    // Listener para notas personales
     const unsubPersonal = onSnapshot(
       personalQuery,
       (snapshot) => {
@@ -132,13 +129,12 @@ function setupNotesListener() {
           return {
             id: doc.id,
             ...data,
-            // Convertir Timestamps a strings ISO
             createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
             updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
           } as Note;
         });
         
-        // Combinar y ordenar
+        loadedPersonal = true; // ✅ MARCAR COMO CARGADO
         combineNotes();
       },
       (err) => {
@@ -148,7 +144,6 @@ function setupNotesListener() {
       }
     );
     
-    // Listener para notas compartidas
     const unsubShared = onSnapshot(
       sharedQuery,
       (snapshot) => {
@@ -157,13 +152,12 @@ function setupNotesListener() {
           return {
             id: doc.id,
             ...data,
-            // Convertir Timestamps a strings ISO
             createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
             updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
           } as Note;
         });
         
-        // Combinar y ordenar
+        loadedShared = true; // ✅ MARCAR COMO CARGADO
         combineNotes();
       },
       (err) => {
@@ -174,26 +168,21 @@ function setupNotesListener() {
     );
     
     function combineNotes() {
-      loadedQueries++;
-      
-      // Combinar arrays eliminando duplicados por ID
-      const allNotes = [...personalNotes, ...sharedNotes];
-      const uniqueNotes = Array.from(
-        new Map(allNotes.map(note => [note.id, note])).values()
-      );
-      
-      // Ordenar por fecha (más recientes primero)
-      notes = uniqueNotes.sort((a, b) => 
-        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      );
-      
-      // Marcar como loaded después de ambas queries
-      if (loadedQueries >= 2) {
-        loading = false;
+      // ✅ SOLO MARCAR COMO LOADED DESPUÉS DE AMBAS QUERIES INICIALES
+      if (loadedPersonal && loadedShared) {
+        const allNotes = [...personalNotes, ...sharedNotes];
+        const uniqueNotes = Array.from(
+          new Map(allNotes.map(note => [note.id, note])).values()
+        );
+        
+        notes = uniqueNotes.sort((a, b) => 
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+        
+        loading = false; // ✅ SOLO APAGAR LOADING UNA VEZ
       }
     }
     
-    // Función para limpiar ambos listeners
     notesUnsubscribe = () => {
       unsubPersonal();
       unsubShared();
