@@ -686,11 +686,13 @@
             ← Anterior
           </button>
 
+          <!-- En el footer del modal -->
           {#if currentStep < totalSteps}
             <button 
               on:click={nextStep}
               class="btn btn-dnd"
               disabled={!isStepValid}
+              type="button"
             >
               Siguiente →
             </button>
@@ -699,6 +701,7 @@
               on:click={handleSubmit}
               class="btn btn-dnd"
               disabled={!isStepValid}
+              type="button"
             >
               <span class="text-xl">{isEdit ? '💾' : '✨'}</span>
               {isEdit ? 'Guardar Cambios' : 'Crear Personaje'}

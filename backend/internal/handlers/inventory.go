@@ -24,7 +24,7 @@ func (h *Handler) CreateItem(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
 		return
 	}
-	characterID := c.Param("characterId")
+	characterID := c.Param("charId")
 	ctx := context.Background()
 
 	var req models.CreateItemRequest
@@ -92,7 +92,7 @@ func (h *Handler) CreateItem(c *gin.Context) {
 
 // GetCharacterInventory - Obtener inventario completo de un personaje
 func (h *Handler) GetCharacterInventory(c *gin.Context) {
-	characterID := c.Param("characterId")
+	characterID := c.Param("charId")
 	ctx := context.Background()
 
 	// Obtener personaje para calcular carrying capacity
@@ -306,7 +306,8 @@ func (h *Handler) UpdateCurrency(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
 		return
 	}
-	characterID := c.Param("characterId")
+
+	characterID := c.Param("charId")
 	ctx := context.Background()
 
 	var req models.UpdateCurrencyRequest
