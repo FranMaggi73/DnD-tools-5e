@@ -1,3 +1,4 @@
+<!-- frontend/src/routes/campaigns/[id]/characters/+page.svelte -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
@@ -7,6 +8,7 @@
   import { DND_SKILLS, getProficiencyBonus } from '$lib/types';
   import CharacterCard from '$lib/components/CharacterCard.svelte';
   import CharacterFormModal from '$lib/components/CharacterFormModal.svelte';
+  import InventoryPanel from '$lib/components/InventoryPanel.svelte';
   import { headerTitle } from '$lib/stores/uiStore';
 
   // ===== Importar Firestore para listeners en tiempo real =====
@@ -26,7 +28,10 @@
   let editingCharacter: Character | null = null;
   let isEdit = false;
 
-  // ===== HELPER: Crear formulario vacío con TODOS los campos Nivel 1 =====
+  // ===== NUEVO: Estado para mostrar inventario =====
+  let showInventory = false;
+  let inventoryCharacter: Character | null = null;
+
   function emptyCharacterForm(): CharacterForm {
     return {
       name: '',
@@ -52,7 +57,6 @@
         wisdom: false,
         charisma: false
       },
-      // ✅ IMPORTANTE: Inicializar con TODAS las skills de D&D 5e
       skills: DND_SKILLS.map(skill => ({
         name: skill.name,
         ability: skill.ability,
@@ -62,7 +66,6 @@
     };
   }
 
-  // ===== HELPER: Convertir Character a Form para edición =====
   function characterToForm(character: Character): CharacterForm {
     return {
       name: character.name,
@@ -74,7 +77,6 @@
       speed: character.speed,
       abilityScores: { ...character.abilityScores },
       savingThrows: { ...character.savingThrows },
-      // ✅ Asegurar que todas las skills existan (por si faltan algunas)
       skills: DND_SKILLS.map(skillDef => {
         const existingSkill = character.skills?.find(s => s.name === skillDef.name);
         return existingSkill ? { ...existingSkill } : {
@@ -93,7 +95,6 @@
     form = emptyCharacterForm();
   }
 
-  // ===== Listener para sincronización en tiempo real =====
   let charactersUnsubscribe: (() => void) | null = null;
   const db = getFirestore(app);
 
@@ -109,7 +110,6 @@
     if (charactersUnsubscribe) charactersUnsubscribe();
   });
 
-  // ===== Setup listener en tiempo real =====
   function setupCharactersListener() {
     try {
       loading = true;
@@ -158,17 +158,25 @@
   function openEditModal(character: Character) {
     editingCharacter = character;
     isEdit = true;
-    // ✅ Usar helper para convertir correctamente
     form = characterToForm(character);
     showFormModal = true;
   }
 
+  // ===== NUEVO: Abrir inventario =====
+  function openInventory(character: Character) {
+    inventoryCharacter = character;
+    showInventory = true;
+  }
+
+  function closeInventory() {
+    showInventory = false;
+    inventoryCharacter = null;
+  }
+
   async function handleSubmit() {
     try {
-      // ✅ Calcular proficiency bonus automáticamente
       const proficiencyBonus = getProficiencyBonus(form.level);
       
-      // ✅ Preparar datos completos del personaje Nivel 1
       const characterData = {
         name: form.name,
         class: form.class,
@@ -177,25 +185,20 @@
         armorClass: form.armorClass,
         initiative: form.initiative,
         speed: form.speed,
-        // Nivel 1: Ability Scores
         abilityScores: form.abilityScores,
-        // Nivel 1: Proficiencies
         proficiencyBonus: proficiencyBonus,
         savingThrows: form.savingThrows,
         skills: form.skills
       };
 
       if (isEdit && editingCharacter) {
-        // Actualizar personaje existente
         await api.updateCharacter(editingCharacter.id, characterData);
       } else {
-        // Crear nuevo personaje
         await api.createCharacter(campaignId, characterData);
       }
       
       showFormModal = false;
       resetForm();
-      // No necesitamos recargar, el listener lo hará automáticamente
     } catch (err: any) {
       error = err.message;
     }
@@ -206,7 +209,6 @@
     
     try {
       await api.deleteCharacter(character.id);
-      // No necesitamos recargar, el listener lo hará automáticamente
     } catch (err: any) {
       error = err.message;
     }
@@ -248,13 +250,24 @@
           <div class="mb-10">
             {#if myCharacter}
               <div class="flex justify-center">
-                <div class="max-w-4xl w-full">
+                <div class="max-w-4xl w-full space-y-4">
                   <CharacterCard 
                     character={myCharacter}
                     isOwner={true}
                     on:edit={(e) => openEditModal(e.detail)}
                     on:delete={(e) => handleDelete(e.detail)}
                   />
+                  
+                  <!-- Botón de Inventario -->
+                  <div class="flex justify-center">
+                    <button 
+                      on:click={() => myCharacter && openInventory(myCharacter)}
+                      class="btn btn-primary gap-2"
+                    >
+                      <span class="text-xl">🎒</span>
+                      Ver Inventario
+                    </button>
+                  </div>
                 </div>
               </div>
             {:else}
@@ -294,10 +307,23 @@
               <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 {#each otherCharacters as character}
                   <div class="flex justify-center">
-                    <CharacterCard 
-                      {character}
-                      isOwner={false}
-                    />
+                    <div class="w-full space-y-4">
+                      <CharacterCard 
+                        {character}
+                        isOwner={false}
+                      />
+                      
+                      <!-- Botón de inventario para otros personajes -->
+                      <div class="flex justify-center">
+                        <button 
+                          on:click={() => openInventory(character)}
+                          class="btn btn-info btn-sm gap-2"
+                        >
+                          <span>🎒</span>
+                          Ver Inventario
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 {/each}
               </div>              
@@ -317,3 +343,34 @@
   on:submit={handleSubmit}
   on:close={handleClose}
 />
+
+<!-- Modal de Inventario -->
+{#if showInventory && inventoryCharacter}
+  <div class="modal modal-open z-50">
+    <div class="card-parchment border-4 border-secondary w-[95vw] max-w-6xl max-h-[90vh] relative flex flex-col">
+      
+      <!-- Header -->
+      <div class="p-4 border-b-2 border-secondary flex-shrink-0">
+        <button 
+          class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" 
+          on:click={closeInventory}
+        >✕</button>
+        
+        <h3 class="font-bold text-2xl font-medieval text-neutral text-center mb-2">
+          🎒 Inventario de {inventoryCharacter.name}
+        </h3>
+        <p class="text-center text-sm text-neutral/70 font-body">
+          {inventoryCharacter.class} - Nivel {inventoryCharacter.level}
+        </p>
+      </div>
+
+      <!-- Content -->
+      <div class="flex-1 overflow-y-auto p-4">
+        <InventoryPanel 
+          characterId={inventoryCharacter.id}
+          isOwner={inventoryCharacter.userId === $userStore?.uid}
+        />
+      </div>
+    </div>
+  </div>
+{/if}

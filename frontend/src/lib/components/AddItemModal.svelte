@@ -42,6 +42,8 @@
       const result = await open5eInventoryApi.searchItems(query);
       suggestions = result.results || [];
       noResults = suggestions.length === 0;
+      
+      console.log('🔍 Search results:', suggestions);
     } catch (err) {
       console.error('Error buscando items:', err);
       suggestions = [];
@@ -52,6 +54,7 @@
   }, 500);
 
   function selectItem(item: Open5eItem) {
+    console.log('📦 Selected item:', item);
     selectedItem = item;
     
     // Convertir a formato de inventario
@@ -85,6 +88,7 @@
       open5eSlug: selectedItem?.slug,
     };
     
+    console.log('💾 Adding item:', itemData);
     dispatch('add', itemData);
     handleClose();
   }
@@ -130,7 +134,7 @@
 
   function getRarityColor(rarity: string): string {
     const colors: Record<string, string> = {
-      common: 'badge-info',
+      common: 'badge-ghost',
       uncommon: 'badge-success',
       rare: 'badge-primary',
       'very rare': 'badge-secondary',
@@ -138,6 +142,52 @@
       artifact: 'badge-error',
     };
     return colors[rarity?.toLowerCase()] || 'badge-ghost';
+  }
+
+  // ✨ NUEVO: Formatear información del item para mostrar
+  function getItemSummary(item: any): string {
+    const parts = [];
+    
+    // Source badge
+    if (item.source === 'weapon') parts.push('⚔️ Arma');
+    else if (item.source === 'armor') parts.push('🛡️ Armadura');
+    else if (item.source === 'magic') parts.push('✨ Mágico');
+    
+    // Damage (weapons)
+    if (item.damage) {
+      parts.push(`${item.damage} ${item.damage_type || ''}`);
+    }
+    
+    // AC (armor)
+    if (item.armor_class) {
+      if (typeof item.armor_class === 'object') {
+        parts.push(`AC ${item.armor_class.base || '?'}`);
+      } else if (typeof item.armor_class === 'string') {
+        const acMatch = item.armor_class.match(/(\d+)/);
+        if (acMatch) parts.push(`AC ${acMatch[1]}`);
+      } else if (typeof item.armor_class === 'number') {
+        parts.push(`AC ${item.armor_class}`);
+      }
+    }
+    if (item.ac_string) {
+      const acMatch = item.ac_string.match(/(\d+)/);
+      if (acMatch) parts.push(`AC ${acMatch[1]}`);
+    }
+    
+    return parts.join(' • ');
+  }
+
+  // ✨ NUEVO: Formatear peso
+  function formatWeight(item: any): string {
+    if (!item.weight) return '';
+    const weight = typeof item.weight === 'number' ? item.weight : parseFloat(String(item.weight).match(/[\d.]+/)?.[0] || '0');
+    return weight > 0 ? `⚖️ ${weight} lb` : '';
+  }
+
+  // ✨ NUEVO: Formatear costo
+  function formatCost(item: any): string {
+    if (!item.cost) return '';
+    return `💰 ${item.cost}`;
   }
 </script>
 
@@ -189,7 +239,7 @@
                   type="text" 
                   bind:value={searchQuery}
                   on:input={handleSearch}
-                  placeholder="Buscar armas, armaduras, items mágicos..."
+                  placeholder="Buscar: plate armor, longsword, rope, health potion..."
                   class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full pr-10"
                   autofocus
                 />
@@ -199,7 +249,7 @@
               </div>
               <label class="label">
                 <span class="label-text-alt text-neutral/60 italic">
-                  💡 Prueba con nombres en inglés (longsword, plate armor, potion)
+                  💡 Busca armas, armaduras y equipo de aventurero
                 </span>
               </label>
             </div>
@@ -237,31 +287,36 @@
                     <button
                       on:click={() => selectItem(item)}
                       class="btn btn-ghost text-left border border-primary/30 hover:bg-primary/20 
-                             flex flex-col items-start w-full p-4 h-auto min-h-[5rem]"
+                             flex flex-col items-start w-full p-4 h-auto min-h-[6rem]"
                     >
                       <div class="flex justify-between items-start w-full mb-2">
-                        <span class="font-bold text-neutral text-lg">{item.name}</span>
+                        <div class="flex-1">
+                          <span class="font-bold text-neutral text-lg block">{item.name}</span>
+                          <span class="text-xs text-neutral/70 block mt-1">
+                            {getItemSummary(item)}
+                          </span>
+                        </div>
                         {#if item.rarity}
-                          <span class="badge badge-sm {getRarityColor(item.rarity)}">
+                          <span class="badge badge-sm {getRarityColor(item.rarity)} ml-2 flex-shrink-0">
                             {item.rarity}
                           </span>
                         {/if}
                       </div>
                       
-                      <div class="flex gap-2 mb-2">
-                        {#if item.type}
-                          <span class="badge badge-xs badge-secondary">{item.type}</span>
+                      <div class="flex flex-wrap gap-2 mb-2 w-full">
+                        {#if formatCost(item)}
+                          <span class="badge badge-xs badge-info">{formatCost(item)}</span>
                         {/if}
-                        {#if item.cost}
-                          <span class="badge badge-xs badge-info">💰 {item.cost}</span>
+                        {#if formatWeight(item)}
+                          <span class="badge badge-xs badge-ghost">{formatWeight(item)}</span>
                         {/if}
-                        {#if item.weight}
-                          <span class="badge badge-xs badge-ghost">⚖️ {item.weight} lb</span>
+                        {#if item.category}
+                          <span class="badge badge-xs badge-secondary">{item.category}</span>
                         {/if}
                       </div>
                       
-                      <p class="text-xs text-neutral/70 line-clamp-2">
-                        {open5eInventoryApi.cleanDescription(item.desc, 150)}
+                      <p class="text-xs text-neutral/70 line-clamp-2 w-full">
+                        {open5eInventoryApi.cleanDescription(item.desc || '', 120)}
                       </p>
                     </button>
                   {/each}
@@ -277,8 +332,8 @@
                   Escribe para buscar items en la base de datos oficial
                 </p>
                 <div class="flex flex-wrap gap-2 justify-center text-xs text-neutral/50">
-                  <span class="bg-neutral/10 px-3 py-1 rounded">longsword</span>
                   <span class="bg-neutral/10 px-3 py-1 rounded">plate armor</span>
+                  <span class="bg-neutral/10 px-3 py-1 rounded">longsword</span>
                   <span class="bg-neutral/10 px-3 py-1 rounded">health potion</span>
                   <span class="bg-neutral/10 px-3 py-1 rounded">rope</span>
                 </div>

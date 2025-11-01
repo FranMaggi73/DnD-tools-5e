@@ -1,4 +1,5 @@
 // frontend/src/lib/api/inventory.ts
+// ✨ MEJORAS: Mejor parsing de datos de Open5e
 
 import { get } from 'svelte/store';
 import { tokenStore } from '$lib/stores/authStore';
@@ -8,7 +9,7 @@ const API_BASE_URL = import.meta.env.MODE === 'development'
   : (import.meta.env.VITE_API_URL || 'https://dm-events-backend-858373640437.us-central1.run.app/api');
 
 // ===========================
-// TYPES (desde equipment.ts)
+// TYPES
 // ===========================
 
 export interface InventoryItem {
@@ -23,11 +24,46 @@ export interface InventoryItem {
   value: number;
   equipped: boolean;
   attuned?: boolean;
-  weaponData?: any;
-  armorData?: any;
+  weaponData?: WeaponData;
+  armorData?: ArmorData;
   open5eSlug?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface WeaponData {
+  weaponType: string;
+  damageDice: string;
+  damageType: string;
+  properties: WeaponProperties;
+  magicBonus?: number;
+}
+
+export interface WeaponProperties {
+  light?: boolean;
+  finesse?: boolean;
+  thrown?: boolean;
+  twoHanded?: boolean;
+  versatile?: string;
+  reach?: boolean;
+  loading?: boolean;
+  heavy?: boolean;
+  ammunition?: boolean;
+  range?: WeaponRange;
+}
+
+export interface WeaponRange {
+  normal: number;
+  max: number;
+}
+
+export interface ArmorData {
+  armorType: string;
+  baseAC: number;
+  dexModifier?: string;
+  strengthRequirement?: number;
+  stealthDisadvantage?: boolean;
+  magicBonus?: number;
 }
 
 export interface Currency {
@@ -47,10 +83,6 @@ export interface InventoryResponse {
   heavilyEncumbered: boolean;
 }
 
-// ===========================
-// OPEN5E TYPES
-// ===========================
-
 export interface Open5eItem {
   slug: string;
   name: string;
@@ -58,17 +90,17 @@ export interface Open5eItem {
   desc: string;
   rarity: string;
   weight?: number;
-  cost?: string; // Ej: "10 gp"
+  cost?: string;
   
   // Weapon
-  damage?: string; // Ej: "1d8"
+  damage?: string;
   damage_type?: string;
   weapon_range?: string;
   properties?: string[];
   category?: string;
   
   // Armor
-  armor_class?: string; // Ej: "11 + Dex modifier"
+  armor_class?: string;
   strength_requirement?: number;
   stealth_disadvantage?: boolean;
   
@@ -112,17 +144,9 @@ async function fetchWithAuth<T>(url: string, options: RequestInit = {}): Promise
 }
 
 export const inventoryApi = {
-  // ===== INVENTORY ITEMS =====
-  
-  /**
-   * Obtener inventario completo de un personaje
-   */
   getInventory: (characterId: string) =>
     fetchWithAuth<InventoryResponse>(`/characters/${characterId}/inventory`),
 
-  /**
-   * Crear nuevo item en el inventario
-   */
   createItem: (characterId: string, data: {
     name: string;
     type: string;
@@ -139,9 +163,6 @@ export const inventoryApi = {
       body: JSON.stringify(data),
     }),
 
-  /**
-   * Actualizar item (cantidad, equipped, attuned)
-   */
   updateItem: (itemId: string, data: {
     quantity?: number;
     equipped?: boolean;
@@ -152,19 +173,11 @@ export const inventoryApi = {
       body: JSON.stringify(data),
     }),
 
-  /**
-   * Eliminar item del inventario
-   */
   deleteItem: (itemId: string) =>
     fetchWithAuth<{ message: string }>(`/items/${itemId}`, {
       method: 'DELETE',
     }),
 
-  // ===== CURRENCY =====
-  
-  /**
-   * Actualizar moneda del personaje
-   */
   updateCurrency: (characterId: string, currency: Partial<Currency>) =>
     fetchWithAuth<Currency>(`/characters/${characterId}/currency`, {
       method: 'PUT',
@@ -173,58 +186,71 @@ export const inventoryApi = {
 };
 
 // ===========================
-// OPEN5E API
+// OPEN5E API - MEJORADO
 // ===========================
 
 export const open5eInventoryApi = {
   /**
-   * Buscar items en Open5e (weapons, armor, gear)
+   * Buscar items en Open5e con mejor manejo de categorías
    */
   searchItems: async (query: string, type?: string): Promise<Open5eSearchResult> => {
     const searchQuery = query.trim().toLowerCase();
     
-    // Construir URL con filtros
-    let url = `https://api.open5e.com/v1/magicitems/?search=${encodeURIComponent(searchQuery)}&limit=50`;
-    
-    // También buscar en weapons y armor
-    const [magicItems, weapons, armor] = await Promise.all([
-      fetch(url).then(r => r.json()),
-      fetch(`https://api.open5e.com/v1/weapons/?search=${encodeURIComponent(searchQuery)}&limit=20`).then(r => r.json()),
-      fetch(`https://api.open5e.com/v1/armor/?search=${encodeURIComponent(searchQuery)}&limit=20`).then(r => r.json())
-    ]);
-    
-    // Combinar resultados
-    const allResults = [
-      ...(magicItems.results || []),
-      ...(weapons.results || []),
-      ...(armor.results || [])
-    ];
-    
-    // Filtrar y ordenar por relevancia
-    const filtered = allResults
-      .filter((item: Open5eItem) => {
-        const name = item.name.toLowerCase();
-        return name.includes(searchQuery);
-      })
-      .sort((a: Open5eItem, b: Open5eItem) => {
-        const aName = a.name.toLowerCase();
-        const bName = b.name.toLowerCase();
-        const aStarts = aName.startsWith(searchQuery);
-        const bStarts = bName.startsWith(searchQuery);
-        
-        if (aStarts && !bStarts) return -1;
-        if (!aStarts && bStarts) return 1;
-        
-        return aName.length - bName.length;
-      })
-      .slice(0, 20);
-    
-    return {
-      count: filtered.length,
-      next: null,
-      previous: null,
-      results: filtered
-    };
+    try {
+      // Buscar en paralelo en múltiples endpoints
+      const [magicItems, weapons, armor, gear] = await Promise.all([
+        fetch(`https://api.open5e.com/v1/magicitems/?search=${encodeURIComponent(searchQuery)}&limit=20`)
+          .then(r => r.json()).catch(() => ({ results: [] })),
+        fetch(`https://api.open5e.com/v1/weapons/?search=${encodeURIComponent(searchQuery)}&limit=20`)
+          .then(r => r.json()).catch(() => ({ results: [] })),
+        fetch(`https://api.open5e.com/v1/armor/?search=${encodeURIComponent(searchQuery)}&limit=20`)
+          .then(r => r.json()).catch(() => ({ results: [] })),
+        fetch(`https://api.open5e.com/v1/gear/?search=${encodeURIComponent(searchQuery)}&limit=20`)
+          .then(r => r.json()).catch(() => ({ results: [] }))
+      ]);
+      
+      // Combinar y etiquetar resultados
+      const allResults = [
+        ...(magicItems.results || []).map((item: any) => ({ ...item, source: 'magicitems' })),
+        ...(weapons.results || []).map((item: any) => ({ ...item, source: 'weapons' })),
+        ...(armor.results || []).map((item: any) => ({ ...item, source: 'armor' })),
+        ...(gear.results || []).map((item: any) => ({ ...item, source: 'gear' }))
+      ];
+      
+      // Filtrar y ordenar por relevancia
+      const filtered = allResults
+        .filter((item: any) => {
+          const name = item.name.toLowerCase();
+          return name.includes(searchQuery);
+        })
+        .sort((a: any, b: any) => {
+          const aName = a.name.toLowerCase();
+          const bName = b.name.toLowerCase();
+          const aStarts = aName.startsWith(searchQuery);
+          const bStarts = bName.startsWith(searchQuery);
+          
+          if (aStarts && !bStarts) return -1;
+          if (!aStarts && bStarts) return 1;
+          
+          return aName.length - bName.length;
+        })
+        .slice(0, 30);
+      
+      return {
+        count: filtered.length,
+        next: null,
+        previous: null,
+        results: filtered
+      };
+    } catch (error) {
+      console.error('Error searching Open5e:', error);
+      return {
+        count: 0,
+        next: null,
+        previous: null,
+        results: []
+      };
+    }
   },
 
   /**
@@ -237,50 +263,35 @@ export const open5eInventoryApi = {
   },
 
   /**
-   * Convertir item de Open5e a formato de inventario
+   * ✨ MEJORADO: Convertir item de Open5e a formato de inventario
    */
-  convertToInventoryItem: (open5eItem: Open5eItem): Partial<InventoryItem> => {
+  convertToInventoryItem: (open5eItem: any): Partial<InventoryItem> => {
     const item: Partial<InventoryItem> = {
       name: open5eItem.name,
-      description: open5eItem.desc,
-      weight: open5eItem.weight || 0,
+      description: cleanDescription(open5eItem.desc || open5eItem.description || ''),
+      weight: parseWeight(open5eItem.weight),
       quantity: 1,
       equipped: false,
       open5eSlug: open5eItem.slug,
     };
 
-    // Parsear costo (ej: "10 gp" -> 10)
-    if (open5eItem.cost) {
-      const costMatch = open5eItem.cost.match(/(\d+)\s*(cp|sp|ep|gp|pp)/i);
-      if (costMatch) {
-        const amount = parseInt(costMatch[1]);
-        const currency = costMatch[2].toLowerCase();
-        
-        // Convertir a GP
-        const conversions: Record<string, number> = {
-          cp: 0.01,
-          sp: 0.1,
-          ep: 0.5,
-          gp: 1,
-          pp: 10
-        };
-        
-        item.value = amount * (conversions[currency] || 1);
-      }
-    }
+    // Parsear costo
+    item.value = parseCost(open5eItem.cost);
 
     // Detectar tipo y parsear datos específicos
-    if (open5eItem.damage || open5eItem.weapon_range) {
+    const source = open5eItem.source || '';
+    
+    if (source === 'weapons' || open5eItem.damage || open5eItem.damage_type) {
       item.type = 'weapon';
-      item.weaponData = {
-        weaponType: open5eItem.category || 'simple_melee',
-        damageDice: open5eItem.damage || '1d4',
-        damageType: open5eItem.damage_type || 'bludgeoning',
-        properties: parseWeaponProperties(open5eItem),
-      };
-    } else if (open5eItem.armor_class) {
+      item.weaponData = parseWeaponData(open5eItem);
+    } else if (source === 'armor' || open5eItem.armor_class) {
       item.type = 'armor';
       item.armorData = parseArmorData(open5eItem);
+    } else if (open5eItem.type?.toLowerCase().includes('potion') || 
+               open5eItem.name.toLowerCase().includes('potion')) {
+      item.type = 'consumable';
+    } else if (open5eItem.rarity && open5eItem.rarity !== 'common') {
+      item.type = 'treasure';
     } else {
       item.type = 'other';
     }
@@ -288,34 +299,111 @@ export const open5eInventoryApi = {
     return item;
   },
 
-  /**
-   * Limpiar descripción HTML
-   */
   cleanDescription: (html: string, maxLength: number = 200): string => {
-    const temp = document.createElement('div');
-    temp.innerHTML = html;
-    let text = temp.textContent || temp.innerText || '';
-    if (text.length > maxLength) {
-      text = text.substring(0, maxLength) + '...';
-    }
-    return text;
+    return cleanDescription(html, maxLength);
   }
 };
 
 // ===========================
-// HELPERS
+// HELPER FUNCTIONS - MEJORADOS
 // ===========================
 
-function parseWeaponProperties(item: Open5eItem): any {
-  const props: any = {};
+/**
+ * ✨ NUEVO: Limpiar descripción HTML mejorado
+ */
+function cleanDescription(html: string, maxLength: number = 200): string {
+  if (!html) return '';
   
-  if (item.properties) {
-    item.properties.forEach(prop => {
-      const p = prop.toLowerCase();
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  let text = temp.textContent || temp.innerText || '';
+  
+  // Limpiar espacios extra
+  text = text.replace(/\s+/g, ' ').trim();
+  
+  if (text.length > maxLength) {
+    text = text.substring(0, maxLength).trim() + '...';
+  }
+  
+  return text;
+}
+
+/**
+ * ✨ NUEVO: Parsear peso con múltiples formatos
+ */
+function parseWeight(weight: any): number {
+  if (typeof weight === 'number') return weight;
+  if (!weight) return 0;
+  
+  // Manejar strings como "1 lb" o "0.5"
+  const match = String(weight).match(/[\d.]+/);
+  return match ? parseFloat(match[0]) : 0;
+}
+
+/**
+ * ✨ MEJORADO: Parsear costo con más formatos
+ */
+function parseCost(cost: any): number {
+  if (typeof cost === 'number') return cost;
+  if (!cost) return 0;
+  
+  const costStr = String(cost).toLowerCase();
+  
+  // Buscar patrón: número + moneda
+  const match = costStr.match(/(\d+(?:\.\d+)?)\s*(cp|sp|ep|gp|pp)/);
+  if (!match) return 0;
+  
+  const amount = parseFloat(match[1]);
+  const currency = match[2];
+  
+  // Convertir a GP
+  const conversions: Record<string, number> = {
+    cp: 0.01,
+    sp: 0.1,
+    ep: 0.5,
+    gp: 1,
+    pp: 10
+  };
+  
+  return amount * (conversions[currency] || 1);
+}
+
+/**
+ * ✨ MEJORADO: Parsear datos de arma
+ */
+function parseWeaponData(item: any): WeaponData {
+  const weaponData: WeaponData = {
+    weaponType: item.category || 'simple_melee',
+    damageDice: item.damage || '1d4',
+    damageType: item.damage_type || 'bludgeoning',
+    properties: parseWeaponProperties(item),
+  };
+  
+  // Detectar bonus mágico
+  const magicMatch = item.name.match(/\+(\d+)/);
+  if (magicMatch) {
+    weaponData.magicBonus = parseInt(magicMatch[1]);
+  }
+  
+  return weaponData;
+}
+
+/**
+ * ✨ MEJORADO: Parsear propiedades de arma
+ */
+function parseWeaponProperties(item: any): WeaponProperties {
+  const props: WeaponProperties = {};
+  
+  const properties = item.properties || [];
+  
+  if (Array.isArray(properties)) {
+    properties.forEach((prop: any) => {
+      const p = (typeof prop === 'string' ? prop : prop.name || '').toLowerCase();
+      
       if (p.includes('light')) props.light = true;
       if (p.includes('finesse')) props.finesse = true;
       if (p.includes('thrown')) props.thrown = true;
-      if (p.includes('two-handed')) props.twoHanded = true;
+      if (p.includes('two-handed') || p.includes('two handed')) props.twoHanded = true;
       if (p.includes('reach')) props.reach = true;
       if (p.includes('loading')) props.loading = true;
       if (p.includes('heavy')) props.heavy = true;
@@ -330,12 +418,13 @@ function parseWeaponProperties(item: Open5eItem): any {
   }
   
   // Range
-  if (item.weapon_range) {
-    const rangeMatch = item.weapon_range.match(/(\d+)\/(\d+)/);
+  if (item.weapon_range || item.range) {
+    const rangeStr = item.weapon_range || item.range;
+    const rangeMatch = String(rangeStr).match(/(\d+)(?:\/(\d+))?/);
     if (rangeMatch) {
       props.range = {
         normal: parseInt(rangeMatch[1]),
-        max: parseInt(rangeMatch[2])
+        max: rangeMatch[2] ? parseInt(rangeMatch[2]) : parseInt(rangeMatch[1]) * 3
       };
     }
   }
@@ -343,49 +432,83 @@ function parseWeaponProperties(item: Open5eItem): any {
   return props;
 }
 
-function parseArmorData(item: Open5eItem): any {
-  const armor: any = {
+/**
+ * ✨ MEJORADO: Parsear datos de armadura
+ */
+function parseArmorData(item: any): ArmorData {
+  const armor: ArmorData = {
+    armorType: detectArmorType(item.name),
     baseAC: 10,
     dexModifier: 'full',
   };
   
-  // Parsear AC (ej: "11 + Dex modifier")
+  // Parsear AC
   if (item.armor_class) {
-    const acMatch = item.armor_class.match(/(\d+)/);
+    const acStr = String(item.armor_class);
+    const acMatch = acStr.match(/(\d+)/);
     if (acMatch) {
       armor.baseAC = parseInt(acMatch[1]);
     }
     
-    if (item.armor_class.includes('Dex modifier')) {
+    // Detectar modificador de DEX
+    if (acStr.toLowerCase().includes('dex modifier')) {
       armor.dexModifier = 'full';
-    } else if (item.armor_class.includes('max 2')) {
+    } else if (acStr.toLowerCase().includes('max 2') || acStr.toLowerCase().includes('maximum of 2')) {
       armor.dexModifier = 'max2';
-    } else if (!item.armor_class.includes('Dex')) {
+    } else if (!acStr.toLowerCase().includes('dex')) {
       armor.dexModifier = 'none';
     }
   }
   
-  // Tipo de armor
-  const name = item.name.toLowerCase();
-  if (name.includes('shield')) {
-    armor.armorType = 'shield';
-  } else if (name.includes('leather') || name.includes('padded') || name.includes('studded')) {
-    armor.armorType = 'light';
-  } else if (name.includes('chain') && !name.includes('mail')) {
-    armor.armorType = 'medium';
-  } else if (name.includes('plate') || name.includes('chain mail') || name.includes('splint')) {
-    armor.armorType = 'heavy';
-  } else {
-    armor.armorType = 'light';
-  }
-  
+  // Requisito de fuerza
   if (item.strength_requirement) {
     armor.strengthRequirement = item.strength_requirement;
   }
   
+  // Desventaja en sigilo
   if (item.stealth_disadvantage) {
     armor.stealthDisadvantage = true;
   }
   
+  // Bonus mágico
+  const magicMatch = item.name.match(/\+(\d+)/);
+  if (magicMatch) {
+    armor.magicBonus = parseInt(magicMatch[1]);
+  }
+  
   return armor;
+}
+
+/**
+ * ✨ NUEVO: Detectar tipo de armadura por nombre
+ */
+function detectArmorType(name: string): string {
+  const nameLower = name.toLowerCase();
+  
+  if (nameLower.includes('shield')) return 'shield';
+  
+  // Light armor
+  if (nameLower.includes('leather') || 
+      nameLower.includes('padded') || 
+      nameLower.includes('studded')) {
+    return 'light';
+  }
+  
+  // Heavy armor
+  if (nameLower.includes('plate') || 
+      nameLower.includes('chain mail') || 
+      nameLower.includes('splint') || 
+      nameLower.includes('ring mail')) {
+    return 'heavy';
+  }
+  
+  // Medium armor (por defecto si no es light ni heavy)
+  if (nameLower.includes('chain') || 
+      nameLower.includes('scale') || 
+      nameLower.includes('breastplate') || 
+      nameLower.includes('half plate')) {
+    return 'medium';
+  }
+  
+  return 'light'; // Default
 }
