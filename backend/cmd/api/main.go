@@ -1,3 +1,4 @@
+// backend/cmd/api/main.go (MODIFICACIONES)
 package main
 
 import (
@@ -40,30 +41,46 @@ func main() {
 		log.Fatalf("Error obteniendo cliente Auth: %v", err)
 	}
 
-	// ===== INICIALIZAR CACHÉ (SIMPLIFICADO) =====
-	cacheInstance := cache.NewCache(5 * time.Minute)
-	log.Println("✅ Caché en memoria inicializado (TTL: 5 minutos)")
+	// ===== INICIALIZAR CACHÉ EN MEMORIA =====
+	// TTL por defecto: 30 segundos (sobreescrito por tipo de dato)
+	cacheInstance := cache.NewCache(30 * time.Second)
+	log.Println("✅ Caché en memoria inicializado")
+
+	// ===== INICIALIZAR INVALIDACIÓN DISTRIBUIDA (SI HAY REDIS) =====
+	var invalidator *cache.CacheInvalidator
+	redisURL := os.Getenv("REDIS_URL")
+
+	if redisURL != "" {
+		inv, err := cache.NewCacheInvalidator(redisURL, cacheInstance)
+		if err != nil {
+			log.Printf("⚠️  No se pudo inicializar Redis Pub/Sub: %v", err)
+			log.Println("⚠️  Continuando sin invalidación distribuida")
+		} else {
+			invalidator = inv
+			defer invalidator.Close()
+			log.Println("✅ Redis Pub/Sub inicializado para invalidación distribuida")
+		}
+	}
 
 	// ===== RATE LIMITER CON REDIS =====
 	var rateLimiter middleware.RateLimiter
 
-	redisURL := os.Getenv("REDIS_URL")
 	if redisURL != "" {
-		// Intentar conectar a Redis
 		redisLimiter, err := ratelimit.NewRedisLimiter(redisURL, 20, 1*time.Minute)
 		if err != nil {
-			log.Printf("⚠️  No se pudo conectar a Redis: %v", err)
-			log.Println("⚠️  Usando rate limiter en memoria (no compartido entre instancias)")
+			log.Printf("⚠️  No se pudo conectar a Redis para rate limiting: %v", err)
+			log.Println("⚠️  Usando rate limiter en memoria")
 			rateLimiter = middleware.NewInMemoryLimiter(20, 1*time.Minute)
 		} else {
 			rateLimiter = redisLimiter
-			log.Println("✅ Rate limiter con Redis inicializado")
 			defer redisLimiter.Close()
+			log.Println("✅ Rate limiter con Redis inicializado")
 		}
 	} else {
 		log.Println("⚠️  REDIS_URL no configurado, usando rate limiter en memoria")
 		rateLimiter = middleware.NewInMemoryLimiter(20, 1*time.Minute)
 	}
+
 	// ===== ROUTER GIN =====
 	r := gin.Default()
 
@@ -90,8 +107,8 @@ func main() {
 
 	r.Use(cors.New(config))
 
-	// ===== HANDLERS Y MIDDLEWARE =====
-	h := handlers.NewHandler(firestoreClient, authClient, cacheInstance)
+	// ===== HANDLERS CON INVALIDADOR =====
+	h := handlers.NewHandlerWithInvalidator(firestoreClient, authClient, cacheInstance, invalidator)
 	pm := middleware.NewPermissionsMiddleware(firestoreClient, cacheInstance)
 
 	// ===== RUTAS PÚBLICAS =====
@@ -109,7 +126,7 @@ func main() {
 
 			stats := cacheInstance.Stats()
 
-			c.JSON(200, gin.H{
+			healthData := gin.H{
 				"status":    "ok",
 				"env":       env,
 				"timestamp": time.Now().Format(time.RFC3339),
@@ -119,7 +136,18 @@ func main() {
 					"redis":     redisURL != "",
 				},
 				"cache_stats": stats,
-			})
+			}
+
+			// Agregar info de Redis Pub/Sub si está disponible
+			if invalidator != nil {
+				if err := invalidator.Health(healthCtx); err != nil {
+					healthData["services"].(gin.H)["redis_pubsub"] = "degraded"
+				} else {
+					healthData["services"].(gin.H)["redis_pubsub"] = "ok"
+				}
+			}
+
+			c.JSON(200, healthData)
 		})
 	}
 
@@ -127,55 +155,55 @@ func main() {
 	protected := r.Group("/api")
 	protected.Use(middleware.AuthMiddleware(authClient))
 	{
-		// ===== USUARIOS =====
+		// Usuarios
 		protected.GET("/users/me", h.GetCurrentUser)
 
-		// ===== CAMPAÑAS (con rate limiting) =====
+		// Campañas
 		protected.POST("/campaigns", middleware.RateLimitMiddleware(rateLimiter), h.CreateEvent)
 		protected.GET("/campaigns", h.GetUserEvents)
 		protected.GET("/campaigns/:id/full", pm.RequireCampaignMember(), h.GetCampaignFullData)
 		protected.GET("/campaigns/:id", h.GetEvent)
 		protected.DELETE("/campaigns/:id", pm.RequireCampaignDM(), h.DeleteEvent)
 
-		// ===== MIEMBROS DE CAMPAÑA =====
+		// Miembros
 		protected.POST("/campaigns/:id/invite", pm.RequireCampaignDM(), middleware.RateLimitMiddleware(rateLimiter), h.InvitePlayer)
 		protected.DELETE("/campaigns/:id/players/:userId", pm.RequireCampaignDM(), h.RemovePlayer)
 		protected.GET("/campaigns/:id/members", h.GetEventMembers)
 
-		// ===== INVITACIONES =====
+		// Invitaciones
 		protected.GET("/invitations", h.GetMyInvitations)
 		protected.POST("/invitations/:id/respond", h.RespondToInvitation)
 
-		// ===== PERSONAJES (con rate limiting) =====
+		// Personajes
 		protected.POST("/campaigns/:id/characters", pm.RequireCampaignMember(), middleware.RateLimitMiddleware(rateLimiter), h.CreateCharacter)
 		protected.GET("/campaigns/:id/characters", h.GetCampaignCharacters)
 		protected.PUT("/characters/:charId", pm.RequireCharacterOwnerOrDM(), h.UpdateCharacter)
 		protected.DELETE("/characters/:charId", pm.RequireCharacterOwnerOrDM(), h.DeleteCharacter)
 
-		// ===== ENCUENTROS (con rate limiting) =====
+		// Encuentros
 		protected.POST("/campaigns/:id/encounters", pm.RequireCampaignDM(), middleware.RateLimitMiddleware(rateLimiter), h.CreateEncounter)
 		protected.GET("/campaigns/:id/encounters/active", h.GetActiveEncounter)
 		protected.GET("/campaigns/:id/combat/full", pm.RequireCampaignMember(), h.GetCombatFullData)
 		protected.DELETE("/encounters/:encounterId", pm.RequireEncounterDM(), h.EndEncounter)
 		protected.POST("/encounters/:encounterId/reset", pm.RequireEncounterDM(), h.ResetEncounter)
 
-		// ===== COMBATIENTES (con rate limiting en POST) =====
+		// Combatientes
 		protected.POST("/encounters/:encounterId/combatants", pm.RequireEncounterDM(), middleware.RateLimitMiddleware(rateLimiter), h.AddCombatant)
 		protected.GET("/encounters/:encounterId/combatants", h.GetCombatants)
 		protected.PUT("/combatants/:combatantId", h.UpdateCombatant)
 		protected.DELETE("/combatants/:combatantId", h.RemoveCombatant)
 
-		// ===== TURNOS =====
+		// Turnos
 		protected.POST("/encounters/:encounterId/next-turn", pm.RequireEncounterDM(), h.NextTurn)
 
-		// ===== NOTAS (con rate limiting en POST) =====
+		// Notas
 		protected.POST("/campaigns/:id/notes", pm.RequireCampaignMember(), middleware.RateLimitMiddleware(rateLimiter), h.CreateNote)
 		protected.GET("/campaigns/:id/notes", pm.RequireCampaignMember(), h.GetCampaignNotes)
 		protected.GET("/notes/:noteId", h.GetNote)
 		protected.PUT("/notes/:noteId", h.UpdateNote)
 		protected.DELETE("/notes/:noteId", h.DeleteNote)
 
-		// ===== CACHÉ MANAGEMENT =====
+		// Caché management
 		protected.POST("/cache/clear", h.ClearCache)
 		protected.GET("/cache/stats", h.GetCacheStats)
 	}
@@ -202,18 +230,24 @@ func main() {
 
 	log.Printf("🚀 Servidor corriendo en puerto %s", port)
 	log.Printf("✨ Optimizaciones activas:")
-	log.Printf("   - Caché en memoria (TTL: 30 seg, solo para permisos)")
+	log.Printf("   - Caché en memoria con timestamps y validación")
+	log.Printf("   - TTL dinámico por tipo de dato:")
+	log.Printf("     * Campañas: 10 seg")
+	log.Printf("     * Personajes/Miembros: 30 seg")
+	log.Printf("     * Encuentros: 5 seg (críticos)")
+
+	if invalidator != nil {
+		log.Printf("   - Invalidación distribuida con Redis Pub/Sub ✅")
+	} else {
+		log.Printf("   - Invalidación distribuida: NO (single instance)")
+	}
+
 	log.Printf("   - Rate limiting (%s): 20 req/min por usuario", func() string {
 		if redisURL != "" {
 			return "Redis"
 		}
 		return "in-memory"
 	}())
-	log.Printf("   - Middleware de permisos centralizado")
-	log.Printf("   - Queries paralelas con goroutines")
-	log.Printf("   - Eliminación en cascada")
-	log.Printf("   - Limpieza automática de datos antiguos")
-	log.Printf("   - Validaciones de input mejoradas")
 
 	r.Run(":" + port)
 }

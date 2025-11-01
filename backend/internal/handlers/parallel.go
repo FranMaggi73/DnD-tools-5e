@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"google.golang.org/api/iterator"
@@ -13,31 +14,51 @@ import (
 )
 
 // ===========================
-// ENDPOINT OPTIMIZADO CON GOROUTINES
+// CONSTANTES DE TTL
+// ===========================
+
+const (
+	CacheFreshnessThreshold = 10 * time.Second // ← Umbral de frescura del caché
+)
+
+// ===========================
+// ENDPOINT OPTIMIZADO CON VALIDACIÓN DE TIMESTAMPS
 // ===========================
 
 // GetCampaignFullData obtiene todos los datos de una campaña en paralelo
+// ✅ MEJORADO: Valida timestamps antes de usar caché
 func (h *Handler) GetCampaignFullData(c *gin.Context) {
 	campaignID := c.Param("id")
 	ctx := context.Background()
 
-	// Intentar obtener de caché primero
-	cachedCampaign, foundCampaign := h.cache.GetCampaign(campaignID)
-	cachedMembers, foundMembers := h.cache.GetMembers(campaignID)
-	cachedCharacters, foundCharacters := h.cache.GetCharacters(campaignID)
+	// ===== PASO 1: Verificar caché con timestamps =====
+	cachedCampaign, campaignCachedAt, foundCampaign := h.cache.GetCampaign(campaignID)
+	cachedMembers, membersCachedAt, foundMembers := h.cache.GetMembers(campaignID)
+	cachedCharacters, charsCachedAt, foundCharacters := h.cache.GetCharacters(campaignID)
 
-	// Si todo está en caché, devolver inmediatamente
-	if foundCampaign && foundMembers && foundCharacters {
+	// ===== PASO 2: Validar frescura del caché =====
+	now := time.Now()
+	campaignFresh := foundCampaign && now.Sub(campaignCachedAt) < CacheFreshnessThreshold
+	membersFresh := foundMembers && now.Sub(membersCachedAt) < CacheFreshnessThreshold
+	charactersFresh := foundCharacters && now.Sub(charsCachedAt) < CacheFreshnessThreshold
+
+	// ✅ SI TODO ESTÁ FRESCO, devolver inmediatamente
+	if campaignFresh && membersFresh && charactersFresh {
 		c.JSON(http.StatusOK, gin.H{
 			"campaign":   cachedCampaign,
 			"members":    cachedMembers,
 			"characters": cachedCharacters,
 			"cached":     true,
+			"cache_age": map[string]string{
+				"campaign":   now.Sub(campaignCachedAt).String(),
+				"members":    now.Sub(membersCachedAt).String(),
+				"characters": now.Sub(charsCachedAt).String(),
+			},
 		})
 		return
 	}
 
-	// Variables para almacenar resultados
+	// ===== PASO 3: Caché obsoleto o missing, refrescar en paralelo =====
 	var campaign *models.Campaign
 	var members []models.CampaignMember
 	var characters []models.Character
@@ -45,8 +66,8 @@ func (h *Handler) GetCampaignFullData(c *gin.Context) {
 	var mu sync.Mutex
 	var errors []error
 
-	// Fetch campaign en paralelo si no está en caché
-	if !foundCampaign {
+	// Fetch campaign si no está fresco
+	if !campaignFresh {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -59,15 +80,15 @@ func (h *Handler) GetCampaignFullData(c *gin.Context) {
 			}
 			mu.Lock()
 			campaign = c
-			h.cache.SetCampaign(c)
+			h.cache.SetCampaign(c) // TTL: 10 segundos
 			mu.Unlock()
 		}()
 	} else {
 		campaign = cachedCampaign
 	}
 
-	// Fetch members en paralelo si no está en caché
-	if !foundMembers {
+	// Fetch members si no está fresco
+	if !membersFresh {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -80,15 +101,15 @@ func (h *Handler) GetCampaignFullData(c *gin.Context) {
 			}
 			mu.Lock()
 			members = m
-			h.cache.SetMembers(campaignID, m)
+			h.cache.SetMembers(campaignID, m) // TTL: 30 segundos
 			mu.Unlock()
 		}()
 	} else {
 		members = cachedMembers
 	}
 
-	// Fetch characters en paralelo si no está en caché
-	if !foundCharacters {
+	// Fetch characters si no está fresco
+	if !charactersFresh {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -101,17 +122,17 @@ func (h *Handler) GetCampaignFullData(c *gin.Context) {
 			}
 			mu.Lock()
 			characters = ch
-			h.cache.SetCharacters(campaignID, ch)
+			h.cache.SetCharacters(campaignID, ch) // TTL: 30 segundos
 			mu.Unlock()
 		}()
 	} else {
 		characters = cachedCharacters
 	}
 
-	// Esperar a que todas las goroutines terminen
+	// Esperar a que terminen todas las goroutines
 	wg.Wait()
 
-	// Verificar si hubo errores
+	// Verificar errores
 	if len(errors) > 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errors[0].Error()})
 		return
@@ -133,15 +154,19 @@ func (h *Handler) GetCampaignFullData(c *gin.Context) {
 		"dm":         dm,
 		"players":    players,
 		"characters": characters,
-		"cached":     false,
+		"cached":     false, // Datos refrescados
+		"refreshed": map[string]bool{
+			"campaign":   !campaignFresh,
+			"members":    !membersFresh,
+			"characters": !charactersFresh,
+		},
 	})
 }
 
 // ===========================
-// HELPER FUNCTIONS (privadas)
+// HELPERS PRIVADOS (sin cambios)
 // ===========================
 
-// getCampaignByID obtiene una campaña por ID
 func (h *Handler) getCampaignByID(ctx context.Context, campaignID string) (*models.Campaign, error) {
 	doc, err := h.db.Collection("events").Doc(campaignID).Get(ctx)
 	if err != nil {
@@ -156,7 +181,6 @@ func (h *Handler) getCampaignByID(ctx context.Context, campaignID string) (*mode
 	return &campaign, nil
 }
 
-// getCampaignMembers obtiene los miembros de una campaña
 func (h *Handler) getCampaignMembers(ctx context.Context, campaignID string) ([]models.CampaignMember, error) {
 	iter := h.db.Collection("event_members").
 		Where("campaignId", "==", campaignID).
@@ -186,7 +210,6 @@ func (h *Handler) getCampaignMembers(ctx context.Context, campaignID string) ([]
 	return members, nil
 }
 
-// getCampaignCharacters obtiene los personajes de una campaña
 func (h *Handler) getCampaignCharacters(ctx context.Context, campaignID string) ([]models.Character, error) {
 	iter := h.db.Collection("characters").
 		Where("campaignId", "==", campaignID).
@@ -217,10 +240,9 @@ func (h *Handler) getCampaignCharacters(ctx context.Context, campaignID string) 
 }
 
 // ===========================
-// ENDPOINT PARA COMBATE CON GOROUTINES
+// ENDPOINT PARA COMBATE (SIN CAMBIOS MAYORES)
 // ===========================
 
-// GetCombatFullData obtiene todos los datos de combate en paralelo
 func (h *Handler) GetCombatFullData(c *gin.Context) {
 	campaignID := c.Param("id")
 	ctx := context.Background()
@@ -248,14 +270,13 @@ func (h *Handler) GetCombatFullData(c *gin.Context) {
 		mu.Unlock()
 	}()
 
-	// Fetch characters
+	// Fetch characters (con validación de caché)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 
-		// Intentar caché primero
-		cached, found := h.cache.GetCharacters(campaignID)
-		if found {
+		cached, cachedAt, found := h.cache.GetCharacters(campaignID)
+		if found && time.Since(cachedAt) < CacheFreshnessThreshold {
 			mu.Lock()
 			characters = cached
 			mu.Unlock()
@@ -275,10 +296,8 @@ func (h *Handler) GetCombatFullData(c *gin.Context) {
 		mu.Unlock()
 	}()
 
-	// Esperar a que termine el fetch del encounter
 	wg.Wait()
 
-	// Si hay errores o no hay encounter, devolver apropiadamente
 	if len(errors) > 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "No hay encuentro activo"})
 		return
@@ -289,7 +308,7 @@ func (h *Handler) GetCombatFullData(c *gin.Context) {
 		return
 	}
 
-	// Ahora fetch combatants del encounter encontrado
+	// Fetch combatants (NO cachear, datos en tiempo real)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -319,7 +338,6 @@ func (h *Handler) GetCombatFullData(c *gin.Context) {
 	})
 }
 
-// getActiveEncounter obtiene el encuentro activo
 func (h *Handler) getActiveEncounter(ctx context.Context, campaignID string) (*models.Encounter, error) {
 	iter := h.db.Collection("encounters").
 		Where("campaignId", "==", campaignID).
@@ -343,7 +361,6 @@ func (h *Handler) getActiveEncounter(ctx context.Context, campaignID string) (*m
 	return &encounter, nil
 }
 
-// getEncounterCombatants obtiene los combatientes de un encuentro
 func (h *Handler) getEncounterCombatants(ctx context.Context, encounterID string) ([]models.Combatant, error) {
 	iter := h.db.Collection("combatants").
 		Where("encounterId", "==", encounterID).

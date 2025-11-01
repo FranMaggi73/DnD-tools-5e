@@ -239,8 +239,8 @@ func (h *Handler) GetEvent(c *gin.Context) {
 	eventID := c.Param("id")
 	ctx := context.Background()
 
-	// Intentar obtener de caché
-	if cached, found := h.cache.GetCampaign(eventID); found {
+	// Intentar obtener de caché (ahora devuelve: cached, cachedAt, found)
+	if cached, _, found := h.cache.GetCampaign(eventID); found {
 		c.JSON(http.StatusOK, cached)
 		return
 	}
@@ -551,17 +551,19 @@ func (h *Handler) GetEventMembers(c *gin.Context) {
 	eventID := c.Param("id")
 	ctx := context.Background()
 
-	// Intentar obtener de caché
-	if cached, found := h.cache.GetMembers(eventID); found {
+	// Intentar obtener de caché (ahora devuelve: members, cachedAt, found)
+	if cached, _, found := h.cache.GetMembers(eventID); found {
+		// cached es []models.CampaignMember
 		var dm *models.CampaignMember
 		var players []models.CampaignMember
-		for _, m := range cached {
-			if m.Role == "dm" {
-				dm = &m
+		for i := range cached {
+			if cached[i].Role == "dm" {
+				dm = &cached[i]
 			} else {
-				players = append(players, m)
+				players = append(players, cached[i])
 			}
 		}
+
 		c.JSON(http.StatusOK, gin.H{"dm": dm, "players": players})
 		return
 	}
@@ -710,6 +712,8 @@ func (h *Handler) InvitePlayer(c *gin.Context) {
 		return
 	}
 
+	h.cache.InvalidatePattern("members:" + eventID)
+
 	c.JSON(http.StatusCreated, gin.H{
 		"message":    "Invitación enviada exitosamente",
 		"invitation": invitation,
@@ -822,7 +826,8 @@ func (h *Handler) RemovePlayer(c *gin.Context) {
 	}
 
 	// Invalidar caché
-	h.cache.InvalidateCampaign(eventID)
+	h.cache.InvalidateCampaign(eventID)             // ← AGREGAR
+	h.cache.InvalidatePattern("members:" + eventID) // ← AGREGAR
 
 	log.Printf("✅ Jugador removido. Documentos eliminados: %d", batchCount)
 

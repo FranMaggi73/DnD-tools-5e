@@ -51,7 +51,7 @@ func (pm *PermissionsMiddleware) RequireCampaignDM() gin.HandlerFunc {
 		ctx := context.Background()
 
 		// 1. Verificar caché de campaña (solo para obtener DM ID rápido)
-		campaign, found := pm.cache.GetCampaign(campaignID)
+		campaign, _, found := pm.cache.GetCampaign(campaignID)
 		if !found {
 			// Cache miss: buscar en Firestore
 			doc, err := pm.db.Collection("events").Doc(campaignID).Get(ctx)
@@ -119,7 +119,7 @@ func (pm *PermissionsMiddleware) RequireCampaignMember() gin.HandlerFunc {
 		}
 
 		// Obtener campaña de caché si está disponible (opcional, para contexto)
-		campaign, found := pm.cache.GetCampaign(campaignID)
+		campaign, _, found := pm.cache.GetCampaign(campaignID)
 		if !found {
 			doc, err := pm.db.Collection("events").Doc(campaignID).Get(ctx)
 			if err == nil {
@@ -180,7 +180,7 @@ func (pm *PermissionsMiddleware) RequireCharacterOwnerOrDM() gin.HandlerFunc {
 		}
 
 		// Si no es el dueño, verificar si es el DM
-		campaign, found := pm.cache.GetCampaign(character.CampaignID)
+		campaign, _, found := pm.cache.GetCampaign(character.CampaignID)
 		if !found {
 			campaignDoc, err := pm.db.Collection("events").Doc(character.CampaignID).Get(ctx)
 			if err != nil {
@@ -232,7 +232,7 @@ func (pm *PermissionsMiddleware) RequireEncounterDM() gin.HandlerFunc {
 		ctx := context.Background()
 
 		// Obtener encuentro (cacheamos porque se consulta frecuentemente en combate)
-		encounter, found := pm.cache.GetEncounter(encounterID)
+		encounter, _, found := pm.cache.GetEncounter(encounterID)
 		if !found {
 			encounterDoc, err := pm.db.Collection("encounters").Doc(encounterID).Get(ctx)
 			if err != nil {
@@ -253,7 +253,7 @@ func (pm *PermissionsMiddleware) RequireEncounterDM() gin.HandlerFunc {
 		}
 
 		// Verificar que el usuario es DM de la campaña del encuentro
-		campaign, found := pm.cache.GetCampaign(encounter.CampaignID)
+		campaign, _, found := pm.cache.GetCampaign(encounter.CampaignID)
 		if !found {
 			campaignDoc, err := pm.db.Collection("events").Doc(encounter.CampaignID).Get(ctx)
 			if err != nil {
