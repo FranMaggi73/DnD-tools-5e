@@ -1,4 +1,3 @@
-// backend/internal/handlers/encounters.go
 package handlers
 
 import (
@@ -52,7 +51,6 @@ func (h *Handler) CreateEncounter(c *gin.Context) {
 		return
 	}
 
-	// ===== OPTIMIZACIÓN: Desactivar encuentros anteriores con batch =====
 	batch := h.db.Batch()
 	deactivatedCount := 0
 
@@ -74,7 +72,6 @@ func (h *Handler) CreateEncounter(c *gin.Context) {
 		}
 	}
 
-	// Crear nuevo encuentro
 	encounterRef := h.db.Collection("encounters").NewDoc()
 	encounter := models.Encounter{
 		ID:         encounterRef.ID,
@@ -89,14 +86,13 @@ func (h *Handler) CreateEncounter(c *gin.Context) {
 
 	batch.Set(encounterRef, encounter)
 
-	// Commit batch
 	if _, err := batch.Commit(ctx); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creando encuentro"})
 		return
 	}
 
-	// Invalidar caché
-	h.cache.InvalidateEncounter(encounter.ID)
+	// ✅ USAR HELPER DISTRIBUIDO
+	h.invalidateEncounterCache(ctx, encounter.ID)
 
 	log.Printf("✅ Encuentro creado: %s (desactivados: %d)", encounter.ID, deactivatedCount)
 	c.JSON(http.StatusCreated, encounter)
@@ -130,10 +126,6 @@ func (h *Handler) GetActiveEncounter(c *gin.Context) {
 
 	c.JSON(http.StatusOK, encounter)
 }
-
-// ===========================
-// ✅ ARREGLADO: EndEncounter - ELIMINACIÓN COMPLETA
-// ===========================
 
 func (h *Handler) EndEncounter(c *gin.Context) {
 	uid := c.GetString("uid")
@@ -175,7 +167,6 @@ func (h *Handler) EndEncounter(c *gin.Context) {
 
 	log.Printf("🏁 Finalizando encuentro: %s (ELIMINACIÓN COMPLETA)", encounterID)
 
-	// ===== SINCRONIZACIÓN Y ELIMINACIÓN OPTIMIZADA CON BATCH =====
 	batch := h.db.Batch()
 	syncedChars := 0
 	deletedCombatants := 0
@@ -198,11 +189,9 @@ func (h *Handler) EndEncounter(c *gin.Context) {
 			continue
 		}
 
-		// ✅ Sincronizar personajes (guardar HP Y CONDICIONES)
 		if combatant.CharacterID != "" && (combatant.Type == "character" || combatant.Type == "player") {
 			characterRef := h.db.Collection("characters").Doc(combatant.CharacterID)
 
-			// Asegurar que conditions no sea nil
 			conditions := combatant.Conditions
 			if conditions == nil {
 				conditions = []string{}
@@ -210,17 +199,15 @@ func (h *Handler) EndEncounter(c *gin.Context) {
 
 			batch.Update(characterRef, []firestore.Update{
 				{Path: "currentHp", Value: combatant.CurrentHP},
-				{Path: "conditions", Value: conditions}, // ✅ SINCRONIZAR CONDICIONES
+				{Path: "conditions", Value: conditions},
 				{Path: "updatedAt", Value: time.Now()},
 			})
 			syncedChars++
 		}
 
-		// ✅ ELIMINAR combatiente (en lugar de solo marcar como inactivo)
 		batch.Delete(doc.Ref)
 		deletedCombatants++
 
-		// Firestore batch limit es 500 operaciones
 		if (syncedChars + deletedCombatants) >= 400 {
 			if _, err := batch.Commit(ctx); err != nil {
 				log.Printf("❌ Error en batch commit: %v", err)
@@ -229,18 +216,16 @@ func (h *Handler) EndEncounter(c *gin.Context) {
 		}
 	}
 
-	// ✅ ELIMINAR encuentro completamente (en lugar de marcar como inactivo)
 	batch.Delete(h.db.Collection("encounters").Doc(encounterID))
 
-	// Commit todas las operaciones pendientes
 	if _, err := batch.Commit(ctx); err != nil {
 		log.Printf("❌ Error en batch commit final: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error finalizando encuentro"})
 		return
 	}
 
-	// Invalidar caché
-	h.cache.InvalidateEncounter(encounterID)
+	// ✅ USAR HELPER DISTRIBUIDO
+	h.invalidateEncounterCache(ctx, encounterID)
 
 	log.Printf("✅ Encuentro ELIMINADO: %d personajes sincronizados, %d combatientes eliminados", syncedChars, deletedCombatants)
 
@@ -255,7 +240,6 @@ func (h *Handler) EndEncounter(c *gin.Context) {
 // COMBATIENTES
 // ===========================
 
-// REEMPLAZAR handleAddCombatant (línea ~228) con transacción
 func (h *Handler) AddCombatant(c *gin.Context) {
 	uid := c.GetString("uid")
 	if uid == "" {
@@ -271,11 +255,9 @@ func (h *Handler) AddCombatant(c *gin.Context) {
 		return
 	}
 
-	// ✅ USAR TRANSACCIÓN
 	combatantRef := h.db.Collection("combatants").NewDoc()
 
 	err := h.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		// 1. Verificar que el encuentro existe
 		encounterDoc, err := tx.Get(h.db.Collection("encounters").Doc(encounterID))
 		if err != nil {
 			return fmt.Errorf("encuentro no encontrado")
@@ -286,7 +268,6 @@ func (h *Handler) AddCombatant(c *gin.Context) {
 			return err
 		}
 
-		// 2. Verificar permisos
 		campaignDoc, err := h.db.Collection("events").Doc(encounter.CampaignID).Get(ctx)
 		if err != nil {
 			return err
@@ -301,7 +282,6 @@ func (h *Handler) AddCombatant(c *gin.Context) {
 			return fmt.Errorf("solo el DM puede agregar combatientes")
 		}
 
-		// 3. Preparar datos del combatiente
 		var name string
 		var imageURL string
 		var characterID string
@@ -355,7 +335,6 @@ func (h *Handler) AddCombatant(c *gin.Context) {
 			combatant.CurrentHP = combatant.MaxHP
 		}
 
-		// 4. Crear combatiente dentro de la transacción
 		return tx.Set(combatantRef, combatant)
 	})
 
@@ -368,7 +347,6 @@ func (h *Handler) AddCombatant(c *gin.Context) {
 		return
 	}
 
-	// Obtener combatiente creado
 	combatantDoc, _ := combatantRef.Get(ctx)
 	var combatant models.Combatant
 	combatantDoc.DataTo(&combatant)
@@ -430,9 +408,7 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 
 	combatantRef := h.db.Collection("combatants").Doc(combatantID)
 
-	// ✅ USAR TRANSACCIÓN PARA SINCRONIZACIÓN ATÓMICA
 	err := h.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		// 1. Leer combatiente
 		combatantDoc, err := tx.Get(combatantRef)
 		if err != nil {
 			return err
@@ -443,7 +419,6 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 			return err
 		}
 
-		// 2. Verificar permisos
 		encounterDoc, err := h.db.Collection("encounters").Doc(combatant.EncounterID).Get(ctx)
 		if err != nil {
 			return err
@@ -464,7 +439,6 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 			return fmt.Errorf("solo el DM puede actualizar combatientes")
 		}
 
-		// 3. Preparar updates
 		combatantUpdates := []firestore.Update{}
 
 		if req.CurrentHP != nil {
@@ -483,12 +457,10 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 			return fmt.Errorf("no hay datos para actualizar")
 		}
 
-		// ✅ 4. ACTUALIZAR COMBATIENTE Y PERSONAJE EN LA MISMA TRANSACCIÓN
 		if err := tx.Update(combatantRef, combatantUpdates); err != nil {
 			return err
 		}
 
-		// 5. Sincronizar con personaje si aplica
 		if combatant.CharacterID != "" && (combatant.Type == "character" || combatant.Type == "player") {
 			characterRef := h.db.Collection("characters").Doc(combatant.CharacterID)
 			characterUpdates := []firestore.Update{
@@ -524,7 +496,6 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 		return
 	}
 
-	// Obtener combatiente actualizado
 	updatedDoc, _ := combatantRef.Get(ctx)
 	var updated models.Combatant
 	updatedDoc.DataTo(&updated)
@@ -579,7 +550,6 @@ func (h *Handler) NextTurn(c *gin.Context) {
 	encounterID := c.Param("encounterId")
 	ctx := context.Background()
 
-	// Obtener encuentro del contexto (ya verificado por middleware)
 	encounter, ok := c.Get("encounter")
 	if !ok {
 		encounterDoc, err := h.db.Collection("encounters").Doc(encounterID).Get(ctx)
@@ -645,7 +615,6 @@ func (h *Handler) NextTurn(c *gin.Context) {
 }
 
 func (h *Handler) ResetEncounter(c *gin.Context) {
-	// ✅ Ya no necesita verificar permisos
 	encounterID := c.Param("encounterId")
 	ctx := context.Background()
 

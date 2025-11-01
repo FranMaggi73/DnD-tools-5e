@@ -89,6 +89,17 @@ cd ..
 echo [OK] Dependencias actualizadas
 echo.
 
+REM 5) Cargar variables de Redis (si existe el archivo)
+set "REDIS_URL="
+if exist "redis-config.env" (
+  for /f "tokens=1,* delims==" %%a in (redis-config.env) do (
+    if "%%a"=="REDIS_URL" set "REDIS_URL=%%b"
+  )
+  echo [OK] Redis URL cargado desde redis-config.env
+) else (
+  echo [INFO] redis-config.env no encontrado, usando in-memory rate limiter
+)
+
 REM 6) Limpiar builds anteriores
 echo.
 echo Limpiando builds anteriores...

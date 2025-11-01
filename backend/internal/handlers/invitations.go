@@ -180,6 +180,9 @@ func (h *Handler) RespondToInvitation(c *gin.Context) {
 		message = "Te has unido al evento exitosamente"
 		log.Printf("✅ Invitación aceptada y eliminada: %s", invitationID)
 
+		// ✅ INVALIDACIÓN DISTRIBUIDA - Los miembros de la campaña cambiaron
+		h.invalidatePattern(ctx, "members:"+invitation.CampaignID)
+
 	} else {
 		// Rechazar: simplemente eliminar la invitación
 		if _, err := invRef.Delete(ctx); err != nil {
@@ -188,6 +191,9 @@ func (h *Handler) RespondToInvitation(c *gin.Context) {
 			return
 		}
 		log.Printf("🗑️ Invitación rechazada y eliminada: %s", invitationID)
+
+		// ✅ INVALIDACIÓN DISTRIBUIDA - Por seguridad, invalidar caché de miembros
+		h.invalidatePattern(ctx, "members:"+invitation.CampaignID)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": message})

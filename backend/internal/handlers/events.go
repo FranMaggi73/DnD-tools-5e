@@ -65,15 +65,12 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 	campaignRef := h.db.Collection("events").NewDoc()
 	memberRef := h.db.Collection("event_members").NewDoc()
 
-	// ✅ USAR TRANSACCIÓN PARA EVITAR RACE CONDITIONS
 	err := h.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		// 1. Leer usuario dentro de la transacción
 		userDoc, err := tx.Get(userRef)
 		var user models.User
 
 		if err != nil {
 			if status.Code(err) == codes.NotFound {
-				// Crear usuario desde Auth
 				fbUser, authErr := h.auth.GetUser(ctx, uid)
 				if authErr != nil {
 					return authErr
@@ -100,12 +97,10 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 			}
 		}
 
-		// ✅ 2. VALIDAR LÍMITE DENTRO DE LA TRANSACCIÓN
 		if user.CampaignCount >= 3 {
 			return fmt.Errorf("límite de 3 campañas alcanzado")
 		}
 
-		// 3. Crear campaña
 		campaign := models.Campaign{
 			ID:        campaignRef.ID,
 			Name:      req.Name,
@@ -120,7 +115,6 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 			return err
 		}
 
-		// 4. Crear miembro
 		member := models.CampaignMember{
 			CampaignID: campaign.ID,
 			UserID:     uid,
@@ -134,14 +128,12 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 			return err
 		}
 
-		// 5. Incrementar contador
 		return tx.Update(userRef, []firestore.Update{
 			{Path: "campaignCount", Value: firestore.Increment(1)},
 		})
 	})
 
 	if err != nil {
-		// ✅ MENSAJE ESPECÍFICO PARA LÍMITE
 		if err.Error() == "límite de 3 campañas alcanzado" {
 			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 			return
@@ -151,18 +143,16 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 		return
 	}
 
-	// Obtener campaña creada
 	campaignDoc, _ := campaignRef.Get(ctx)
 	var createdCampaign models.Campaign
 	campaignDoc.DataTo(&createdCampaign)
 
-	// Invalidar caché
-	h.cache.InvalidateCampaign(createdCampaign.ID)
+	// ✅ USAR HELPER DISTRIBUIDO
+	h.invalidateCampaignCache(ctx, createdCampaign.ID)
 
 	c.JSON(http.StatusCreated, createdCampaign)
 }
 
-// ✅ OPTIMIZADO: GetUserEvents con batch reads
 func (h *Handler) GetUserEvents(c *gin.Context) {
 	uid := c.GetString("uid")
 	if uid == "" {
@@ -171,7 +161,6 @@ func (h *Handler) GetUserEvents(c *gin.Context) {
 	}
 	ctx := context.Background()
 
-	// Obtener IDs de campañas del usuario
 	memberIter := h.db.Collection("event_members").
 		Where("userId", "==", uid).
 		Documents(ctx)
@@ -199,10 +188,8 @@ func (h *Handler) GetUserEvents(c *gin.Context) {
 		return
 	}
 
-	// ✅ BATCH READ: Obtener todas las campañas en una sola operación
 	campaigns := make([]models.Campaign, 0, len(eventIDs))
 
-	// Firestore limita a 10 documentos por batch, dividimos si es necesario
 	batchSize := 10
 	for i := 0; i < len(eventIDs); i += batchSize {
 		end := i + batchSize
@@ -239,7 +226,6 @@ func (h *Handler) GetEvent(c *gin.Context) {
 	eventID := c.Param("id")
 	ctx := context.Background()
 
-	// Intentar obtener de caché (ahora devuelve: cached, cachedAt, found)
 	if cached, _, found := h.cache.GetCampaign(eventID); found {
 		c.JSON(http.StatusOK, cached)
 		return
@@ -257,7 +243,6 @@ func (h *Handler) GetEvent(c *gin.Context) {
 		return
 	}
 
-	// Guardar en caché
 	h.cache.SetCampaign(&campaign)
 
 	c.JSON(http.StatusOK, campaign)
@@ -293,7 +278,7 @@ func (h *Handler) DeleteEvent(c *gin.Context) {
 
 	var totalDeleted int
 
-	// ===== 1. ELIMINAR NOTAS (NUEVO) =====
+	// Eliminar notas
 	notesBatch := h.db.Batch()
 	notesCount := 0
 
@@ -328,7 +313,7 @@ func (h *Handler) DeleteEvent(c *gin.Context) {
 		totalDeleted += notesCount
 	}
 
-	// ===== 2. ELIMINAR ENCUENTROS Y COMBATIENTES =====
+	// Eliminar encuentros y combatientes
 	encountersIter := h.db.Collection("encounters").
 		Where("campaignId", "==", eventID).
 		Documents(ctx)
@@ -348,7 +333,6 @@ func (h *Handler) DeleteEvent(c *gin.Context) {
 
 		encounterId := encounterDoc.Ref.ID
 
-		// Sincronizar y eliminar combatientes
 		combatantsIter := h.db.Collection("combatants").
 			Where("encounterId", "==", encounterId).
 			Documents(ctx)
@@ -361,7 +345,6 @@ func (h *Handler) DeleteEvent(c *gin.Context) {
 			if err == nil {
 				var combatant models.Combatant
 				if combatantDoc.DataTo(&combatant) == nil {
-					// ✅ SINCRONIZAR HP Y CONDICIONES antes de eliminar
 					if combatant.CharacterID != "" &&
 						(combatant.Type == "character" || combatant.Type == "player") {
 						characterRef := h.db.Collection("characters").Doc(combatant.CharacterID)
@@ -411,7 +394,7 @@ func (h *Handler) DeleteEvent(c *gin.Context) {
 		totalDeleted += encounterCount
 	}
 
-	// ===== 3. ELIMINAR PERSONAJES =====
+	// Eliminar personajes
 	charactersBatch := h.db.Batch()
 	charCount := 0
 
@@ -446,7 +429,7 @@ func (h *Handler) DeleteEvent(c *gin.Context) {
 		totalDeleted += charCount
 	}
 
-	// ===== 4. ELIMINAR INVITACIONES =====
+	// Eliminar invitaciones
 	invitationsBatch := h.db.Batch()
 	invCount := 0
 
@@ -481,7 +464,7 @@ func (h *Handler) DeleteEvent(c *gin.Context) {
 		totalDeleted += invCount
 	}
 
-	// ===== 5. ELIMINAR MIEMBROS =====
+	// Eliminar miembros
 	membersBatch := h.db.Batch()
 	memberCount := 0
 
@@ -516,7 +499,7 @@ func (h *Handler) DeleteEvent(c *gin.Context) {
 		totalDeleted += memberCount
 	}
 
-	// ===== 6. ELIMINAR CAMPAÑA =====
+	// Eliminar campaña
 	if _, err := h.db.Collection("events").Doc(eventID).Delete(ctx); err != nil {
 		log.Printf("Error eliminando campaña: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error eliminando campaña"})
@@ -524,7 +507,7 @@ func (h *Handler) DeleteEvent(c *gin.Context) {
 	}
 	totalDeleted++
 
-	// ===== 7. ACTUALIZAR CONTADOR =====
+	// Actualizar contador
 	userRef := h.db.Collection("users").Doc(uid)
 	if _, err := userRef.Update(ctx, []firestore.Update{
 		{Path: "campaignCount", Value: firestore.Increment(-1)},
@@ -532,8 +515,8 @@ func (h *Handler) DeleteEvent(c *gin.Context) {
 		log.Printf("Error decrementando campaignCount: %v", err)
 	}
 
-	// Invalidar caché
-	h.cache.InvalidateCampaign(eventID)
+	// ✅ USAR HELPER DISTRIBUIDO
+	h.invalidateCampaignCache(ctx, eventID)
 
 	log.Printf("✅ Eliminación COMPLETA: %d documentos eliminados", totalDeleted)
 
@@ -551,9 +534,7 @@ func (h *Handler) GetEventMembers(c *gin.Context) {
 	eventID := c.Param("id")
 	ctx := context.Background()
 
-	// Intentar obtener de caché (ahora devuelve: members, cachedAt, found)
 	if cached, _, found := h.cache.GetMembers(eventID); found {
-		// cached es []models.CampaignMember
 		var dm *models.CampaignMember
 		var players []models.CampaignMember
 		for i := range cached {
@@ -590,7 +571,6 @@ func (h *Handler) GetEventMembers(c *gin.Context) {
 		members = append(members, member)
 	}
 
-	// Guardar en caché
 	h.cache.SetMembers(eventID, members)
 
 	var dm *models.CampaignMember
@@ -712,7 +692,8 @@ func (h *Handler) InvitePlayer(c *gin.Context) {
 		return
 	}
 
-	h.cache.InvalidatePattern("members:" + eventID)
+	// ✅ USAR HELPER DISTRIBUIDO
+	h.invalidatePattern(ctx, "members:"+eventID)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message":    "Invitación enviada exitosamente",
@@ -757,7 +738,6 @@ func (h *Handler) RemovePlayer(c *gin.Context) {
 	batch := h.db.Batch()
 	batchCount := 0
 
-	// ✅ ELIMINAR PERSONAJES
 	charactersIter := h.db.Collection("characters").
 		Where("campaignId", "==", eventID).
 		Where("userId", "==", playerID).
@@ -774,7 +754,6 @@ func (h *Handler) RemovePlayer(c *gin.Context) {
 		}
 	}
 
-	// ✅ ELIMINAR NOTAS PERSONALES DEL JUGADOR (NUEVO)
 	notesIter := h.db.Collection("notes").
 		Where("campaignId", "==", eventID).
 		Where("authorId", "==", playerID).
@@ -792,7 +771,6 @@ func (h *Handler) RemovePlayer(c *gin.Context) {
 		}
 	}
 
-	// Eliminar miembro de event_members
 	iter := h.db.Collection("event_members").
 		Where("campaignId", "==", eventID).
 		Where("userId", "==", playerID).
@@ -811,13 +789,11 @@ func (h *Handler) RemovePlayer(c *gin.Context) {
 	batch.Delete(doc.Ref)
 	batchCount++
 
-	// Commit batch
 	if _, err := batch.Commit(ctx); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error eliminando jugador"})
 		return
 	}
 
-	// Actualizar playerIds en campaña
 	if _, err := h.db.Collection("events").Doc(eventID).Update(ctx, []firestore.Update{
 		{Path: "playerIds", Value: firestore.ArrayRemove(playerID)},
 	}); err != nil {
@@ -825,9 +801,9 @@ func (h *Handler) RemovePlayer(c *gin.Context) {
 		return
 	}
 
-	// Invalidar caché
-	h.cache.InvalidateCampaign(eventID)             // ← AGREGAR
-	h.cache.InvalidatePattern("members:" + eventID) // ← AGREGAR
+	// ✅ USAR HELPERS DISTRIBUIDOS
+	h.invalidateCampaignCache(ctx, eventID)
+	h.invalidatePattern(ctx, "members:"+eventID)
 
 	log.Printf("✅ Jugador removido. Documentos eliminados: %d", batchCount)
 
