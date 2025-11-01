@@ -2,6 +2,12 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import type { InventoryItem } from '$lib/api/inventory';
+  import { 
+    validateItemName, 
+    validateItemQuantity, 
+    validateItemValue, 
+    validateItemDescription 
+  } from '$lib/utils/validation';
 
   export let isOpen: boolean = false;
   export let item: InventoryItem | null = null;
@@ -9,12 +15,42 @@
 
   const dispatch = createEventDispatcher();
 
-  let form = {
+  type Form = {
+    name: string;
+    description: string;
+    quantity: number;
+    value: number;
+    weaponMagicBonus: number;
+    armorMagicBonus: number;
+  };
+
+  let form: Form = {
     name: '',
     description: '',
     quantity: 1,
     value: 0,
+    weaponMagicBonus: 0,
+    armorMagicBonus: 0,
   };
+
+  // tipos para los errores y touched
+  let validationErrors: { name: string; quantity: string; value: string; description: string } = {
+    name: '',
+    quantity: '',
+    value: '',
+    description: ''
+  };
+
+  let touched: { name: boolean; quantity: boolean; value: boolean; description: boolean } = {
+    name: false,
+    quantity: false,
+    value: false,
+    description: false
+  };
+
+  // ya declarado explícitamente para evitar boolean | undefined
+  let hasChanges: boolean = false;
+  let isValid: boolean = false;
 
   $: if (item && isOpen) {
     form = {
@@ -22,38 +58,127 @@
       description: item.description || '',
       quantity: item.quantity,
       value: item.value,
+      weaponMagicBonus: item.weaponData?.magicBonus || 0,
+      armorMagicBonus: item.armorData?.magicBonus || 0,
     };
+    resetValidation();
+  }
+
+  $: if (touched.name) {
+    const result = validateItemName(form.name);
+    validationErrors.name = result.valid ? '' : result.error || '';
+  }
+
+  $: if (touched.quantity) {
+    const result = validateItemQuantity(form.quantity);
+    validationErrors.quantity = result.valid ? '' : result.error || '';
+  }
+
+  $: if (touched.value) {
+    const result = validateItemValue(form.value);
+    validationErrors.value = result.valid ? '' : result.error || '';
+  }
+
+  $: if (touched.description) {
+    const result = validateItemDescription(form.description);
+    validationErrors.description = result.valid ? '' : result.error || '';
+  }
+
+
+$: if (item) {
+  hasChanges = (
+    form.name !== item.name ||
+    form.description !== (item.description ?? '') ||
+    form.quantity !== item.quantity ||
+    form.value !== item.value ||
+    (item.weaponData ? form.weaponMagicBonus !== (item.weaponData.magicBonus ?? 0) : false) ||
+    (item.armorData ? form.armorMagicBonus !== (item.armorData.magicBonus ?? 0) : false)
+  );
+} else {
+  hasChanges = false;
+}
+
+
+  $: isValid = !validationErrors.name && !validationErrors.quantity &&
+               !validationErrors.value && !validationErrors.description &&
+               form.name.trim().length > 0;
+
+  function handleBlur(field: keyof typeof touched) {
+    touched[field] = true;
   }
 
   function handleUpdate() {
     if (!isOwner) return;
-    
+
+    Object.keys(touched).forEach(key => {
+      touched[key as keyof typeof touched] = true;
+    });
+
+    if (!isValid) return;
+
+    if (!hasChanges) {
+      handleClose();
+      return;
+    }
+
     const updates: any = {};
-    
-    // Solo enviar campos que hayan cambiado
+
     if (form.name !== item?.name) updates.name = form.name;
     if (form.description !== (item?.description || '')) updates.description = form.description;
     if (form.quantity !== item?.quantity) updates.quantity = form.quantity;
     if (form.value !== item?.value) updates.value = form.value;
 
-    if (Object.keys(updates).length === 0) {
-      handleClose();
-      return;
+    if (item?.weaponData && form.weaponMagicBonus !== (item.weaponData.magicBonus || 0)) {
+      updates.weaponData = {
+        ...item.weaponData,
+        magicBonus: form.weaponMagicBonus
+      };
+    }
+
+    if (item?.armorData && form.armorMagicBonus !== (item.armorData.magicBonus || 0)) {
+      updates.armorData = {
+        ...item.armorData,
+        magicBonus: form.armorMagicBonus
+      };
     }
 
     dispatch('update', updates);
   }
 
   function handleClose() {
+    resetValidation();
     dispatch('close');
   }
 
+  function resetValidation() {
+    Object.keys(touched).forEach(key => {
+      touched[key as keyof typeof touched] = false;
+    });
+    Object.keys(validationErrors).forEach(key => {
+      validationErrors[key as keyof typeof validationErrors] = '';
+    });
+  }
+
   function incrementQuantity() {
-    if (form.quantity < 999) form.quantity++;
+    if (form.quantity < 999) {
+      form.quantity++;
+      touched.quantity = true;
+    }
   }
 
   function decrementQuantity() {
-    if (form.quantity > 0) form.quantity--;
+    if (form.quantity > 0) {
+      form.quantity--;
+      touched.quantity = true;
+    }
+  }
+
+  function handleQuantityChange() {
+    if (form.quantity === 0 && item && item.quantity > 0) {
+      if (!confirm('⚠️ Si la cantidad llega a 0, el item se eliminará. ¿Continuar?')) {
+        form.quantity = 1;
+      }
+    }
   }
 </script>
 
@@ -92,10 +217,17 @@
           <input 
             type="text" 
             bind:value={form.name}
+            on:blur={() => handleBlur('name')}
             placeholder="Nombre del item"
-            class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
+            class="input input-bordered bg-[#2d241c] text-base-content 
+                   {validationErrors.name && touched.name ? 'border-error border-2' : 'border-primary/50'}"
             required
           />
+          {#if validationErrors.name && touched.name}
+            <label class="label">
+              <span class="label-text-alt text-error">⚠️ {validationErrors.name}</span>
+            </label>
+          {/if}
         </div>
 
         <!-- Grid: Cantidad y Valor -->
@@ -118,9 +250,13 @@
               <input 
                 type="number" 
                 bind:value={form.quantity}
+                on:blur={() => { handleBlur('quantity'); handleQuantityChange(); }}
+                on:change={handleQuantityChange}
                 min="0"
                 max="999"
-                class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 join-item text-center flex-1 w-full"
+                class="input input-bordered bg-[#2d241c] text-base-content 
+                       {validationErrors.quantity && touched.quantity ? 'border-error border-2' : 'border-primary/50'} 
+                       join-item text-center flex-1 w-full"
               />
               <button 
                 type="button"
@@ -131,17 +267,23 @@
                 ➕
               </button>
             </div>
-            <label class="label">
-              <span class="label-text-alt text-neutral/60 italic text-xs">
-                {#if form.quantity === 0}
-                  ⚠️ Si llegas a 0, el item se eliminará
-                {:else if form.quantity > 99}
-                  📦 Gran cantidad de items
-                {:else}
-                  Cantidad disponible
-                {/if}
-              </span>
-            </label>
+            {#if validationErrors.quantity && touched.quantity}
+              <label class="label">
+                <span class="label-text-alt text-error text-xs">⚠️ {validationErrors.quantity}</span>
+              </label>
+            {:else}
+              <label class="label">
+                <span class="label-text-alt text-neutral/60 italic text-xs">
+                  {#if form.quantity === 0}
+                    ⚠️ Si llegas a 0, el item se eliminará
+                  {:else if form.quantity > 99}
+                    📦 Gran cantidad de items
+                  {:else}
+                    Cantidad disponible
+                  {/if}
+                </span>
+              </label>
+            {/if}
           </div>
 
           <!-- Valor -->
@@ -152,15 +294,23 @@
             <input 
               type="number" 
               bind:value={form.value}
+              on:blur={() => handleBlur('value')}
               min="0"
               step="0.01"
-              class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
+              class="input input-bordered bg-[#2d241c] text-base-content 
+                     {validationErrors.value && touched.value ? 'border-error border-2' : 'border-primary/50'}"
             />
-            <label class="label">
-              <span class="label-text-alt text-neutral/60 italic text-xs">
-                Precio por unidad
-              </span>
-            </label>
+            {#if validationErrors.value && touched.value}
+              <label class="label">
+                <span class="label-text-alt text-error text-xs">⚠️ {validationErrors.value}</span>
+              </label>
+            {:else}
+              <label class="label">
+                <span class="label-text-alt text-neutral/60 italic text-xs">
+                  Precio por unidad
+                </span>
+              </label>
+            {/if}
           </div>
         </div>
 
@@ -183,26 +333,80 @@
           </label>
           <textarea 
             bind:value={form.description}
+            on:blur={() => handleBlur('description')}
             placeholder="Descripción del item..."
-            class="textarea textarea-bordered bg-[#2d241c] text-base-content border-primary/50 h-32 resize-none"
+            class="textarea textarea-bordered bg-[#2d241c] text-base-content 
+                   {validationErrors.description && touched.description ? 'border-error border-2' : 'border-primary/50'} 
+                   h-32 resize-none"
           ></textarea>
-          <label class="label">
-            <span class="label-text-alt text-neutral/60 italic text-xs">
-              Información adicional sobre el item
-            </span>
-          </label>
+          {#if validationErrors.description && touched.description}
+            <label class="label">
+              <span class="label-text-alt text-error text-xs">⚠️ {validationErrors.description}</span>
+            </label>
+          {:else}
+            <label class="label">
+              <span class="label-text-alt text-neutral/60 italic text-xs">
+                Información adicional sobre el item
+              </span>
+            </label>
+          {/if}
         </div>
 
-        <!-- Info del item original (no editable) -->
+        <!-- ✅ NUEVO: Edición de bonus mágicos -->
         {#if item.weaponData || item.armorData}
-          <div class="divider text-neutral/50">📊 Estadísticas</div>
+          <div class="divider text-neutral/50">⚡ Bonus Mágicos</div>
+          
+          {#if item.weaponData}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medieval text-neutral">⚔️ Bonus de Ataque/Daño</span>
+              </label>
+              <input 
+                type="number" 
+                bind:value={form.weaponMagicBonus}
+                min="0"
+                max="5"
+                class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-24"
+              />
+              <label class="label">
+                <span class="label-text-alt text-neutral/60 italic text-xs">
+                  +0 a +5 (típico para armas mágicas)
+                </span>
+              </label>
+            </div>
+          {/if}
+
+          {#if item.armorData}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medieval text-neutral">🛡️ Bonus de AC</span>
+              </label>
+              <input 
+                type="number" 
+                bind:value={form.armorMagicBonus}
+                min="0"
+                max="3"
+                class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-24"
+              />
+              <label class="label">
+                <span class="label-text-alt text-neutral/60 italic text-xs">
+                  +0 a +3 (típico para armaduras mágicas)
+                </span>
+              </label>
+            </div>
+          {/if}
+        {/if}
+
+        <!-- Info del item original (estadísticas no editables) -->
+        {#if item.weaponData || item.armorData}
+          <div class="divider text-neutral/50">📊 Estadísticas Base</div>
           
           {#if item.weaponData}
             <div class="bg-error/10 p-4 rounded-lg border border-error/30">
               <p class="font-medieval text-neutral font-bold mb-2">⚔️ Datos de Arma</p>
               <div class="grid grid-cols-2 gap-2 text-sm">
                 <div>
-                  <span class="text-neutral/60">Daño:</span>
+                  <span class="text-neutral/60">Daño Base:</span>
                   <span class="font-bold ml-2">{item.weaponData.damageDice} {item.weaponData.damageType}</span>
                 </div>
                 <div>
@@ -211,7 +415,7 @@
                 </div>
               </div>
               <p class="text-xs text-neutral/60 italic mt-2">
-                * Las estadísticas de combate no son editables
+                * El daño base y tipo no son editables
               </p>
             </div>
           {/if}
@@ -230,7 +434,7 @@
                 </div>
               </div>
               <p class="text-xs text-neutral/60 italic mt-2">
-                * Las estadísticas de armadura no son editables
+                * La AC base y tipo no son editables
               </p>
             </div>
           {/if}
@@ -248,10 +452,10 @@
         <button 
           on:click={handleUpdate}
           class="btn btn-dnd"
-          disabled={!form.name.trim() || form.quantity < 0}
+          disabled={!isValid || !hasChanges}
         >
           <span class="text-xl">💾</span>
-          Guardar Cambios
+          {hasChanges ? 'Guardar Cambios' : 'Sin Cambios'}
         </button>
       </div>
     </div>
