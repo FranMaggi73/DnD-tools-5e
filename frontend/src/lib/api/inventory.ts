@@ -157,7 +157,10 @@ export const inventoryApi = {
     }),
 
   updateItem: (itemId: string, data: {
+    name?: string;
+    description?: string;
     quantity?: number;
+    value?: number;
   }) =>
     fetchWithAuth<InventoryItem>(`/items/${itemId}`, {
       method: 'PUT',

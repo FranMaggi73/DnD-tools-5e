@@ -3,6 +3,8 @@
   import { createEventDispatcher, onMount } from 'svelte';
   import { inventoryApi, type InventoryItem, type InventoryResponse } from '$lib/api/inventory';
   import AddItemModal from './AddItemModal.svelte';
+  import ItemDetailModal from './ItemDetailModal.svelte';
+  import EditItemModal from './EditItemModal.svelte';
 
   export let characterId: string;
   export let isOwner: boolean = false;
@@ -12,12 +14,14 @@
   let inventory: InventoryResponse | null = null;
   let loading = true;
   let error = '';
-  let processingItem: string | null = null; // Track which item is being processed
+  let processingItem: string | null = null;
 
   let showAddItemModal = false;
   let showCurrencyModal = false;
+  let showDetailModal = false;
+  let showEditModal = false;
+  let selectedItem: InventoryItem | null = null;
 
-  // Estado de currency para edición
   let currencyForm = {
     copper: 0,
     silver: 0,
@@ -58,20 +62,23 @@
     }
   }
 
-  async function handleUpdateQuantity(item: InventoryItem, change: number) {
-    if (!isOwner || processingItem) return;
-    
-    const newQuantity = item.quantity + change;
-    if (newQuantity < 0) return;
+  async function handleUpdateItem(event: CustomEvent) {
+    if (!selectedItem) return;
     
     try {
-      processingItem = item.id;
       error = '';
-      await inventoryApi.updateItem(item.id, { quantity: newQuantity });
+      processingItem = selectedItem.id;
+      
+      // Actualizar el item completo
+      const updates = event.detail;
+      await inventoryApi.updateItem(selectedItem.id, updates);
       await loadInventory();
+      
+      showEditModal = false;
+      selectedItem = null;
     } catch (err: any) {
-      error = err.message || 'Error actualizando cantidad';
-      console.error('Error updating quantity:', err);
+      error = err.message || 'Error actualizando item';
+      console.error('Error updating item:', err);
     } finally {
       processingItem = null;
     }
@@ -105,6 +112,16 @@
     }
   }
 
+  function openDetailModal(item: InventoryItem) {
+    selectedItem = item;
+    showDetailModal = true;
+  }
+
+  function openEditModal(item: InventoryItem) {
+    selectedItem = item;
+    showEditModal = true;
+  }
+
   function getItemIcon(type: string): string {
     const icons: Record<string, string> = {
       weapon: '⚔️',
@@ -135,7 +152,6 @@
     return labels[type] || 'Items';
   }
 
-  // Agrupar items por tipo
   $: itemsByType = inventory?.items.reduce((acc, item) => {
     if (!acc[item.type]) acc[item.type] = [];
     acc[item.type].push(item);
@@ -143,8 +159,6 @@
   }, {} as Record<string, InventoryItem[]>) || {};
 
   $: itemTypes = Object.keys(itemsByType).sort();
-  
-  // Calcular totales
   $: totalItems = inventory?.items.reduce((sum, item) => sum + item.quantity, 0) || 0;
 </script>
 
@@ -180,7 +194,6 @@
     <div class="bg-gradient-to-r from-primary/10 to-accent/10 p-4 rounded-lg border-2 border-primary/30">
       <div class="flex flex-wrap justify-between items-center gap-4">
         
-        <!-- Currency -->
         <button 
           on:click={() => showCurrencyModal = true}
           class="flex items-center gap-3 hover:bg-primary/10 p-2 rounded-lg transition-colors flex-1 min-w-[200px]"
@@ -209,7 +222,6 @@
           </div>
         </button>
 
-        <!-- Total Items -->
         <div class="flex items-center gap-3 flex-1 min-w-[150px]">
           <div class="text-3xl">📦</div>
           <div>
@@ -219,7 +231,6 @@
           </div>
         </div>
 
-        <!-- Total Value -->
         <div class="flex items-center gap-3 flex-1 min-w-[150px]">
           <div class="text-3xl">💎</div>
           <div>
@@ -228,7 +239,6 @@
           </div>
         </div>
 
-        <!-- Add button -->
         {#if isOwner}
           <button 
             on:click={() => showAddItemModal = true}
@@ -269,7 +279,6 @@
           <div class="card-parchment">
             <div class="card-body p-4">
               
-              <!-- Header del tipo -->
               <div class="flex items-center gap-2 mb-3">
                 <span class="text-2xl">{getItemIcon(type)}</span>
                 <h3 class="text-xl font-medieval text-neutral">
@@ -281,13 +290,13 @@
                 </span>
               </div>
 
-              <!-- Items grid -->
               <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {#each itemsByType[type] as item}
                   <div 
                     class="bg-gradient-to-br from-primary/5 to-accent/5 p-3 rounded-lg border-2 
                            {processingItem === item.id ? 'opacity-50' : ''}
-                           transition-all hover:shadow-md"
+                           transition-all hover:shadow-md cursor-pointer"
+                    on:click={() => openDetailModal(item)}
                   >
                     <div class="flex items-start justify-between gap-2 mb-2">
                       <div class="flex-1 min-w-0">
@@ -302,11 +311,25 @@
                           {#if item.value > 0}
                             <span class="badge badge-ghost badge-xs">💰 {formatValue(item.value * item.quantity)} gp</span>
                           {/if}
+                          
+                          {#if item.weaponData}
+                            <span class="badge badge-error badge-xs">{item.weaponData.damageDice} {item.weaponData.damageType}</span>
+                          {/if}
+                          
+                          {#if item.armorData}
+                            <span class="badge badge-info badge-xs">
+                              {#if item.type === 'shield'}
+                                +{item.armorData.baseAC || 2}{item.armorData.magicBonus ? `+${item.armorData.magicBonus}` : ''} AC
+                              {:else}
+                                AC {item.armorData.baseAC}{item.armorData.magicBonus ? `+${item.armorData.magicBonus}` : ''}
+                              {/if}
+                            </span>
+                          {/if}
                         </div>
                       </div>
 
                       {#if isOwner}
-                        <div class="dropdown dropdown-end flex-shrink-0">
+                        <div class="dropdown dropdown-end flex-shrink-0" on:click|stopPropagation>
                           {#if processingItem === item.id}
                             <button class="btn btn-ghost btn-xs btn-circle" disabled>
                               <span class="loading loading-spinner loading-xs"></span>
@@ -319,19 +342,12 @@
                             </label>
                             <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-neutral rounded-box w-48 border-2 border-secondary text-xs">
                               <li>
-                                <a on:click={() => handleUpdateQuantity(item, 1)} class="text-success">
-                                  ➕ Aumentar cantidad
+                                <a on:click|stopPropagation={() => openEditModal(item)} class="text-secondary">
+                                  ✏️ Modificar
                                 </a>
                               </li>
-                              {#if item.quantity > 1}
-                                <li>
-                                  <a on:click={() => handleUpdateQuantity(item, -1)} class="text-warning">
-                                    ➖ Reducir cantidad
-                                  </a>
-                                </li>
-                              {/if}
                               <li>
-                                <a on:click={() => handleDeleteItem(item)} class="text-error">
+                                <a on:click|stopPropagation={() => handleDeleteItem(item)} class="text-error">
                                   🗑️ Eliminar
                                 </a>
                               </li>
@@ -363,6 +379,20 @@
   {characterId}
   on:add={handleAddItem}
   on:close={() => showAddItemModal = false}
+/>
+
+<ItemDetailModal
+  bind:isOpen={showDetailModal}
+  item={selectedItem}
+  on:close={() => { showDetailModal = false; selectedItem = null; }}
+/>
+
+<EditItemModal
+  bind:isOpen={showEditModal}
+  item={selectedItem}
+  {isOwner}
+  on:update={handleUpdateItem}
+  on:close={() => { showEditModal = false; selectedItem = null; }}
 />
 
 <!-- Currency Modal -->

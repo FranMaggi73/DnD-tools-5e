@@ -166,7 +166,13 @@ func (h *Handler) UpdateItem(c *gin.Context) {
 	itemID := c.Param("itemId")
 	ctx := context.Background()
 
-	var req models.UpdateItemRequest
+	var req struct {
+		Name        *string  `json:"name"`
+		Description *string  `json:"description"`
+		Quantity    *int     `json:"quantity"`
+		Value       *float64 `json:"value"`
+	}
+
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -199,9 +205,17 @@ func (h *Handler) UpdateItem(c *gin.Context) {
 		}
 	}
 
-	// Actualizar campos
+	// Construir updates
 	updates := []firestore.Update{
 		{Path: "updatedAt", Value: time.Now()},
+	}
+
+	if req.Name != nil && *req.Name != "" {
+		updates = append(updates, firestore.Update{Path: "name", Value: *req.Name})
+	}
+
+	if req.Description != nil {
+		updates = append(updates, firestore.Update{Path: "description", Value: *req.Description})
 	}
 
 	if req.Quantity != nil {
@@ -211,10 +225,14 @@ func (h *Handler) UpdateItem(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error eliminando item"})
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"message": "Item eliminado"})
+			c.JSON(http.StatusOK, gin.H{"message": "Item eliminado", "deleted": true})
 			return
 		}
 		updates = append(updates, firestore.Update{Path: "quantity", Value: *req.Quantity})
+	}
+
+	if req.Value != nil && *req.Value >= 0 {
+		updates = append(updates, firestore.Update{Path: "value", Value: *req.Value})
 	}
 
 	if _, err := h.db.Collection("inventory_items").Doc(itemID).Update(ctx, updates); err != nil {
