@@ -185,18 +185,64 @@
   }
 
   function toggleSkillProficiency(skillName: string) {
-    const skill = form.skills.find(s => s.name === skillName);
-    if (skill) {
-      skill.proficient = !skill.proficient;
-      if (!skill.proficient) skill.expertise = false;
-    }
+  // ✅ FIX: Usar findIndex para encontrar la posición
+  const skillIndex = form.skills.findIndex(s => s.name === skillName);
+  
+  if (skillIndex === -1) {
+    console.error(`Skill not found: ${skillName}`);
+    return;
+  }
+  
+  // ✅ FIX: Crear nueva copia del array y del objeto
+  const updatedSkills = [...form.skills];
+  const currentProficient = updatedSkills[skillIndex].proficient;
+  
+  updatedSkills[skillIndex] = {
+    ...updatedSkills[skillIndex],
+    proficient: !currentProficient,
+    // Si se quita proficiency, también quitar expertise
+    expertise: currentProficient ? false : updatedSkills[skillIndex].expertise
+  };
+  
+  // ✅ FIX: Reasignar para trigger reactivity
+  form.skills = updatedSkills;
+  
+  console.log(`✅ Toggle proficiency: ${skillName}`, {
+    proficient: updatedSkills[skillIndex].proficient,
+    expertise: updatedSkills[skillIndex].expertise
+  });
   }
 
   function toggleSkillExpertise(skillName: string) {
-    const skill = form.skills.find(s => s.name === skillName);
-    if (skill && skill.proficient) {
-      skill.expertise = !skill.expertise;
+    // ✅ FIX: Usar findIndex para encontrar la posición
+    const skillIndex = form.skills.findIndex(s => s.name === skillName);
+    
+    if (skillIndex === -1) {
+      console.error(`Skill not found: ${skillName}`);
+      return;
     }
+    
+    // ✅ FIX: Validar que tiene proficiency ANTES de permitir expertise
+    if (!form.skills[skillIndex].proficient) {
+      console.warn(`⚠️ Cannot toggle expertise: ${skillName} is not proficient`);
+      return;
+    }
+    
+    // ✅ FIX: Crear nueva copia del array y del objeto
+    const updatedSkills = [...form.skills];
+    
+    updatedSkills[skillIndex] = {
+      ...updatedSkills[skillIndex],
+      expertise: !updatedSkills[skillIndex].expertise
+    };
+    
+    // ✅ FIX: Reasignar para trigger reactivity
+    form.skills = updatedSkills;
+    
+    console.log(`✅ Toggle expertise: ${skillName}`, {
+      proficient: updatedSkills[skillIndex].proficient,
+      expertise: updatedSkills[skillIndex].expertise
+    });
   }
 
   function getSkillBonus(skill: Skill | undefined): number {
