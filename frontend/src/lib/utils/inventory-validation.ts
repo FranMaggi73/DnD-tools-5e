@@ -41,18 +41,6 @@ export function validateItemQuantity(quantity: number): ValidationResult {
   return { valid: true };
 }
 
-export function validateItemWeight(weight: number): ValidationResult {
-  if (weight < 0) {
-    return { valid: false, error: 'El peso no puede ser negativo' };
-  }
-  
-  if (weight > 9999) {
-    return { valid: false, error: 'El peso máximo es 9999 lb' };
-  }
-  
-  return { valid: true };
-}
-
 export function validateItemValue(value: number): ValidationResult {
   if (value < 0) {
     return { valid: false, error: 'El valor no puede ser negativo' };
@@ -110,7 +98,6 @@ export interface CreateItemData {
   type: string;
   description?: string;
   quantity: number;
-  weight: number;
   value: number;
 }
 
@@ -120,9 +107,6 @@ export function validateCompleteItem(data: CreateItemData): ValidationResult {
   
   const quantityValidation = validateItemQuantity(data.quantity);
   if (!quantityValidation.valid) return quantityValidation;
-  
-  const weightValidation = validateItemWeight(data.weight);
-  if (!weightValidation.valid) return weightValidation;
   
   const valueValidation = validateItemValue(data.value);
   if (!valueValidation.valid) return valueValidation;

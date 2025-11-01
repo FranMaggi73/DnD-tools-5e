@@ -20,11 +20,9 @@
 
   const dispatch = createEventDispatcher();
 
-  // Estado actual del formulario (paso del wizard)
   let currentStep = 1;
   const totalSteps = 4;
 
-  // Estados de validación
   let errors = {
     name: '',
     class: '',
@@ -43,10 +41,8 @@
     speed: false
   };
 
-  // Calcular proficiency bonus basado en el nivel
   $: proficiencyBonus = getProficiencyBonus(form.level);
 
-  // Calcular modificadores de habilidades
   $: abilityModifiers = {
     strength: getAbilityModifier(form.abilityScores.strength),
     dexterity: getAbilityModifier(form.abilityScores.dexterity),
@@ -56,7 +52,6 @@
     charisma: getAbilityModifier(form.abilityScores.charisma)
   };
 
-  // reactive lookup rápido para no buscar con .find() todo el tiempo
   $: skillMap = form?.skills
     ? form.skills.reduce((acc, s) => {
         acc[s.name] = s;
@@ -64,17 +59,14 @@
       }, {} as Record<string, typeof form.skills[number]>)
     : {};
 
-  // Precalcular listas de keys para iterar sin casts en template
   $: abilityKeys = Object.keys(form.abilityScores) as AbilityKey[];
   $: savingThrowKeys = Object.keys(form.savingThrows) as AbilityKey[];
 
-  // ✅ VALIDACIÓN REACTIVA - Validar independientemente de touched
+  // ✅ VALIDACIÓN REACTIVA
   $: {
-    // Name validation
     const nameResult = validateCharacterName(form.name);
     errors.name = nameResult.error || '';
 
-    // Class validation
     if (!form.class || form.class.trim().length < 2) {
       errors.class = 'La clase debe tener al menos 2 caracteres';
     } else if (form.class.trim().length > 50) {
@@ -83,19 +75,15 @@
       errors.class = '';
     }
 
-    // Level validation
     const levelResult = validateLevel(form.level);
     errors.level = levelResult.error || '';
 
-    // MaxHp validation
     const maxHpResult = validateHP(form.maxHp);
     errors.maxHp = maxHpResult.error || '';
 
-    // ArmorClass validation
     const armorClassResult = validateArmorClass(form.armorClass);
     errors.armorClass = armorClassResult.error || '';
 
-    // Speed validation
     if (form.speed < 0) {
       errors.speed = 'La velocidad no puede ser negativa';
     } else if (form.speed > 120) {
@@ -105,72 +93,70 @@
     }
   }
 
-  // ✅ VERIFICAR SI EL PASO ACTUAL ES VÁLIDO (sin depender de touched)
-  $: isStepValid = validateCurrentStep();
-
-  function validateCurrentStep(): boolean {
+  // ✅ FIX: Simplificar validación de pasos
+  $: isStepValid = (() => {
+    console.log(`🔍 Validating step ${currentStep}:`, { form, errors });
+    
     switch (currentStep) {
-      case 1: // Información básica
+      case 1: {
         const nameValid = form.name.trim() !== '' && !errors.name;
         const classValid = form.class.trim() !== '' && form.class.trim().length >= 2 && !errors.class;
         const levelValid = form.level >= 1 && form.level <= 20 && !errors.level;
         
-        console.log('Step 1 validation:', { 
-          nameValid, 
-          classValid, 
-          levelValid, 
-          name: form.name,
-          class: form.class,
-          level: form.level,
-          errors 
-        });
-        return nameValid && classValid && levelValid;
+        const valid = nameValid && classValid && levelValid;
+        console.log('Step 1:', { nameValid, classValid, levelValid, valid });
+        return valid;
+      }
       
-      case 2: // Combat Stats
-        return form.maxHp > 0 && 
-               form.armorClass > 0 && 
-               form.speed >= 0 &&
-               !errors.maxHp && 
-               !errors.armorClass && 
-               !errors.speed;
+      case 2: {
+        const valid = form.maxHp > 0 && form.armorClass > 0 && form.speed >= 0 &&
+                      !errors.maxHp && !errors.armorClass && !errors.speed;
+        console.log('Step 2:', { valid, maxHp: form.maxHp, armorClass: form.armorClass, errors });
+        return valid;
+      }
       
-      case 3: // Ability Scores
-        return Object.values(form.abilityScores).every(score => score >= 1 && score <= 30);
+      case 3: {
+        const valid = Object.values(form.abilityScores).every(score => score >= 1 && score <= 30);
+        console.log('Step 3:', { valid, abilityScores: form.abilityScores });
+        return valid;
+      }
       
-      case 4: // Skills & Saves
-        return true; // Siempre válido, son opcionales
+      case 4: {
+        console.log('Step 4: always valid');
+        return true;
+      }
       
       default:
         return false;
     }
-  }
+  })();
 
   function handleBlur(field: keyof typeof touched) {
     touched[field] = true;
   }
 
   function nextStep() {
-    // Marcar campos del paso actual como tocados
-    if (currentStep === 1) {
-      touched.name = true;
-      touched.class = true;
-      touched.level = true;
-    } else if (currentStep === 2) {
-      touched.maxHp = true;
-      touched.armorClass = true;
-      touched.speed = true;
+    // ✅ FIX: Solo validar el paso actual
+    console.log(`➡️ Next step: current=${currentStep}, valid=${isStepValid}`);
+    
+    if (!isStepValid) {
+      console.log('❌ Step validation failed');
+      // Marcar campos como touched para mostrar errores
+      if (currentStep === 1) {
+        touched.name = true;
+        touched.class = true;
+        touched.level = true;
+      } else if (currentStep === 2) {
+        touched.maxHp = true;
+        touched.armorClass = true;
+        touched.speed = true;
+      }
+      return;
     }
 
-    if (isStepValid && currentStep < totalSteps) {
+    if (currentStep < totalSteps) {
       currentStep++;
-    } else {
-      console.log('❌ Step validation failed:', { 
-        currentStep, 
-        isStepValid, 
-        errors, 
-        form,
-        touched 
-      });
+      console.log(`✅ Moved to step ${currentStep}`);
     }
   }
 
@@ -185,36 +171,6 @@
   }
 
   function toggleSkillProficiency(skillName: string) {
-  // ✅ FIX: Usar findIndex para encontrar la posición
-  const skillIndex = form.skills.findIndex(s => s.name === skillName);
-  
-  if (skillIndex === -1) {
-    console.error(`Skill not found: ${skillName}`);
-    return;
-  }
-  
-  // ✅ FIX: Crear nueva copia del array y del objeto
-  const updatedSkills = [...form.skills];
-  const currentProficient = updatedSkills[skillIndex].proficient;
-  
-  updatedSkills[skillIndex] = {
-    ...updatedSkills[skillIndex],
-    proficient: !currentProficient,
-    // Si se quita proficiency, también quitar expertise
-    expertise: currentProficient ? false : updatedSkills[skillIndex].expertise
-  };
-  
-  // ✅ FIX: Reasignar para trigger reactivity
-  form.skills = updatedSkills;
-  
-  console.log(`✅ Toggle proficiency: ${skillName}`, {
-    proficient: updatedSkills[skillIndex].proficient,
-    expertise: updatedSkills[skillIndex].expertise
-  });
-  }
-
-  function toggleSkillExpertise(skillName: string) {
-    // ✅ FIX: Usar findIndex para encontrar la posición
     const skillIndex = form.skills.findIndex(s => s.name === skillName);
     
     if (skillIndex === -1) {
@@ -222,13 +178,31 @@
       return;
     }
     
-    // ✅ FIX: Validar que tiene proficiency ANTES de permitir expertise
+    const updatedSkills = [...form.skills];
+    const currentProficient = updatedSkills[skillIndex].proficient;
+    
+    updatedSkills[skillIndex] = {
+      ...updatedSkills[skillIndex],
+      proficient: !currentProficient,
+      expertise: currentProficient ? false : updatedSkills[skillIndex].expertise
+    };
+    
+    form.skills = updatedSkills;
+  }
+
+  function toggleSkillExpertise(skillName: string) {
+    const skillIndex = form.skills.findIndex(s => s.name === skillName);
+    
+    if (skillIndex === -1) {
+      console.error(`Skill not found: ${skillName}`);
+      return;
+    }
+    
     if (!form.skills[skillIndex].proficient) {
       console.warn(`⚠️ Cannot toggle expertise: ${skillName} is not proficient`);
       return;
     }
     
-    // ✅ FIX: Crear nueva copia del array y del objeto
     const updatedSkills = [...form.skills];
     
     updatedSkills[skillIndex] = {
@@ -236,13 +210,7 @@
       expertise: !updatedSkills[skillIndex].expertise
     };
     
-    // ✅ FIX: Reasignar para trigger reactivity
     form.skills = updatedSkills;
-    
-    console.log(`✅ Toggle expertise: ${skillName}`, {
-      proficient: updatedSkills[skillIndex].proficient,
-      expertise: updatedSkills[skillIndex].expertise
-    });
   }
 
   function getSkillBonus(skill: Skill | undefined): number {
@@ -265,26 +233,25 @@
   }
 
   function handleSubmit() {
-    // Marcar todos como tocados
+    console.log('🚀 Submit form:', { currentStep, isStepValid, form });
+    
+    // ✅ FIX: Validar todos los pasos antes de enviar
     Object.keys(touched).forEach(key => {
       touched[key as keyof typeof touched] = true;
     });
 
-    // Validar todos los pasos
-    let allValid = true;
+    // Validar paso por paso
     for (let step = 1; step <= totalSteps; step++) {
       currentStep = step;
-      if (!validateCurrentStep()) {
-        allValid = false;
-        console.log('❌ Validation failed at step:', step);
-        break;
+      if (!isStepValid) {
+        console.log(`❌ Validation failed at step ${step}`);
+        return;
       }
     }
 
-    if (allValid) {
-      dispatch('submit', form);
-      resetValidation();
-    }
+    console.log('✅ All steps valid, dispatching submit');
+    dispatch('submit', form);
+    resetValidation();
   }
 
   function resetValidation() {
@@ -302,7 +269,6 @@
     dispatch('close');
   }
 
-  // Habilidades en español
   const abilityLabels: Record<AbilityKey, string> = {
     strength: 'FUE',
     dexterity: 'DES',
@@ -326,7 +292,6 @@
   <div class="modal modal-open z-50">
     <div class="card-parchment border-4 border-secondary w-11/12 max-w-4xl max-h-[90vh] relative flex flex-col">
       
-      <!-- Header -->
       <div class="p-6 border-b-2 border-secondary flex-shrink-0">
         <button 
           class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" 
@@ -337,7 +302,6 @@
           {isEdit ? '✏️ Editar Personaje' : '🧙‍♂️ Crear Personaje'}
         </h3>
 
-        <!-- Progress Steps -->
         <div class="flex justify-between items-center mb-2">
           {#each Array(totalSteps) as _, i}
             <div class="flex items-center flex-1">
@@ -369,10 +333,8 @@
         </div>
       </div>
 
-      <!-- Content -->
       <div class="flex-1 overflow-y-auto p-6">
         
-        <!-- STEP 1: Información Básica -->
         {#if currentStep === 1}
           <div class="space-y-4">
             <div class="form-control">
@@ -385,7 +347,6 @@
                 type="text" 
                 bind:value={form.name}
                 on:blur={() => handleBlur('name')}
-                on:input={() => touched.name = true}
                 placeholder="Ej: Gandalf el Gris"
                 class="input input-bordered bg-[#2d241c] text-base-content 
                       {errors.name && touched.name ? 'border-error border-2' : 'border-primary/50'}"
@@ -408,7 +369,6 @@
                   type="text" 
                   bind:value={form.class}
                   on:blur={() => handleBlur('class')}
-                  on:input={() => touched.class = true}
                   placeholder="Ej: Mago"
                   class="input input-bordered bg-[#2d241c] text-base-content 
                         {errors.class && touched.class ? 'border-error border-2' : 'border-primary/50'}"
@@ -430,7 +390,6 @@
                   type="number" 
                   bind:value={form.level}
                   on:blur={() => handleBlur('level')}
-                  on:input={() => touched.level = true}
                   min="1"
                   max="20"
                   class="input input-bordered bg-[#2d241c] text-base-content 
@@ -455,7 +414,6 @@
           </div>
         {/if}
 
-        <!-- STEP 2: Combat Stats -->
         {#if currentStep === 2}
           <div class="space-y-4">
             <div class="grid grid-cols-2 gap-4">
@@ -550,7 +508,6 @@
           </div>
         {/if}
 
-        <!-- STEP 3: Ability Scores -->
         {#if currentStep === 3}
           <div class="space-y-4">
             <div class="alert bg-info/20 border-info/40">
@@ -589,16 +546,13 @@
                 </div>
               {/if}
             {/each}
-
             </div>
           </div>
         {/if}
 
-        <!-- STEP 4: Skills & Saves -->
         {#if currentStep === 4}
           <div class="space-y-6">
             
-            <!-- Saving Throws -->
             <div>
               <h4 class="font-medieval text-xl text-neutral mb-3 flex items-center gap-2">
                 🛡️ Tiradas de Salvación
@@ -629,7 +583,6 @@
 
             <div class="divider text-neutral/50">⚔️</div>
 
-            <!-- Skills -->
             <div>
               <h4 class="font-medieval text-xl text-neutral mb-3 flex items-center gap-2">
                 🎯 Habilidades
@@ -675,7 +628,6 @@
         {/if}
       </div>
 
-      <!-- Footer -->
       <div class="p-6 border-t-2 border-secondary flex-shrink-0">
         <div class="flex justify-between gap-4">
           <button 
@@ -686,7 +638,6 @@
             ← Anterior
           </button>
 
-          <!-- En el footer del modal -->
           {#if currentStep < totalSteps}
             <button 
               on:click={nextStep}
@@ -714,7 +665,6 @@
 {/if}
 
 <style>
-  /* Scroll personalizado */
   .overflow-y-auto::-webkit-scrollbar {
     width: 8px;
   }

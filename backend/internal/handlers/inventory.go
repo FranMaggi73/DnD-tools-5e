@@ -71,7 +71,6 @@ func (h *Handler) CreateItem(c *gin.Context) {
 		Type:        models.ItemType(req.Type),
 		Description: req.Description,
 		Quantity:    req.Quantity,
-		Weight:      req.Weight,
 		Value:       req.Value,
 		Equipped:    false,
 		Attuned:     false,
@@ -95,7 +94,6 @@ func (h *Handler) GetCharacterInventory(c *gin.Context) {
 	characterID := c.Param("charId")
 	ctx := context.Background()
 
-	// Obtener personaje para calcular carrying capacity
 	charDoc, err := h.db.Collection("characters").Doc(characterID).Get(ctx)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Personaje no encontrado"})
@@ -114,7 +112,6 @@ func (h *Handler) GetCharacterInventory(c *gin.Context) {
 		Documents(ctx)
 
 	var items []models.InventoryItem
-	totalWeight := 0.0
 	totalValue := 0.0
 
 	for {
@@ -133,7 +130,6 @@ func (h *Handler) GetCharacterInventory(c *gin.Context) {
 		}
 
 		items = append(items, item)
-		totalWeight += item.Weight * float64(item.Quantity)
 		totalValue += item.Value * float64(item.Quantity)
 	}
 
@@ -153,19 +149,10 @@ func (h *Handler) GetCharacterInventory(c *gin.Context) {
 			float64(currency.Platinum)*10.0
 	}
 
-	// Calcular capacidad (STR * 15)
-	capacity := character.AbilityScores.Strength * 15
-	encumbered := totalWeight > float64(capacity)/2.0
-	heavilyEncumbered := totalWeight > float64(capacity)
-
 	response := models.InventoryResponse{
-		Items:             items,
-		Currency:          currency,
-		CarryingCapacity:  capacity,
-		TotalWeight:       totalWeight,
-		TotalValue:        totalValue,
-		Encumbered:        encumbered,
-		HeavilyEncumbered: heavilyEncumbered,
+		Items:      items,
+		Currency:   currency,
+		TotalValue: totalValue,
 	}
 
 	c.JSON(http.StatusOK, response)

@@ -20,7 +20,6 @@ export interface InventoryItem {
   type: string;
   description?: string;
   quantity: number;
-  weight: number;
   value: number;
   equipped: boolean;
   attuned?: boolean;
@@ -76,11 +75,7 @@ export interface Currency {
 export interface InventoryResponse {
   items: InventoryItem[];
   currency: Currency;
-  carryingCapacity: number;
-  totalWeight: number;
   totalValue: number;
-  encumbered: boolean;
-  heavilyEncumbered: boolean;
 }
 
 export interface Open5eItem {
@@ -89,7 +84,6 @@ export interface Open5eItem {
   type: string;
   desc: string;
   rarity: string;
-  weight?: number;
   cost?: string;
   
   // Weapon
@@ -100,11 +94,13 @@ export interface Open5eItem {
   category?: string;
   
   // Armor
-  armor_class?: string;
+  armor_class?: string | number | { base?: number };
+  ac_string?: string;
   strength_requirement?: number;
   stealth_disadvantage?: boolean;
   
   document__slug?: string;
+  source?: string;
 }
 
 export interface Open5eSearchResult {
@@ -152,7 +148,6 @@ export const inventoryApi = {
     type: string;
     description?: string;
     quantity: number;
-    weight: number;
     value: number;
     weaponData?: any;
     armorData?: any;
@@ -197,7 +192,6 @@ export const open5eInventoryApi = {
     const searchQuery = query.trim().toLowerCase();
     
     try {
-      // Buscar en paralelo en múltiples endpoints
       const [magicItems, weapons, armor, gear] = await Promise.all([
         fetch(`https://api.open5e.com/v1/magicitems/?search=${encodeURIComponent(searchQuery)}&limit=20`)
           .then(r => r.json()).catch(() => ({ results: [] })),
@@ -209,7 +203,6 @@ export const open5eInventoryApi = {
           .then(r => r.json()).catch(() => ({ results: [] }))
       ]);
       
-      // Combinar y etiquetar resultados
       const allResults = [
         ...(magicItems.results || []).map((item: any) => ({ ...item, source: 'magicitems' })),
         ...(weapons.results || []).map((item: any) => ({ ...item, source: 'weapons' })),
@@ -217,7 +210,6 @@ export const open5eInventoryApi = {
         ...(gear.results || []).map((item: any) => ({ ...item, source: 'gear' }))
       ];
       
-      // Filtrar y ordenar por relevancia
       const filtered = allResults
         .filter((item: any) => {
           const name = item.name.toLowerCase();
@@ -253,9 +245,6 @@ export const open5eInventoryApi = {
     }
   },
 
-  /**
-   * Obtener item específico por slug
-   */
   getItem: async (slug: string, category: string = 'magicitems'): Promise<Open5eItem> => {
     const response = await fetch(`https://api.open5e.com/v1/${category}/${slug}/`);
     if (!response.ok) throw new Error('Error obteniendo item');
@@ -265,39 +254,105 @@ export const open5eInventoryApi = {
   /**
    * ✨ MEJORADO: Convertir item de Open5e a formato de inventario
    */
-  convertToInventoryItem: (open5eItem: any): Partial<InventoryItem> => {
-    const item: Partial<InventoryItem> = {
-      name: open5eItem.name,
-      description: cleanDescription(open5eItem.desc || open5eItem.description || ''),
-      weight: parseWeight(open5eItem.weight),
-      quantity: 1,
-      equipped: false,
-      open5eSlug: open5eItem.slug,
+    convertToInventoryItem: (open5eItem: any): Partial<InventoryItem> => {
+    console.log('🔍 Converting item:', open5eItem);
+
+    // helpers locales para intentar extraer distintos nombres de campo
+    const pickFirst = (...vals: any[]) => {
+        for (const v of vals) if (v !== undefined && v !== null && v !== '') return v;
+        return undefined;
     };
 
-    // Parsear costo
-    item.value = parseCost(open5eItem.cost);
+    // Descripción limpia (usa tu cleanDescription existente)
+    const descriptionRaw = pickFirst(open5eItem.desc, open5eItem.description, open5eItem.long_description, open5eItem.text);
+    const description = cleanDescription(descriptionRaw || '', 1000);
 
-    // Detectar tipo y parsear datos específicos
-    const source = open5eItem.source || '';
-    
-    if (source === 'weapons' || open5eItem.damage || open5eItem.damage_type) {
-      item.type = 'weapon';
-      item.weaponData = parseWeaponData(open5eItem);
-    } else if (source === 'armor' || open5eItem.armor_class) {
-      item.type = 'armor';
-      item.armorData = parseArmorData(open5eItem);
-    } else if (open5eItem.type?.toLowerCase().includes('potion') || 
-               open5eItem.name.toLowerCase().includes('potion')) {
-      item.type = 'consumable';
-    } else if (open5eItem.rarity && open5eItem.rarity !== 'common') {
-      item.type = 'treasure';
+    // Costo: revisar variantes
+    const costRaw = pickFirst(
+        open5eItem.cost,
+        open5eItem.price,
+        open5eItem.cost_string,
+        open5eItem.value,
+        open5eItem.cost_text
+    );
+    const value = parseCost(costRaw);
+
+    // Detectar origen/categoría (viene de tu searchItems con source a menudo)
+    const sourceField = String(pickFirst(open5eItem.source, open5eItem.category, open5eItem.type, open5eItem.document__slug || '') || '').toLowerCase();
+    const name = String(open5eItem.name || open5eItem.title || '').trim();
+    const nameLower = name.toLowerCase();
+
+    // Detección de tipo más tolerante
+    let inferredType: InventoryItem['type'] = 'other';
+    if (sourceField.includes('weapon') || open5eItem.damage || open5eItem.damage_type || nameLower.includes('sword') || nameLower.includes('bow')) {
+        inferredType = 'weapon';
+    } else if (sourceField.includes('armor') || open5eItem.armor_class || open5eItem.ac_string || nameLower.includes('armor') || nameLower.includes('armour')) {
+        // shield detection
+        if (nameLower.includes('shield') || sourceField.includes('shield')) {
+        inferredType = 'shield';
+        } else {
+        inferredType = 'armor';
+        }
+    } else if (nameLower.includes('potion') || nameLower.includes('scroll') || (open5eItem.subtype && open5eItem.subtype.toLowerCase().includes('consumable'))) {
+        inferredType = 'consumable';
+    } else if (open5eItem.rarity && String(open5eItem.rarity).toLowerCase() !== 'common') {
+        inferredType = 'treasure';
     } else {
-      item.type = 'other';
+        // si category explícita como 'gear' -> other/tool
+        if (sourceField.includes('gear') || sourceField.includes('equipment')) inferredType = 'other';
     }
 
+    // Crear objeto base
+    const item: Partial<InventoryItem> = {
+        name,
+        description,
+        quantity: 1,
+        equipped: false,
+        open5eSlug: pickFirst(open5eItem.slug, open5eItem.document__slug, open5eItem.id),
+        value,
+        type: inferredType,
+    };
+
+    // Attunement detection (algunos registros usan 'requires_attunement' o 'attunement')
+    const attuneRaw = pickFirst(open5eItem.requires_attunement, open5eItem.attunement, open5eItem.requiresAttunement);
+    if (attuneRaw !== undefined) {
+        // puede ser 'Yes'/'No' o booleano o 'requires attunement'
+        const att = (String(attuneRaw).toLowerCase().includes('yes') || String(attuneRaw).toLowerCase().includes('requires') || attuneRaw === true);
+        (item as any).attuned = att;
+    }
+
+    // Parsear datos específicos de arma/armadura
+    try {
+        if (inferredType === 'weapon') {
+        item.weaponData = parseWeaponData(open5eItem);
+        // Si parseWeaponData no puso damage dice, intentar tomar de campos alternativos
+        if (!item.weaponData?.damageDice && (open5eItem.damage || open5eItem.damage_dice)) {
+            (item.weaponData as any).damageDice = open5eItem.damage || open5eItem.damage_dice;
+        }
+        } else if (inferredType === 'armor' || inferredType === 'shield') {
+        item.armorData = parseArmorData(open5eItem);
+        }
+    } catch (err) {
+        console.warn('Error parsing weapon/armor data:', err);
+    }
+
+    // Extras: detectar magic bonus en el nombre (Ej: "Longsword +1")
+    const magicMatch = name.match(/\+(\d+)/);
+    if (magicMatch) {
+        const bonus = parseInt(magicMatch[1], 10);
+        if (!isNaN(bonus)) {
+        if (item.weaponData) item.weaponData.magicBonus = bonus;
+        if (item.armorData) item.armorData.magicBonus = bonus;
+        }
+    }
+
+    // Si no hay peso ni valor, dejar 0 explícito (evita undefined)
+    item.value = typeof item.value === 'number' ? item.value : 0;
+
+    console.log('✅ Converted item:', item);
     return item;
-  },
+    },
+
 
   cleanDescription: (html: string, maxLength: number = 200): string => {
     return cleanDescription(html, maxLength);
@@ -309,7 +364,7 @@ export const open5eInventoryApi = {
 // ===========================
 
 /**
- * ✨ NUEVO: Limpiar descripción HTML mejorado
+ * ✨ MEJORADO: Limpiar descripción HTML
  */
 function cleanDescription(html: string, maxLength: number = 200): string {
   if (!html) return '';
@@ -318,7 +373,6 @@ function cleanDescription(html: string, maxLength: number = 200): string {
   temp.innerHTML = html;
   let text = temp.textContent || temp.innerText || '';
   
-  // Limpiar espacios extra
   text = text.replace(/\s+/g, ' ').trim();
   
   if (text.length > maxLength) {
@@ -326,18 +380,6 @@ function cleanDescription(html: string, maxLength: number = 200): string {
   }
   
   return text;
-}
-
-/**
- * ✨ NUEVO: Parsear peso con múltiples formatos
- */
-function parseWeight(weight: any): number {
-  if (typeof weight === 'number') return weight;
-  if (!weight) return 0;
-  
-  // Manejar strings como "1 lb" o "0.5"
-  const match = String(weight).match(/[\d.]+/);
-  return match ? parseFloat(match[0]) : 0;
 }
 
 /**
@@ -349,11 +391,20 @@ function parseCost(cost: any): number {
   
   const costStr = String(cost).toLowerCase();
   
-  // Buscar patrón: número + moneda
-  const match = costStr.match(/(\d+(?:\.\d+)?)\s*(cp|sp|ep|gp|pp)/);
-  if (!match) return 0;
+  // ✅ FIX: Buscar patrón: número + moneda
+  const match = costStr.match(/(\d+(?:[.,]\d+)?)\s*(cp|sp|ep|gp|pp)/);
+  if (!match) {
+    // ✅ FIX: Si solo hay un número, asumir que es GP
+    const numMatch = costStr.match(/(\d+(?:[.,]\d+)?)/);
+    if (numMatch) {
+      const parsed = parseFloat(numMatch[1].replace(',', '.'));
+      console.log(`💰 Parsed cost (assumed GP): "${cost}" → ${parsed}`);
+      return parsed;
+    }
+    return 0;
+  }
   
-  const amount = parseFloat(match[1]);
+  const amount = parseFloat(match[1].replace(',', '.'));
   const currency = match[2];
   
   // Convertir a GP
@@ -365,7 +416,9 @@ function parseCost(cost: any): number {
     pp: 10
   };
   
-  return amount * (conversions[currency] || 1);
+  const converted = amount * (conversions[currency] || 1);
+  console.log(`💰 Parsed cost: "${cost}" → ${converted} GP`);
+  return converted;
 }
 
 /**
@@ -379,7 +432,6 @@ function parseWeaponData(item: any): WeaponData {
     properties: parseWeaponProperties(item),
   };
   
-  // Detectar bonus mágico
   const magicMatch = item.name.match(/\+(\d+)/);
   if (magicMatch) {
     weaponData.magicBonus = parseInt(magicMatch[1]);
@@ -409,7 +461,6 @@ function parseWeaponProperties(item: any): WeaponProperties {
       if (p.includes('heavy')) props.heavy = true;
       if (p.includes('ammunition')) props.ammunition = true;
       
-      // Versatile (ej: "versatile (1d10)")
       const versatileMatch = p.match(/versatile\s*\(([^)]+)\)/);
       if (versatileMatch) {
         props.versatile = versatileMatch[1];
@@ -417,7 +468,6 @@ function parseWeaponProperties(item: any): WeaponProperties {
     });
   }
   
-  // Range
   if (item.weapon_range || item.range) {
     const rangeStr = item.weapon_range || item.range;
     const rangeMatch = String(rangeStr).match(/(\d+)(?:\/(\d+))?/);
@@ -442,35 +492,42 @@ function parseArmorData(item: any): ArmorData {
     dexModifier: 'full',
   };
   
-  // Parsear AC
-  if (item.armor_class) {
-    const acStr = String(item.armor_class);
-    const acMatch = acStr.match(/(\d+)/);
-    if (acMatch) {
-      armor.baseAC = parseInt(acMatch[1]);
-    }
-    
-    // Detectar modificador de DEX
-    if (acStr.toLowerCase().includes('dex modifier')) {
-      armor.dexModifier = 'full';
-    } else if (acStr.toLowerCase().includes('max 2') || acStr.toLowerCase().includes('maximum of 2')) {
-      armor.dexModifier = 'max2';
-    } else if (!acStr.toLowerCase().includes('dex')) {
-      armor.dexModifier = 'none';
-    }
+  // ✅ FIX: Parsear AC desde múltiples fuentes
+  let acValue = 10;
+  
+  if (typeof item.armor_class === 'number') {
+    acValue = item.armor_class;
+  } else if (typeof item.armor_class === 'object' && item.armor_class.base) {
+    acValue = item.armor_class.base;
+  } else if (typeof item.armor_class === 'string') {
+    const acMatch = item.armor_class.match(/(\d+)/);
+    if (acMatch) acValue = parseInt(acMatch[1]);
+  } else if (item.ac_string) {
+    const acMatch = String(item.ac_string).match(/(\d+)/);
+    if (acMatch) acValue = parseInt(acMatch[1]);
   }
   
-  // Requisito de fuerza
+  armor.baseAC = acValue;
+  console.log(`🛡️ Parsed AC: ${acValue}`);
+  
+  // Detectar modificador de DEX
+  const acStr = String(item.armor_class || item.ac_string || '').toLowerCase();
+  if (acStr.includes('dex modifier')) {
+    armor.dexModifier = 'full';
+  } else if (acStr.includes('max 2') || acStr.includes('maximum of 2')) {
+    armor.dexModifier = 'max2';
+  } else if (!acStr.includes('dex')) {
+    armor.dexModifier = 'none';
+  }
+  
   if (item.strength_requirement) {
     armor.strengthRequirement = item.strength_requirement;
   }
   
-  // Desventaja en sigilo
   if (item.stealth_disadvantage) {
     armor.stealthDisadvantage = true;
   }
   
-  // Bonus mágico
   const magicMatch = item.name.match(/\+(\d+)/);
   if (magicMatch) {
     armor.magicBonus = parseInt(magicMatch[1]);
@@ -487,14 +544,12 @@ function detectArmorType(name: string): string {
   
   if (nameLower.includes('shield')) return 'shield';
   
-  // Light armor
   if (nameLower.includes('leather') || 
       nameLower.includes('padded') || 
       nameLower.includes('studded')) {
     return 'light';
   }
   
-  // Heavy armor
   if (nameLower.includes('plate') || 
       nameLower.includes('chain mail') || 
       nameLower.includes('splint') || 
@@ -502,7 +557,6 @@ function detectArmorType(name: string): string {
     return 'heavy';
   }
   
-  // Medium armor (por defecto si no es light ni heavy)
   if (nameLower.includes('chain') || 
       nameLower.includes('scale') || 
       nameLower.includes('breastplate') || 
@@ -510,5 +564,5 @@ function detectArmorType(name: string): string {
     return 'medium';
   }
   
-  return 'light'; // Default
+  return 'light';
 }

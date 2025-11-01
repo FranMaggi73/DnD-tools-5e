@@ -289,7 +289,6 @@ type InventoryItem struct {
 
 	// Económico
 	Quantity int     `firestore:"quantity" json:"quantity"`
-	Weight   float64 `firestore:"weight" json:"weight"`
 	Value    float64 `firestore:"value" json:"value"`
 
 	// Estado
@@ -342,7 +341,6 @@ type CreateItemRequest struct {
 	Type        string  `json:"type" binding:"required"`
 	Description string  `json:"description" binding:"max=1000"`
 	Quantity    int     `json:"quantity" binding:"required,min=1,max=999"`
-	Weight      float64 `json:"weight" binding:"min=0,max=9999"`
 	Value       float64 `json:"value" binding:"min=0,max=999999"`
 
 	// Datos opcionales
@@ -371,11 +369,7 @@ type UpdateCurrencyRequest struct {
 // ===========================
 
 type InventoryResponse struct {
-	Items             []InventoryItem `json:"items"`
-	Currency          Currency        `json:"currency"`
-	CarryingCapacity  int             `json:"carryingCapacity"`
-	TotalWeight       float64         `json:"totalWeight"`
-	TotalValue        float64         `json:"totalValue"`
-	Encumbered        bool            `json:"encumbered"`
-	HeavilyEncumbered bool            `json:"heavilyEncumbered"`
+	Items      []InventoryItem `json:"items"`
+	Currency   Currency        `json:"currency"`
+	TotalValue float64         `json:"totalValue"`
 }

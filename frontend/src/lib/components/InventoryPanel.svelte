@@ -134,10 +134,6 @@
     return icons[type] || '📦';
   }
 
-  function formatWeight(weight: number): string {
-    return weight % 1 === 0 ? weight.toString() : weight.toFixed(1);
-  }
-
   function formatValue(value: number): string {
     return value % 1 === 0 ? value.toString() : value.toFixed(2);
   }
@@ -228,22 +224,6 @@
             </div>
           </div>
         </button>
-
-        <!-- Weight -->
-        <div class="flex items-center gap-3 flex-1 min-w-[150px]">
-          <div class="text-3xl">⚖️</div>
-          <div>
-            <p class="text-xs font-medieval text-neutral/60">PESO</p>
-            <p class="text-sm font-bold">
-              {formatWeight(inventory.totalWeight)} / {inventory.carryingCapacity} lb
-            </p>
-            {#if inventory.heavilyEncumbered}
-              <span class="badge badge-error badge-xs">Sobrecargado</span>
-            {:else if inventory.encumbered}
-              <span class="badge badge-warning badge-xs">Cargado</span>
-            {/if}
-          </div>
-        </div>
 
         <!-- Total Items -->
         <div class="flex items-center gap-3 flex-1 min-w-[150px]">
@@ -341,9 +321,6 @@
                           {/if}
                           {#if item.attuned}
                             <span class="badge badge-warning badge-xs">⚡ Sintonizado</span>
-                          {/if}
-                          {#if item.weight > 0}
-                            <span class="badge badge-ghost badge-xs">⚖️ {formatWeight(item.weight * item.quantity)} lb</span>
                           {/if}
                           {#if item.value > 0}
                             <span class="badge badge-ghost badge-xs">💰 {formatValue(item.value * item.quantity)} gp</span>

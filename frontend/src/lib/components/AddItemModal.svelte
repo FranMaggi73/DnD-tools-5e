@@ -22,7 +22,6 @@
     type: 'other',
     description: '',
     quantity: 1,
-    weight: 0,
     value: 0,
   };
 
@@ -53,26 +52,51 @@
     }
   }, 500);
 
-  function selectItem(item: Open5eItem) {
-    console.log('📦 Selected item:', item);
-    selectedItem = item;
-    
-    // Convertir a formato de inventario
-    const converted = open5eInventoryApi.convertToInventoryItem(item);
-    
+// dentro de <script lang="ts"> reemplaza la función selectItem existente por esta:
+async function selectItem(item: Open5eItem) {
+  console.log('📦 Selected item (summary):', item);
+  loading = true;
+  noResults = false;
+
+  try {
+    // Intentar obtener la versión completa del item (algunos endpoints devuelven sólo resumen)
+    // `item.source` en searchItems lo seteas como 'weapons'/'armor'/'gear'/'magicitems' etc.
+    const category = (item as any).source || 'magicitems';
+    let fullItem: Open5eItem | any = item;
+
+    try {
+      fullItem = await open5eInventoryApi.getItem(item.slug, category);
+      console.log('📥 Fetched full item:', fullItem);
+    } catch (err) {
+      // si falla, usamos el item del resumen (no queremos bloquear la UX)
+      console.warn('Could not fetch full item, using summary:', err);
+      fullItem = item;
+    }
+
+    selectedItem = fullItem;
+
+    // Convertir a formato de inventario usando el item completo
+    const converted = open5eInventoryApi.convertToInventoryItem(fullItem);
+
     manualForm = {
-      name: converted.name || item.name,
+      name: converted.name || fullItem.name || '',
       type: converted.type || 'other',
-      description: open5eInventoryApi.cleanDescription(converted.description || '', 500),
+      description: open5eInventoryApi.cleanDescription(converted.description || fullItem.desc || '', 500),
       quantity: 1,
-      weight: converted.weight || 0,
-      value: converted.value || 0,
+      // Aseguramos que sea number (no strings)
+      value: typeof converted.value === 'number' ? converted.value : parseFloat(String(converted.value || 0)) || 0,
     };
-    
+
     suggestions = [];
     searchQuery = '';
     manualMode = true;
+  } catch (err) {
+    console.error('Error selecting item:', err);
+  } finally {
+    loading = false;
   }
+}
+
 
   function handleAddItem() {
     if (!manualForm.name.trim()) return;
@@ -103,7 +127,6 @@
       type: 'other',
       description: '',
       quantity: 1,
-      weight: 0,
       value: 0,
     };
     noResults = false;
@@ -175,13 +198,6 @@
     }
     
     return parts.join(' • ');
-  }
-
-  // ✨ NUEVO: Formatear peso
-  function formatWeight(item: any): string {
-    if (!item.weight) return '';
-    const weight = typeof item.weight === 'number' ? item.weight : parseFloat(String(item.weight).match(/[\d.]+/)?.[0] || '0');
-    return weight > 0 ? `⚖️ ${weight} lb` : '';
   }
 
   // ✨ NUEVO: Formatear costo
@@ -307,9 +323,6 @@
                         {#if formatCost(item)}
                           <span class="badge badge-xs badge-info">{formatCost(item)}</span>
                         {/if}
-                        {#if formatWeight(item)}
-                          <span class="badge badge-xs badge-ghost">{formatWeight(item)}</span>
-                        {/if}
                         {#if item.category}
                           <span class="badge badge-xs badge-secondary">{item.category}</span>
                         {/if}
@@ -397,20 +410,6 @@
                   class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
                 />
               </div>
-
-              <div class="form-control">
-                <label class="label">
-                  <span class="label-text font-medieval text-neutral">Peso (lb)</span>
-                </label>
-                <input 
-                  type="number" 
-                  bind:value={manualForm.weight}
-                  min="0"
-                  step="0.1"
-                  class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
-                />
-              </div>
-
               <div class="form-control">
                 <label class="label">
                   <span class="label-text font-medieval text-neutral">Valor (GP)</span>
