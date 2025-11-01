@@ -6,12 +6,10 @@
   import { api } from '$lib/api/api';
   import type { Campaign, Character, CharacterForm } from '$lib/types';
   import { DND_SKILLS, getProficiencyBonus } from '$lib/types';
-  import CharacterCard from '$lib/components/CharacterCard.svelte';
+  import CharacterSheet from '$lib/components/CharacterCard.svelte';
   import CharacterFormModal from '$lib/components/CharacterFormModal.svelte';
-  import InventoryPanel from '$lib/components/InventoryPanel.svelte';
   import { headerTitle } from '$lib/stores/uiStore';
 
-  // ===== Importar Firestore para listeners en tiempo real =====
   import { getFirestore, collection, query, where, onSnapshot } from 'firebase/firestore';
   import { app } from '$lib/firebase';
 
@@ -27,10 +25,6 @@
   let showFormModal = false;
   let editingCharacter: Character | null = null;
   let isEdit = false;
-
-  // ===== NUEVO: Estado para mostrar inventario =====
-  let showInventory = false;
-  let inventoryCharacter: Character | null = null;
 
   function emptyCharacterForm(): CharacterForm {
     return {
@@ -162,17 +156,6 @@
     showFormModal = true;
   }
 
-  // ===== NUEVO: Abrir inventario =====
-  function openInventory(character: Character) {
-    inventoryCharacter = character;
-    showInventory = true;
-  }
-
-  function closeInventory() {
-    showInventory = false;
-    inventoryCharacter = null;
-  }
-
   async function handleSubmit() {
     try {
       const proficiencyBonus = getProficiencyBonus(form.level);
@@ -222,67 +205,71 @@
 
 <div class="min-h-screen flex flex-col">
   <div class="flex flex-1">
-    <div class="flex-1 p-6">
+    <div class="flex-1 p-4 sm:p-6">
       <div class="container mx-auto max-w-7xl">
+        
         <!-- Header -->
-        <div class="mb-8 text-center">
-          <h1 class="text-4xl lg:text-5xl font-bold text-secondary title-ornament mb-3 text-shadow">
+        <div class="mb-6 sm:mb-8 text-center">
+          <h1 class="text-3xl sm:text-4xl lg:text-5xl font-bold text-secondary title-ornament mb-3 text-shadow">
             Personajes
           </h1>
-          <p class="text-base-content/70 font-body italic text-lg mb-2">
+          <p class="text-base-content/70 font-body italic text-base sm:text-lg mb-2">
             "Cada héroe tiene su historia..."
           </p>
         </div>
 
         {#if error}
           <div class="alert alert-error mb-6">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+            </svg>
             <span>{error}</span>
-            <button class="btn btn-sm" on:click={() => error = ''}>✕</button>
+            <button class="btn btn-sm btn-ghost" on:click={() => error = ''}>✕</button>
           </div>
         {/if}
 
         {#if loading}
           <div class="flex justify-center py-20">
-            <span class="loading loading-spinner loading-lg text-secondary"></span>
+            <div class="flex flex-col items-center gap-4">
+              <span class="loading loading-spinner loading-lg text-secondary"></span>
+              <p class="text-neutral/70 font-body">Cargando personajes...</p>
+            </div>
           </div>
         {:else}
+          
           <!-- Mi Personaje -->
           <div class="mb-10">
+            <div class="flex justify-between items-center mb-4">
+              <h2 class="text-2xl font-medieval text-secondary">
+                {myCharacter ? '👤 Mi Personaje' : ''}
+              </h2>
+            </div>
+            
             {#if myCharacter}
               <div class="flex justify-center">
-                <div class="max-w-4xl w-full space-y-4">
-                  <CharacterCard 
+                <div class="max-w-6xl w-full">
+                  <CharacterSheet 
                     character={myCharacter}
                     isOwner={true}
+                    showInventory={true}
                     on:edit={(e) => openEditModal(e.detail)}
                     on:delete={(e) => handleDelete(e.detail)}
                   />
-                  
-                  <!-- Botón de Inventario -->
-                  <div class="flex justify-center">
-                    <button 
-                      on:click={() => myCharacter && openInventory(myCharacter)}
-                      class="btn btn-primary gap-2"
-                    >
-                      <span class="text-xl">🎒</span>
-                      Ver Inventario
-                    </button>
-                  </div>
                 </div>
               </div>
             {:else}
               <div class="flex justify-center">
-                <div class="card-parchment p-8 text-center max-w-2xl corner-ornament">
-                  <div class="text-6xl mb-4">🧙‍♂️</div>
-                  <h3 class="text-2xl font-medieval text-neutral mb-3">No tienes personaje</h3>
-                  <p class="text-neutral/70 font-body mb-6">
+                <div class="card-parchment p-6 sm:p-8 text-center max-w-2xl corner-ornament">
+                  <div class="text-4xl sm:text-6xl mb-4">🧙‍♂️</div>
+                  <h3 class="text-xl sm:text-2xl font-medieval text-neutral mb-3">No tienes personaje</h3>
+                  <p class="text-sm sm:text-base text-neutral/70 font-body mb-6">
                     Crea tu personaje para unirte a las aventuras de esta campaña
                   </p>
                   <button 
                     on:click={openCreateModal}
-                    class="btn btn-dnd btn-lg"
+                    class="btn btn-dnd btn-md sm:btn-lg"
                   >
-                    <span class="text-2xl">✨</span>
+                    <span class="text-xl sm:text-2xl">✨</span>
                     Crear Mi Personaje
                   </button>
                 </div>              
@@ -295,34 +282,24 @@
             <div class="divider text-neutral/50 my-8">⚔️</div>
             
             <div class="mb-6">
-              <h2 class="text-3xl font-medieval text-center text-secondary mb-2">
+              <h2 class="text-2xl sm:text-3xl font-medieval text-center text-secondary mb-2">
                 Compañeros de Aventura
               </h2>
-              <p class="text-primary text-center font-body italic">
+              <p class="text-primary text-center font-body italic text-sm sm:text-base">
                 Los demás héroes de esta campaña
               </p>
             </div>
             
             <div class="container mx-auto max-w-7xl">
-              <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <div class="grid grid-cols-1 gap-6">
                 {#each otherCharacters as character}
                   <div class="flex justify-center">
-                    <div class="w-full space-y-4">
-                      <CharacterCard 
+                    <div class="w-full max-w-6xl">
+                      <CharacterSheet 
                         {character}
                         isOwner={false}
+                        showInventory={true}
                       />
-                      
-                      <!-- Botón de inventario para otros personajes -->
-                      <div class="flex justify-center">
-                        <button 
-                          on:click={() => openInventory(character)}
-                          class="btn btn-info btn-sm gap-2"
-                        >
-                          <span>🎒</span>
-                          Ver Inventario
-                        </button>
-                      </div>
                     </div>
                   </div>
                 {/each}
@@ -343,34 +320,3 @@
   on:submit={handleSubmit}
   on:close={handleClose}
 />
-
-<!-- Modal de Inventario -->
-{#if showInventory && inventoryCharacter}
-  <div class="modal modal-open z-50">
-    <div class="card-parchment border-4 border-secondary w-[95vw] max-w-6xl max-h-[90vh] relative flex flex-col">
-      
-      <!-- Header -->
-      <div class="p-4 border-b-2 border-secondary flex-shrink-0">
-        <button 
-          class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" 
-          on:click={closeInventory}
-        >✕</button>
-        
-        <h3 class="font-bold text-2xl font-medieval text-neutral text-center mb-2">
-          🎒 Inventario de {inventoryCharacter.name}
-        </h3>
-        <p class="text-center text-sm text-neutral/70 font-body">
-          {inventoryCharacter.class} - Nivel {inventoryCharacter.level}
-        </p>
-      </div>
-
-      <!-- Content -->
-      <div class="flex-1 overflow-y-auto p-4">
-        <InventoryPanel 
-          characterId={inventoryCharacter.id}
-          isOwner={inventoryCharacter.userId === $userStore?.uid}
-        />
-      </div>
-    </div>
-  </div>
-{/if}
