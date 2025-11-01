@@ -170,8 +170,123 @@ export function validateNoteTags(tags: string[]): ValidationResult {
   
   return { valid: true };
 }
+export interface ValidationResult {
+  valid: boolean;
+  error?: string;
+}
+
+// ===== VALIDACIÓN DE ITEMS =====
+
+export function validateItemName(name: string): ValidationResult {
+  if (!name || !name.trim()) {
+    return { valid: false, error: 'El nombre no puede estar vacío' };
+  }
+  
+  const trimmed = name.trim();
+  
+  if (trimmed.length < 1) {
+    return { valid: false, error: 'El nombre debe tener al menos 1 carácter' };
+  }
+  
+  if (trimmed.length > 100) {
+    return { valid: false, error: 'El nombre no puede tener más de 100 caracteres' };
+  }
+  
+  // ✅ NUEVO: Validar caracteres especiales peligrosos
+  if (/[<>{}[\]\\]/.test(trimmed)) {
+    return { valid: false, error: 'El nombre contiene caracteres no permitidos' };
+  }
+  
+  return { valid: true };
+}
+
+export function validateItemQuantity(quantity: number): ValidationResult {
+  if (quantity < 0) {
+    return { valid: false, error: 'La cantidad no puede ser negativa' };
+  }
+  
+  if (quantity > 9999) {
+    return { valid: false, error: 'La cantidad máxima es 9,999' };
+  }
+  
+  if (!Number.isInteger(quantity)) {
+    return { valid: false, error: 'La cantidad debe ser un número entero' };
+  }
+  
+  return { valid: true };
+}
+
+export function validateItemValue(value: number): ValidationResult {
+  if (value < 0) {
+    return { valid: false, error: 'El valor no puede ser negativo' };
+  }
+  
+  // ✅ CORREGIDO: Límite realista para items legendarios
+  if (value > 9999999) {
+    return { valid: false, error: 'El valor máximo es 9,999,999 gp' };
+  }
+  
+  // ✅ NUEVO: Advertencia para valores muy altos (no error, solo warning)
+  if (value > 500000) {
+    return { 
+      valid: true, 
+      error: '⚠️ Valor muy alto - Verifica que sea correcto' 
+    };
+  }
+  
+  return { valid: true };
+}
+
+export function validateItemDescription(description: string): ValidationResult {
+  if (description.length > 2000) {
+    return { valid: false, error: 'La descripción no puede tener más de 2000 caracteres' };
+  }
+  
+  return { valid: true };
+}
+
+// ✅ NUEVO: Validación de peso
+export function validateItemWeight(weight: number): ValidationResult {
+  if (weight < 0) {
+    return { valid: false, error: 'El peso no puede ser negativo' };
+  }
+  
+  if (weight > 1000) {
+    return { valid: false, error: 'El peso máximo es 1000 lb' };
+  }
+  
+  return { valid: true };
+}
+
+// ===== VALIDACIÓN DE CURRENCY =====
+
+export function validateCurrency(currency: number): ValidationResult {
+  if (currency < 0) {
+    return { valid: false, error: 'La moneda no puede ser negativa' };
+  }
+  
+  if (!Number.isInteger(currency)) {
+    return { valid: false, error: 'La moneda debe ser un número entero' };
+  }
+  
+  // ✅ CORREGIDO: Límite más realista
+  if (currency > 999999999) {
+    return { valid: false, error: 'El máximo es 999,999,999' };
+  }
+  
+  // ✅ NUEVO: Advertencia para cantidades muy altas
+  if (currency > 100000) {
+    return { 
+      valid: true, 
+      error: '⚠️ Cantidad muy alta - Verifica que sea correcta' 
+    };
+  }
+  
+  return { valid: true };
+}
 
 // ===== HELPER GENERAL =====
+
 export function validateAll(...validations: ValidationResult[]): ValidationResult {
   for (const validation of validations) {
     if (!validation.valid) {
@@ -180,4 +295,76 @@ export function validateAll(...validations: ValidationResult[]): ValidationResul
   }
   
   return { valid: true };
+}
+
+// ===== VALIDACIÓN COMPLETA DE ITEM =====
+
+export interface CreateItemData {
+  name: string;
+  type: string;
+  description?: string;
+  quantity: number;
+  value: number;
+  weight?: number;
+}
+
+export function validateCompleteItem(data: CreateItemData): ValidationResult {
+  const nameValidation = validateItemName(data.name);
+  if (!nameValidation.valid) return nameValidation;
+  
+  const quantityValidation = validateItemQuantity(data.quantity);
+  if (!quantityValidation.valid) return quantityValidation;
+  
+  const valueValidation = validateItemValue(data.value);
+  if (!valueValidation.valid) return valueValidation;
+  
+  if (data.description) {
+    const descValidation = validateItemDescription(data.description);
+    if (!descValidation.valid) return descValidation;
+  }
+  
+  if (data.weight !== undefined) {
+    const weightValidation = validateItemWeight(data.weight);
+    if (!weightValidation.valid) return weightValidation;
+  }
+  
+  return { valid: true };
+}
+
+// ✅ NUEVO: Calcular peso total del inventario
+export function calculateTotalWeight(items: Array<{ weight?: number; quantity: number }>): number {
+  return items.reduce((total, item) => {
+    return total + ((item.weight || 0) * item.quantity);
+  }, 0);
+}
+
+// ✅ NUEVO: Convertir monedas a GP
+export function convertToGold(currency: { copper: number; silver: number; gold: number; platinum: number }): number {
+  return (
+    currency.copper * 0.01 +
+    currency.silver * 0.1 +
+    currency.gold +
+    currency.platinum * 10
+  );
+}
+
+// ✅ NUEVO: Convertir GP a monedas óptimas
+export function optimizeCurrency(goldAmount: number): { copper: number; silver: number; gold: number; platinum: number } {
+  let remaining = Math.round(goldAmount * 100); // Convertir a copper
+  
+  const platinum = Math.floor(remaining / 1000);
+  remaining -= platinum * 1000;
+  
+  const gold = Math.floor(remaining / 100);
+  remaining -= gold * 100;
+  
+  const silver = Math.floor(remaining / 10);
+  remaining -= silver * 10;
+  
+  return {
+    platinum,
+    gold,
+    silver,
+    copper: remaining
+  };
 }
