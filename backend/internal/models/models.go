@@ -239,3 +239,143 @@ type UpdateNoteRequest struct {
 	Category string   `json:"category" binding:"required,oneof=session npc location plot other"`
 	Tags     []string `json:"tags" binding:"max=10,dive,max=30"`
 }
+
+// ===========================
+// INVENTORY MODELS
+// ===========================
+
+// ItemType representa el tipo de item
+type ItemType string
+
+const (
+	ItemTypeWeapon     ItemType = "weapon"
+	ItemTypeArmor      ItemType = "armor"
+	ItemTypeShield     ItemType = "shield"
+	ItemTypeTool       ItemType = "tool"
+	ItemTypeConsumable ItemType = "consumable"
+	ItemTypeTreasure   ItemType = "treasure"
+	ItemTypeOther      ItemType = "other"
+)
+
+// WeaponProperties representa las propiedades de un arma
+type WeaponProperties struct {
+	Light      bool         `firestore:"light,omitempty" json:"light,omitempty"`
+	Finesse    bool         `firestore:"finesse,omitempty" json:"finesse,omitempty"`
+	Thrown     bool         `firestore:"thrown,omitempty" json:"thrown,omitempty"`
+	TwoHanded  bool         `firestore:"twoHanded,omitempty" json:"twoHanded,omitempty"`
+	Versatile  string       `firestore:"versatile,omitempty" json:"versatile,omitempty"`
+	Reach      bool         `firestore:"reach,omitempty" json:"reach,omitempty"`
+	Loading    bool         `firestore:"loading,omitempty" json:"loading,omitempty"`
+	Heavy      bool         `firestore:"heavy,omitempty" json:"heavy,omitempty"`
+	Ammunition bool         `firestore:"ammunition,omitempty" json:"ammunition,omitempty"`
+	Range      *WeaponRange `firestore:"range,omitempty" json:"range,omitempty"`
+}
+
+type WeaponRange struct {
+	Normal int `firestore:"normal" json:"normal"`
+	Max    int `firestore:"max" json:"max"`
+}
+
+// InventoryItem representa un item en el inventario
+type InventoryItem struct {
+	ID          string `firestore:"id" json:"id"`
+	CharacterID string `firestore:"characterId" json:"characterId"`
+	CampaignID  string `firestore:"campaignId" json:"campaignId"`
+
+	// Información básica
+	Name        string   `firestore:"name" json:"name"`
+	Type        ItemType `firestore:"type" json:"type"`
+	Description string   `firestore:"description,omitempty" json:"description,omitempty"`
+
+	// Económico
+	Quantity int     `firestore:"quantity" json:"quantity"`
+	Weight   float64 `firestore:"weight" json:"weight"`
+	Value    float64 `firestore:"value" json:"value"`
+
+	// Estado
+	Equipped bool `firestore:"equipped" json:"equipped"`
+	Attuned  bool `firestore:"attuned,omitempty" json:"attuned,omitempty"`
+
+	// Datos específicos por tipo (almacenados como JSON)
+	WeaponData *WeaponData `firestore:"weaponData,omitempty" json:"weaponData,omitempty"`
+	ArmorData  *ArmorData  `firestore:"armorData,omitempty" json:"armorData,omitempty"`
+
+	// Open5e reference
+	Open5eSlug string `firestore:"open5eSlug,omitempty" json:"open5eSlug,omitempty"`
+
+	// Metadata
+	CreatedAt time.Time `firestore:"createdAt" json:"createdAt"`
+	UpdatedAt time.Time `firestore:"updatedAt" json:"updatedAt"`
+}
+
+type WeaponData struct {
+	WeaponType string           `firestore:"weaponType" json:"weaponType"`
+	DamageDice string           `firestore:"damageDice" json:"damageDice"`
+	DamageType string           `firestore:"damageType" json:"damageType"`
+	Properties WeaponProperties `firestore:"properties" json:"properties"`
+	MagicBonus int              `firestore:"magicBonus,omitempty" json:"magicBonus,omitempty"`
+}
+
+type ArmorData struct {
+	ArmorType           string `firestore:"armorType" json:"armorType"`
+	BaseAC              int    `firestore:"baseAC" json:"baseAC"`
+	DexModifier         string `firestore:"dexModifier,omitempty" json:"dexModifier,omitempty"`
+	StrengthRequirement int    `firestore:"strengthRequirement,omitempty" json:"strengthRequirement,omitempty"`
+	StealthDisadvantage bool   `firestore:"stealthDisadvantage,omitempty" json:"stealthDisadvantage,omitempty"`
+	MagicBonus          int    `firestore:"magicBonus,omitempty" json:"magicBonus,omitempty"`
+}
+
+// Currency representa la moneda del personaje
+type Currency struct {
+	Copper   int `firestore:"copper" json:"copper"`
+	Silver   int `firestore:"silver" json:"silver"`
+	Gold     int `firestore:"gold" json:"gold"`
+	Platinum int `firestore:"platinum" json:"platinum"`
+}
+
+// ===========================
+// REQUESTS
+// ===========================
+
+type CreateItemRequest struct {
+	Name        string  `json:"name" binding:"required,min=1,max=100"`
+	Type        string  `json:"type" binding:"required"`
+	Description string  `json:"description" binding:"max=1000"`
+	Quantity    int     `json:"quantity" binding:"required,min=1,max=999"`
+	Weight      float64 `json:"weight" binding:"min=0,max=9999"`
+	Value       float64 `json:"value" binding:"min=0,max=999999"`
+
+	// Datos opcionales
+	WeaponData *WeaponData `json:"weaponData,omitempty"`
+	ArmorData  *ArmorData  `json:"armorData,omitempty"`
+
+	// Open5e reference
+	Open5eSlug string `json:"open5eSlug,omitempty"`
+}
+
+type UpdateItemRequest struct {
+	Quantity *int  `json:"quantity,omitempty"`
+	Equipped *bool `json:"equipped,omitempty"`
+	Attuned  *bool `json:"attuned,omitempty"`
+}
+
+type UpdateCurrencyRequest struct {
+	Copper   *int `json:"copper,omitempty"`
+	Silver   *int `json:"silver,omitempty"`
+	Gold     *int `json:"gold,omitempty"`
+	Platinum *int `json:"platinum,omitempty"`
+}
+
+// ===========================
+// RESPONSE
+// ===========================
+
+type InventoryResponse struct {
+	Items             []InventoryItem `json:"items"`
+	Currency          Currency        `json:"currency"`
+	CarryingCapacity  int             `json:"carryingCapacity"`
+	TotalWeight       float64         `json:"totalWeight"`
+	TotalValue        float64         `json:"totalValue"`
+	Encumbered        bool            `json:"encumbered"`
+	HeavilyEncumbered bool            `json:"heavilyEncumbered"`
+}

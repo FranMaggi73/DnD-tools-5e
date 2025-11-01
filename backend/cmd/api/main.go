@@ -1,4 +1,4 @@
-// backend/cmd/api/main.go (MODIFICACIONES)
+// backend/cmd/api/main.go
 package main
 
 import (
@@ -206,6 +206,15 @@ func main() {
 		// Caché management
 		protected.POST("/cache/clear", h.ClearCache)
 		protected.GET("/cache/stats", h.GetCacheStats)
+
+		// Inventory
+		protected.POST("/characters/:characterId/items", pm.RequireCharacterOwnerOrDM(), middleware.RateLimitMiddleware(rateLimiter), h.CreateItem)
+		protected.GET("/characters/:characterId/inventory", h.GetCharacterInventory)
+		protected.PUT("/items/:itemId", h.UpdateItem)
+		protected.DELETE("/items/:itemId", h.DeleteItem)
+
+		// Currency
+		protected.PUT("/characters/:characterId/currency", h.UpdateCurrency)
 	}
 
 	// ===== CRON JOB =====
