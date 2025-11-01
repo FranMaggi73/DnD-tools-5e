@@ -291,10 +291,6 @@ type InventoryItem struct {
 	Quantity int     `firestore:"quantity" json:"quantity"`
 	Value    float64 `firestore:"value" json:"value"`
 
-	// Estado
-	Equipped bool `firestore:"equipped" json:"equipped"`
-	Attuned  bool `firestore:"attuned,omitempty" json:"attuned,omitempty"`
-
 	// Datos específicos por tipo (almacenados como JSON)
 	WeaponData *WeaponData `firestore:"weaponData,omitempty" json:"weaponData,omitempty"`
 	ArmorData  *ArmorData  `firestore:"armorData,omitempty" json:"armorData,omitempty"`
@@ -352,9 +348,7 @@ type CreateItemRequest struct {
 }
 
 type UpdateItemRequest struct {
-	Quantity *int  `json:"quantity,omitempty"`
-	Equipped *bool `json:"equipped,omitempty"`
-	Attuned  *bool `json:"attuned,omitempty"`
+	Quantity *int `json:"quantity,omitempty"`
 }
 
 type UpdateCurrencyRequest struct {

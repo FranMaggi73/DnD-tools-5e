@@ -21,8 +21,6 @@ export interface InventoryItem {
   description?: string;
   quantity: number;
   value: number;
-  equipped: boolean;
-  attuned?: boolean;
   weaponData?: WeaponData;
   armorData?: ArmorData;
   open5eSlug?: string;
@@ -160,8 +158,6 @@ export const inventoryApi = {
 
   updateItem: (itemId: string, data: {
     quantity?: number;
-    equipped?: boolean;
-    attuned?: boolean;
   }) =>
     fetchWithAuth<InventoryItem>(`/items/${itemId}`, {
       method: 'PUT',
@@ -307,7 +303,6 @@ export const open5eInventoryApi = {
         name,
         description,
         quantity: 1,
-        equipped: false,
         open5eSlug: pickFirst(open5eItem.slug, open5eItem.document__slug, open5eItem.id),
         value,
         type: inferredType,

@@ -58,22 +58,6 @@
     }
   }
 
-  async function handleToggleEquipped(item: InventoryItem) {
-    if (!isOwner || processingItem) return;
-    
-    try {
-      processingItem = item.id;
-      error = '';
-      await inventoryApi.updateItem(item.id, { equipped: !item.equipped });
-      await loadInventory();
-    } catch (err: any) {
-      error = err.message || 'Error actualizando item';
-      console.error('Error toggling equipped:', err);
-    } finally {
-      processingItem = null;
-    }
-  }
-
   async function handleUpdateQuantity(item: InventoryItem, change: number) {
     if (!isOwner || processingItem) return;
     
@@ -302,7 +286,6 @@
                 {#each itemsByType[type] as item}
                   <div 
                     class="bg-gradient-to-br from-primary/5 to-accent/5 p-3 rounded-lg border-2 
-                           {item.equipped ? 'border-success bg-success/10' : 'border-primary/20'}
                            {processingItem === item.id ? 'opacity-50' : ''}
                            transition-all hover:shadow-md"
                   >
@@ -316,12 +299,6 @@
                         </h4>
                         
                         <div class="flex flex-wrap gap-1 mt-1">
-                          {#if item.equipped}
-                            <span class="badge badge-success badge-xs">✓ Equipado</span>
-                          {/if}
-                          {#if item.attuned}
-                            <span class="badge badge-warning badge-xs">⚡ Sintonizado</span>
-                          {/if}
                           {#if item.value > 0}
                             <span class="badge badge-ghost badge-xs">💰 {formatValue(item.value * item.quantity)} gp</span>
                           {/if}
@@ -341,11 +318,6 @@
                               </svg>
                             </label>
                             <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-neutral rounded-box w-48 border-2 border-secondary text-xs">
-                              <li>
-                                <a on:click={() => handleToggleEquipped(item)} class="text-secondary">
-                                  {item.equipped ? '📦 Desequipar' : '✨ Equipar'}
-                                </a>
-                              </li>
                               <li>
                                 <a on:click={() => handleUpdateQuantity(item, 1)} class="text-success">
                                   ➕ Aumentar cantidad

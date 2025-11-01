@@ -72,8 +72,6 @@ func (h *Handler) CreateItem(c *gin.Context) {
 		Description: req.Description,
 		Quantity:    req.Quantity,
 		Value:       req.Value,
-		Equipped:    false,
-		Attuned:     false,
 		WeaponData:  req.WeaponData,
 		ArmorData:   req.ArmorData,
 		Open5eSlug:  req.Open5eSlug,
@@ -158,7 +156,7 @@ func (h *Handler) GetCharacterInventory(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// UpdateItem - Actualizar item (cantidad, equipped, attuned)
+// UpdateItem - Actualizar item (cantidad)
 func (h *Handler) UpdateItem(c *gin.Context) {
 	uid := c.GetString("uid")
 	if uid == "" {
@@ -217,14 +215,6 @@ func (h *Handler) UpdateItem(c *gin.Context) {
 			return
 		}
 		updates = append(updates, firestore.Update{Path: "quantity", Value: *req.Quantity})
-	}
-
-	if req.Equipped != nil {
-		updates = append(updates, firestore.Update{Path: "equipped", Value: *req.Equipped})
-	}
-
-	if req.Attuned != nil {
-		updates = append(updates, firestore.Update{Path: "attuned", Value: *req.Attuned})
 	}
 
 	if _, err := h.db.Collection("inventory_items").Doc(itemID).Update(ctx, updates); err != nil {
