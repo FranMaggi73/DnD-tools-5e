@@ -4,7 +4,7 @@
   import { goto } from '$app/navigation';
   import { userStore } from '$lib/stores/authStore';
   import { api } from '$lib/api/api';
-  import type { Campaign, Character } from '$lib/types';
+  import type { Campaign, Character, CharacterForm } from '$lib/types';
   import CharacterCard from '$lib/components/CharacterCard.svelte';
   import CharacterFormModal from '$lib/components/CharacterFormModal.svelte';
   import { headerTitle } from '$lib/stores/uiStore';
@@ -26,12 +26,41 @@
   let editingCharacter: Character | null = null;
   let isEdit = false;
 
-  let form = {
+  function emptyCharacterForm(): CharacterForm {
+  return {
     name: '',
+    class: 'Aventurero',
+    level: 1,
     maxHp: 10,
     armorClass: 10,
-    imageUrl: ''
+    initiative: 0,
+    speed: 30,
+    abilityScores: {
+      strength: 10,
+      dexterity: 10,
+      constitution: 10,
+      intelligence: 10,
+      wisdom: 10,
+      charisma: 10
+    },
+    savingThrows: {
+      strength: false,
+      dexterity: false,
+      constitution: false,
+      intelligence: false,
+      wisdom: false,
+      charisma: false
+    },
+    skills: []
   };
+}
+
+let form: CharacterForm = emptyCharacterForm();
+
+function resetForm() {
+  form = emptyCharacterForm();
+}
+
 
   // ===== NUEVO: Listener para sincronización en tiempo real =====
   let charactersUnsubscribe: (() => void) | null = null;
@@ -88,15 +117,6 @@
     }
   }
 
-  function resetForm() {
-    form = {
-      name: '',
-      maxHp: 10,
-      armorClass: 10,
-      imageUrl: ''
-    };
-  }
-
   function openCreateModal() {
     editingCharacter = null;
     isEdit = false;
@@ -105,16 +125,15 @@
   }
 
   function openEditModal(character: Character) {
-    editingCharacter = character;
-    isEdit = true;
-    form = {
-      name: character.name,
-      maxHp: character.maxHp,
-      armorClass: character.armorClass,
-      imageUrl: character.imageUrl
-    };
-    showFormModal = true;
-  }
+  editingCharacter = character;
+  isEdit = true;
+  form = {
+    ...emptyCharacterForm(),
+    ...character
+  };
+  showFormModal = true;
+}
+
 
   async function handleSubmit() {
     try {

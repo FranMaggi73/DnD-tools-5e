@@ -69,10 +69,11 @@ export interface SavingThrows {
 
 export interface Skill {
   name: string;       // Ej: "Acrobatics"
-  ability: string;    // "dex", "str", etc.
+  ability: AbilityKey; // <- más seguro que string
   proficient: boolean;
   expertise: boolean; // x2 proficiency
 }
+
 
 export interface Character {
   id: string;
@@ -290,23 +291,24 @@ export function getSkillBonus(
 /**
  * Lista de skills de D&D 5e con su habilidad asociada
  */
-export const DND_SKILLS: Array<{ name: string; ability: AbilityKey }> = [
-  { name: 'Acrobatics', ability: 'dexterity' },
-  { name: 'Animal Handling', ability: 'wisdom' },
-  { name: 'Arcana', ability: 'intelligence' },
-  { name: 'Athletics', ability: 'strength' },
-  { name: 'Deception', ability: 'charisma' },
-  { name: 'History', ability: 'intelligence' },
-  { name: 'Insight', ability: 'wisdom' },
-  { name: 'Intimidation', ability: 'charisma' },
-  { name: 'Investigation', ability: 'intelligence' },
-  { name: 'Medicine', ability: 'wisdom' },
-  { name: 'Nature', ability: 'intelligence' },
-  { name: 'Perception', ability: 'wisdom' },
-  { name: 'Performance', ability: 'charisma' },
-  { name: 'Persuasion', ability: 'charisma' },
-  { name: 'Religion', ability: 'intelligence' },
-  { name: 'Sleight of Hand', ability: 'dexterity' },
-  { name: 'Stealth', ability: 'dexterity' },
-  { name: 'Survival', ability: 'wisdom' },
+// Lista de skills de D&D 5e con su habilidad asociada (añadimos label)
+export const DND_SKILLS: Array<{ name: string; ability: AbilityKey; label: string }> = [
+  { name: 'Acrobatics', ability: 'dexterity', label: 'Acrobatics' },
+  { name: 'Animal Handling', ability: 'wisdom', label: 'Animal Handling' },
+  { name: 'Arcana', ability: 'intelligence', label: 'Arcana' },
+  { name: 'Athletics', ability: 'strength', label: 'Athletics' },
+  { name: 'Deception', ability: 'charisma', label: 'Deception' },
+  { name: 'History', ability: 'intelligence', label: 'History' },
+  { name: 'Insight', ability: 'wisdom', label: 'Insight' },
+  { name: 'Intimidation', ability: 'charisma', label: 'Intimidation' },
+  { name: 'Investigation', ability: 'intelligence', label: 'Investigation' },
+  { name: 'Medicine', ability: 'wisdom', label: 'Medicine' },
+  { name: 'Nature', ability: 'intelligence', label: 'Nature' },
+  { name: 'Perception', ability: 'wisdom', label: 'Perception' },
+  { name: 'Performance', ability: 'charisma', label: 'Performance' },
+  { name: 'Persuasion', ability: 'charisma', label: 'Persuasion' },
+  { name: 'Religion', ability: 'intelligence', label: 'Religion' },
+  { name: 'Sleight of Hand', ability: 'dexterity', label: 'Sleight of Hand' },
+  { name: 'Stealth', ability: 'dexterity', label: 'Stealth' },
+  { name: 'Survival', ability: 'wisdom', label: 'Survival' },
 ];
