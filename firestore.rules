@@ -18,8 +18,17 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/events/$(campaignId)).data.dmId == request.auth.uid;
     }
     
+    // ✅ FIX: Query-based membership check
     function isCampaignMember(campaignId) {
-      return exists(/databases/$(database)/documents/event_members/$(request.auth.uid + '_' + campaignId));
+      return exists(/databases/$(database)/documents/event_members/$(request.auth.uid + '_' + campaignId)) ||
+             existsAfter(/databases/$(database)/documents/event_members/$(request.auth.uid + '_' + campaignId));
+    }
+    
+    // ✅ NUEVO: Verificar si existe CUALQUIER documento de membresía
+    function isCampaignMemberAny(campaignId) {
+      // Fallback: si la función específica falla, intentar con query
+      return get(/databases/$(database)/documents/events/$(campaignId)).data.dmId == request.auth.uid ||
+             get(/databases/$(database)/documents/events/$(campaignId)).data.playerIds.hasAny([request.auth.uid]);
     }
     
     function getCampaignFromEncounter(encounterId) {
@@ -34,7 +43,7 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isOwner(userId);
       allow update: if isAuthenticated() && isOwner(userId);
-      allow delete: if false; // Los usuarios no se eliminan
+      allow delete: if false;
     }
     
     // ===========================
@@ -58,15 +67,12 @@ service cloud.firestore {
     match /event_members/{memberId} {
       allow read: if isAuthenticated();
       
-      // Solo el DM puede agregar miembros
       allow create: if isAuthenticated() && 
                        isCampaignDM(request.resource.data.campaignId);
       
-      // Solo el DM puede actualizar miembros
       allow update: if isAuthenticated() && 
                        isCampaignDM(resource.data.campaignId);
       
-      // Solo el DM puede eliminar miembros (o backend en cascada)
       allow delete: if isAuthenticated() && 
                        isCampaignDM(resource.data.campaignId);
     }
@@ -76,20 +82,16 @@ service cloud.firestore {
     // ===========================
     
     match /invitations/{invitationId} {
-      // Solo el destinatario o el remitente pueden ver la invitación
       allow read: if isAuthenticated() && 
         (resource.data.toUserId == request.auth.uid || 
          resource.data.fromUserId == request.auth.uid);
       
-      // Solo el DM puede crear invitaciones
       allow create: if isAuthenticated() && 
                        isCampaignDM(request.resource.data.campaignId);
       
-      // Solo el destinatario puede actualizar (aceptar/rechazar)
       allow update: if isAuthenticated() && 
                        resource.data.toUserId == request.auth.uid;
       
-      // Backend o remitente pueden eliminar
       allow delete: if isAuthenticated() && 
         (resource.data.toUserId == request.auth.uid || 
          resource.data.fromUserId == request.auth.uid);
@@ -100,19 +102,15 @@ service cloud.firestore {
     // ===========================
     
     match /characters/{characterId} {
-      // Todos los miembros de la campaña pueden ver personajes
       allow read: if isAuthenticated();
       
-      // Solo el dueño puede crear su personaje
       allow create: if isAuthenticated() && 
                        request.resource.data.userId == request.auth.uid;
       
-      // El dueño o el DM pueden actualizar
       allow update: if isAuthenticated() && 
         (resource.data.userId == request.auth.uid || 
          isCampaignDM(resource.data.campaignId));
       
-      // El dueño o el DM pueden eliminar
       allow delete: if isAuthenticated() && 
         (resource.data.userId == request.auth.uid || 
          isCampaignDM(resource.data.campaignId));
@@ -123,18 +121,14 @@ service cloud.firestore {
     // ===========================
     
     match /encounters/{encounterId} {
-      // Todos los autenticados pueden ver encuentros
       allow read: if isAuthenticated();
       
-      // Solo el DM puede crear encuentros
       allow create: if isAuthenticated() && 
                        isCampaignDM(request.resource.data.campaignId);
       
-      // Solo el DM puede actualizar encuentros
       allow update: if isAuthenticated() && 
                        isCampaignDM(resource.data.campaignId);
       
-      // Solo el DM puede eliminar encuentros
       allow delete: if isAuthenticated() && 
                        isCampaignDM(resource.data.campaignId);
     }
@@ -144,24 +138,20 @@ service cloud.firestore {
     // ===========================
     
     match /combatants/{combatantId} {
-      // Leer: todos los autenticados pueden ver combatientes
       allow read: if isAuthenticated();
       
-      // Crear: solo el DM de la campaña del encuentro
       allow create: if isAuthenticated() && 
         exists(/databases/$(database)/documents/encounters/$(request.resource.data.encounterId)) &&
         isCampaignDM(
           get(/databases/$(database)/documents/encounters/$(request.resource.data.encounterId)).data.campaignId
         );
       
-      // Actualizar: solo el DM de la campaña
       allow update: if isAuthenticated() && 
         exists(/databases/$(database)/documents/encounters/$(resource.data.encounterId)) &&
         isCampaignDM(
           get(/databases/$(database)/documents/encounters/$(resource.data.encounterId)).data.campaignId
         );
       
-      // Eliminar: solo el DM de la campaña
       allow delete: if isAuthenticated() && 
         exists(/databases/$(database)/documents/encounters/$(resource.data.encounterId)) &&
         isCampaignDM(
@@ -170,30 +160,33 @@ service cloud.firestore {
     }
     
     // ===========================
-    // NOTES COLLECTION
+    // NOTES COLLECTION - ✅ CORREGIDO
     // ===========================
     
     match /notes/{noteId} {
-    // Leer: autor O (es compartida Y es miembro de la campaña)
-    allow read: if isAuthenticated() && (
-      resource.data.authorId == request.auth.uid || 
-      (resource.data.isShared == true && isCampaignMember(resource.data.campaignId))
-    );
+      // ✅ FIX: Leer notas usando campaignId directamente
+      allow read: if isAuthenticated() && (
+        // Autor puede leer siempre
+        resource.data.authorId == request.auth.uid || 
+        // Notas compartidas: verificar que sea DM o esté en playerIds
+        (resource.data.isShared == true && isCampaignMemberAny(resource.data.campaignId))
+      );
+      
+      // Crear: debe ser miembro Y ser el autor
+      allow create: if isAuthenticated() && 
+                      request.resource.data.authorId == request.auth.uid &&
+                      isCampaignMemberAny(request.resource.data.campaignId);
+      
+      // Actualizar: solo el autor Y seguir siendo miembro
+      allow update: if isAuthenticated() && 
+                      resource.data.authorId == request.auth.uid &&
+                      isCampaignMemberAny(resource.data.campaignId);
+      
+      // Eliminar: solo el autor
+      allow delete: if isAuthenticated() && 
+                      resource.data.authorId == request.auth.uid;
+    }
     
-    // Crear: autenticado Y es el autor Y es miembro de la campaña
-    allow create: if isAuthenticated() && 
-                    request.resource.data.authorId == request.auth.uid &&
-                    isCampaignMember(request.resource.data.campaignId);
-    
-    // Actualizar: solo el autor Y sigue siendo miembro
-    allow update: if isAuthenticated() && 
-                    resource.data.authorId == request.auth.uid &&
-                    isCampaignMember(resource.data.campaignId);
-    
-    // Eliminar: solo el autor
-    allow delete: if isAuthenticated() && 
-                    resource.data.authorId == request.auth.uid;
-  }
     // ===========================
     // DENY ALL OTHER COLLECTIONS
     // ===========================

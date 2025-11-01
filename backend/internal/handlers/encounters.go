@@ -295,7 +295,6 @@ func (h *Handler) AddCombatant(c *gin.Context) {
 				var char models.Character
 				if charDoc.DataTo(&char) == nil {
 					name = char.Name
-					imageURL = char.ImageURL
 					conditions = char.Conditions
 
 					if req.MaxHP == 0 {

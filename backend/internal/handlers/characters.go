@@ -75,7 +75,6 @@ func (h *Handler) CreateCharacter(c *gin.Context) {
 			ArmorClass: req.ArmorClass,
 			Initiative: req.Initiative,
 			Conditions: []string{},
-			ImageURL:   req.ImageURL,
 			CreatedAt:  time.Now(),
 			UpdatedAt:  time.Now(),
 		}
@@ -190,7 +189,6 @@ func (h *Handler) UpdateCharacter(c *gin.Context) {
 		{Path: "maxHp", Value: req.MaxHP},
 		{Path: "armorClass", Value: req.ArmorClass},
 		{Path: "initiative", Value: req.Initiative},
-		{Path: "imageUrl", Value: req.ImageURL},
 		{Path: "updatedAt", Value: time.Now()},
 	}
 

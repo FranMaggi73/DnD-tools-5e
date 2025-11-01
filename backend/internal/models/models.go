@@ -29,7 +29,6 @@ type Campaign struct {
 	PlayerIDs []string  `firestore:"playerIds" json:"playerIds"`
 }
 
-// Request para crear campaña
 type CreateCampaignRequest struct {
 	Name string `json:"name" binding:"required,min=3,max=100"`
 }
@@ -66,35 +65,87 @@ type Invitation struct {
 }
 
 // ===========================
-// PERSONAJES
+// PERSONAJES - ✅ NIVEL 1 COMPLETO
 // ===========================
 
-type Character struct {
-	ID         string    `firestore:"id" json:"id"`
-	CampaignID string    `firestore:"campaignId" json:"campaignId"`
-	UserID     string    `firestore:"userId" json:"userId"` // UID del jugador
-	Name       string    `firestore:"name" json:"name"`
-	Class      string    `firestore:"class" json:"class"` // Clase(s)
-	Level      int       `firestore:"level" json:"level"`
-	MaxHP      int       `firestore:"maxHp" json:"maxHp"`
-	CurrentHP  int       `firestore:"currentHp" json:"currentHp"`
-	ArmorClass int       `firestore:"armorClass" json:"armorClass"`
-	Initiative int       `firestore:"initiative" json:"initiative"` // Bonus de iniciativa
-	Conditions []string  `firestore:"conditions" json:"conditions"` // 👈 NUEVO: Condiciones persistentes
-	ImageURL   string    `firestore:"imageUrl" json:"imageUrl"`
-	CreatedAt  time.Time `firestore:"createdAt" json:"createdAt"`
-	UpdatedAt  time.Time `firestore:"updatedAt" json:"updatedAt"`
+// AbilityScores representa las 6 habilidades principales
+type AbilityScores struct {
+	Strength     int `firestore:"strength" json:"strength"`         // STR
+	Dexterity    int `firestore:"dexterity" json:"dexterity"`       // DEX
+	Constitution int `firestore:"constitution" json:"constitution"` // CON
+	Intelligence int `firestore:"intelligence" json:"intelligence"` // INT
+	Wisdom       int `firestore:"wisdom" json:"wisdom"`             // WIS
+	Charisma     int `firestore:"charisma" json:"charisma"`         // CHA
 }
 
-// ✅ MODIFICAR CreateCharacterRequest
+// SavingThrows representa los saving throws con proficiencia
+type SavingThrows struct {
+	Strength     bool `firestore:"strength" json:"strength"`
+	Dexterity    bool `firestore:"dexterity" json:"dexterity"`
+	Constitution bool `firestore:"constitution" json:"constitution"`
+	Intelligence bool `firestore:"intelligence" json:"intelligence"`
+	Wisdom       bool `firestore:"wisdom" json:"wisdom"`
+	Charisma     bool `firestore:"charisma" json:"charisma"`
+}
+
+// Skill representa una skill individual
+type Skill struct {
+	Name       string `firestore:"name" json:"name"`             // Ej: "Acrobatics"
+	Ability    string `firestore:"ability" json:"ability"`       // "dex", "str", etc.
+	Proficient bool   `firestore:"proficient" json:"proficient"` // ¿Tiene proficiency?
+	Expertise  bool   `firestore:"expertise" json:"expertise"`   // ¿Tiene expertise? (x2)
+}
+
+// Character - Modelo completo Nivel 1
+type Character struct {
+	ID         string `firestore:"id" json:"id"`
+	CampaignID string `firestore:"campaignId" json:"campaignId"`
+	UserID     string `firestore:"userId" json:"userId"`
+	Name       string `firestore:"name" json:"name"`
+	Class      string `firestore:"class" json:"class"`
+	Level      int    `firestore:"level" json:"level"`
+
+	// ===== COMBAT STATS =====
+	MaxHP      int      `firestore:"maxHp" json:"maxHp"`
+	CurrentHP  int      `firestore:"currentHp" json:"currentHp"`
+	ArmorClass int      `firestore:"armorClass" json:"armorClass"`
+	Initiative int      `firestore:"initiative" json:"initiative"` // Bonus de iniciativa
+	Speed      int      `firestore:"speed" json:"speed"`           // ✅ NUEVO: Walking speed (en pies)
+	Conditions []string `firestore:"conditions" json:"conditions"`
+
+	// ===== NIVEL 1: ABILITY SCORES =====
+	AbilityScores AbilityScores `firestore:"abilityScores" json:"abilityScores"` // ✅ NUEVO
+
+	// ===== NIVEL 1: PROFICIENCIES =====
+	ProficiencyBonus int          `firestore:"proficiencyBonus" json:"proficiencyBonus"` // ✅ NUEVO: Basado en nivel
+	SavingThrows     SavingThrows `firestore:"savingThrows" json:"savingThrows"`         // ✅ NUEVO
+	Skills           []Skill      `firestore:"skills" json:"skills"`                     // ✅ NUEVO
+
+	// ===== METADATA =====
+	CreatedAt time.Time `firestore:"createdAt" json:"createdAt"`
+	UpdatedAt time.Time `firestore:"updatedAt" json:"updatedAt"`
+}
+
+// ===== REQUESTS ACTUALIZADOS =====
+
 type CreateCharacterRequest struct {
-	Name       string `json:"name" binding:"required,min=2,max=50"`
-	Class      string `json:"class" binding:"required,min=2,max=50"`
-	Level      int    `json:"level" binding:"required,min=1,max=20"`
-	MaxHP      int    `json:"maxHp" binding:"required,min=1,max=999"`
-	ArmorClass int    `json:"armorClass" binding:"required,min=1,max=30"`
-	Initiative int    `json:"initiative" binding:"min=-5,max=15"`
-	ImageURL   string `json:"imageUrl" binding:"max=500"`
+	// Básico
+	Name  string `json:"name" binding:"required,min=2,max=50"`
+	Class string `json:"class" binding:"required,min=2,max=50"`
+	Level int    `json:"level" binding:"required,min=1,max=20"`
+
+	// Combat
+	MaxHP      int `json:"maxHp" binding:"required,min=1,max=999"`
+	ArmorClass int `json:"armorClass" binding:"required,min=1,max=30"`
+	Initiative int `json:"initiative" binding:"min=-5,max=15"`
+	Speed      int `json:"speed" binding:"required,min=0,max=120"` // ✅ NUEVO
+
+	// ✅ NUEVO: Ability Scores
+	AbilityScores AbilityScores `json:"abilityScores" binding:"required"`
+
+	// ✅ NUEVO: Proficiencies
+	SavingThrows SavingThrows `json:"savingThrows"`
+	Skills       []Skill      `json:"skills"`
 }
 
 // ===========================
@@ -117,7 +168,7 @@ type CreateEncounterRequest struct {
 }
 
 // ===========================
-// COMBATIENTES (Criaturas y PJs en combate)
+// COMBATIENTES
 // ===========================
 
 type Combatant struct {
@@ -126,14 +177,14 @@ type Combatant struct {
 	Type           string    `firestore:"type" json:"type"` // "character" o "creature"
 	CharacterID    string    `firestore:"characterId,omitempty" json:"characterId,omitempty"`
 	Name           string    `firestore:"name" json:"name"`
-	Initiative     int       `firestore:"initiative" json:"initiative"` // Valor de iniciativa tirado
+	Initiative     int       `firestore:"initiative" json:"initiative"`
 	MaxHP          int       `firestore:"maxHp" json:"maxHp"`
 	CurrentHP      int       `firestore:"currentHp" json:"currentHp"`
 	ArmorClass     int       `firestore:"armorClass" json:"armorClass"`
-	Conditions     []string  `firestore:"conditions" json:"conditions"` // ["Poisoned", "Stunned"]
+	Conditions     []string  `firestore:"conditions" json:"conditions"`
 	ImageURL       string    `firestore:"imageUrl" json:"imageUrl"`
-	IsNPC          bool      `firestore:"isNpc" json:"isNpc"`                                       // true para criaturas
-	CreatureSource string    `firestore:"creatureSource,omitempty" json:"creatureSource,omitempty"` // "manual", "dndbeyond"
+	IsNPC          bool      `firestore:"isNpc" json:"isNpc"`
+	CreatureSource string    `firestore:"creatureSource,omitempty" json:"creatureSource,omitempty"`
 	CreatedAt      time.Time `firestore:"createdAt" json:"createdAt"`
 }
 
@@ -148,6 +199,7 @@ type AddCombatantRequest struct {
 	ImageURL    string `json:"imageUrl" binding:"max=500"`
 	IsNPC       bool   `json:"isNpc"`
 }
+
 type UpdateCombatantRequest struct {
 	CurrentHP  *int     `json:"currentHp,omitempty"`
 	Conditions []string `json:"conditions,omitempty"`
