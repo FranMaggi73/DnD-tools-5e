@@ -295,31 +295,22 @@
   }
 
   function addTag() {
-  // Prevenir múltiples ejecuciones simultáneas
-  if (isAddingTag) {
-    console.log('Tag addition already in progress');
-    return;
-  }
-
-  const trimmedTag = tagInput.trim().toLowerCase();
-  
-  // Validaciones previas
-  if (!trimmedTag) {
-    return;
-  }
-  
-  // ✅ VERIFICAR DUPLICADO ANTES DE VALIDAR
-  if (form.tags.includes(trimmedTag)) {
-    validationErrors.tags = `La etiqueta "${trimmedTag}" ya existe`;
-    touched.tags = true;
-    tagInput = ''; // Limpiar input
-    return;
-  }
-  
-  isAddingTag = true; // Bloquear
-  
-  try {
-    // Validar antes de agregar
+    // ✅ FIX: Validación síncrona, sin setTimeout
+    const trimmedTag = tagInput.trim().toLowerCase();
+    
+    if (!trimmedTag) {
+      return;
+    }
+    
+    // Verificar duplicado ANTES de cualquier otra validación
+    if (form.tags.includes(trimmedTag)) {
+      validationErrors.tags = `La etiqueta "${trimmedTag}" ya existe`;
+      touched.tags = true;
+      tagInput = '';
+      return;
+    }
+    
+    // Validar límites
     const newTags = [...form.tags, trimmedTag];
     const validation = validateNoteTags(newTags);
     
@@ -329,18 +320,11 @@
       return;
     }
     
-    // Agregar tag si pasó todas las validaciones
+    // ✅ TODO OK: agregar tag
     form.tags = newTags;
     validationErrors.tags = '';
     tagInput = '';
-    
-  } finally {
-    // Siempre desbloquear después de 100ms
-    setTimeout(() => {
-      isAddingTag = false;
-    }, 100);
   }
-}
   function removeTag(tag: string) {
     form.tags = form.tags.filter(t => t !== tag);
   }

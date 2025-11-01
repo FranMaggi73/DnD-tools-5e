@@ -18,7 +18,9 @@ import (
 // ===========================
 
 const (
-	CacheFreshnessThreshold = 10 * time.Second // ← Umbral de frescura del caché
+	CacheFreshnessThreshold = 10 * time.Second
+	CombatDataFreshness     = 3 * time.Second  // Datos de combate críticos
+	CampaignDataFreshness   = 10 * time.Second // Campañas cambian menos
 )
 
 // ===========================
@@ -38,9 +40,10 @@ func (h *Handler) GetCampaignFullData(c *gin.Context) {
 
 	// ===== PASO 2: Validar frescura del caché =====
 	now := time.Now()
-	campaignFresh := foundCampaign && now.Sub(campaignCachedAt) < CacheFreshnessThreshold
-	membersFresh := foundMembers && now.Sub(membersCachedAt) < CacheFreshnessThreshold
-	charactersFresh := foundCharacters && now.Sub(charsCachedAt) < CacheFreshnessThreshold
+	// ✅ FIX: Usar threshold correcto según tipo de dato
+	campaignFresh := foundCampaign && now.Sub(campaignCachedAt) < CampaignDataFreshness
+	membersFresh := foundMembers && now.Sub(membersCachedAt) < CampaignDataFreshness
+	charactersFresh := foundCharacters && now.Sub(charsCachedAt) < CampaignDataFreshness
 
 	// ✅ SI TODO ESTÁ FRESCO, devolver inmediatamente
 	if campaignFresh && membersFresh && charactersFresh {
@@ -68,10 +71,21 @@ func (h *Handler) GetCampaignFullData(c *gin.Context) {
 
 	// Fetch campaign si no está fresco
 	if !campaignFresh {
+		// Fetch characters (con validación de caché MÁS ESTRICTA para datos de combate)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c, err := h.getCampaignByID(ctx, campaignID)
+
+			cached, cachedAt, found := h.cache.GetCharacters(campaignID)
+			// ✅ FIX: En combate, necesitamos datos más frescos
+			if found && time.Since(cachedAt) < CombatDataFreshness {
+				mu.Lock()
+				characters = cached
+				mu.Unlock()
+				return
+			}
+
+			ch, err := h.getCampaignCharacters(ctx, campaignID)
 			if err != nil {
 				mu.Lock()
 				errors = append(errors, err)
@@ -79,8 +93,8 @@ func (h *Handler) GetCampaignFullData(c *gin.Context) {
 				return
 			}
 			mu.Lock()
-			campaign = c
-			h.cache.SetCampaign(c) // TTL: 10 segundos
+			characters = ch
+			h.cache.SetCharacters(campaignID, ch)
 			mu.Unlock()
 		}()
 	} else {

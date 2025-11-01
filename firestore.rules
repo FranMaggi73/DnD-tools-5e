@@ -174,23 +174,26 @@ service cloud.firestore {
     // ===========================
     
     match /notes/{noteId} {
-      // Leer: autor O es compartida (cualquier autenticado puede ver notas compartidas)
-      allow read: if isAuthenticated() && 
-        (resource.data.authorId == request.auth.uid || 
-         resource.data.isShared == true);
-      
-      // Crear: autenticado Y es el autor
-      allow create: if isAuthenticated() && 
-                       request.resource.data.authorId == request.auth.uid;
-      
-      // Actualizar: solo el autor
-      allow update: if isAuthenticated() && 
-                       resource.data.authorId == request.auth.uid;
-      
-      // Eliminar: solo el autor
-      allow delete: if isAuthenticated() && 
-                       resource.data.authorId == request.auth.uid;
-    }
+    // Leer: autor O (es compartida Y es miembro de la campaña)
+    allow read: if isAuthenticated() && (
+      resource.data.authorId == request.auth.uid || 
+      (resource.data.isShared == true && isCampaignMember(resource.data.campaignId))
+    );
+    
+    // Crear: autenticado Y es el autor Y es miembro de la campaña
+    allow create: if isAuthenticated() && 
+                    request.resource.data.authorId == request.auth.uid &&
+                    isCampaignMember(request.resource.data.campaignId);
+    
+    // Actualizar: solo el autor Y sigue siendo miembro
+    allow update: if isAuthenticated() && 
+                    resource.data.authorId == request.auth.uid &&
+                    isCampaignMember(resource.data.campaignId);
+    
+    // Eliminar: solo el autor
+    allow delete: if isAuthenticated() && 
+                    resource.data.authorId == request.auth.uid;
+  }
     // ===========================
     // DENY ALL OTHER COLLECTIONS
     // ===========================

@@ -108,8 +108,9 @@ func (c *Cache) InvalidatePattern(pattern string) {
 
 // InvalidateCampaignSafe invalida con locks apropiados
 func (c *Cache) InvalidateCampaignSafe(campaignID string) {
+	// ✅ FIX: Un solo lock para toda la operación
 	c.mutex.Lock()
-	keysToDelete := make([]string, 0)
+	defer c.mutex.Unlock()
 
 	patterns := []string{
 		"campaign:" + campaignID,
@@ -117,21 +118,21 @@ func (c *Cache) InvalidateCampaignSafe(campaignID string) {
 		"characters:" + campaignID,
 	}
 
+	// Recolectar keys a eliminar
+	keysToDelete := make([]string, 0)
 	for key := range c.items {
 		for _, pattern := range patterns {
 			if containsPattern(key, pattern) {
 				keysToDelete = append(keysToDelete, key)
-				break
+				break // No necesita verificar otros patterns
 			}
 		}
 	}
-	c.mutex.Unlock()
 
-	c.mutex.Lock()
+	// Eliminar todas las keys encontradas
 	for _, key := range keysToDelete {
 		delete(c.items, key)
 	}
-	c.mutex.Unlock()
 }
 
 // cleanupExpired elimina items expirados periódicamente

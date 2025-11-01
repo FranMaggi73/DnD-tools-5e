@@ -4,6 +4,7 @@ package middleware
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"cloud.google.com/go/firestore"
 	"github.com/gin-gonic/gin"
@@ -50,10 +51,11 @@ func (pm *PermissionsMiddleware) RequireCampaignDM() gin.HandlerFunc {
 
 		ctx := context.Background()
 
-		// 1. Verificar caché de campaña (solo para obtener DM ID rápido)
+		// ✅ FIX: Intentar cache primero SIN lock de escritura
 		campaign, _, found := pm.cache.GetCampaign(campaignID)
+
 		if !found {
-			// Cache miss: buscar en Firestore
+			// ✅ FIX: Solo UNA query a Firestore si cache miss
 			doc, err := pm.db.Collection("events").Doc(campaignID).Get(ctx)
 			if err != nil {
 				c.JSON(http.StatusNotFound, gin.H{"error": "Campaña no encontrada"})
@@ -69,17 +71,16 @@ func (pm *PermissionsMiddleware) RequireCampaignDM() gin.HandlerFunc {
 			}
 
 			campaign = campaignData
+			// ✅ FIX: Cachear DESPUÉS de verificar que existe
 			pm.cache.SetCampaign(campaign)
 		}
 
-		// 2. Verificar permisos
 		if campaign.DmID != uid {
 			c.JSON(http.StatusForbidden, gin.H{"error": "Solo el DM puede realizar esta acción"})
 			c.Abort()
 			return
 		}
 
-		// 3. Guardar campaña en contexto para reuso
 		c.Set("campaign", campaign)
 		c.Next()
 	}
@@ -231,9 +232,13 @@ func (pm *PermissionsMiddleware) RequireEncounterDM() gin.HandlerFunc {
 
 		ctx := context.Background()
 
-		// Obtener encuentro (cacheamos porque se consulta frecuentemente en combate)
-		encounter, _, found := pm.cache.GetEncounter(encounterID)
-		if !found {
+		// ✅ FIX: Encounter tiene TTL muy corto (5s), intentar cache primero
+		encounter, cachedAt, found := pm.cache.GetEncounter(encounterID)
+
+		// Solo usar cache si tiene menos de 3 segundos (datos críticos de combate)
+		cacheValid := found && time.Since(cachedAt) < 3*time.Second
+
+		if !cacheValid {
 			encounterDoc, err := pm.db.Collection("encounters").Doc(encounterID).Get(ctx)
 			if err != nil {
 				c.JSON(http.StatusNotFound, gin.H{"error": "Encuentro no encontrado"})
@@ -252,7 +257,7 @@ func (pm *PermissionsMiddleware) RequireEncounterDM() gin.HandlerFunc {
 			pm.cache.SetEncounter(encounter)
 		}
 
-		// Verificar que el usuario es DM de la campaña del encuentro
+		// Verificar DM de la campaña (aquí sí puede usar cache más antiguo)
 		campaign, _, found := pm.cache.GetCampaign(encounter.CampaignID)
 		if !found {
 			campaignDoc, err := pm.db.Collection("events").Doc(encounter.CampaignID).Get(ctx)
