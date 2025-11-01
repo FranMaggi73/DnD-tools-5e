@@ -291,24 +291,78 @@ export function getSkillBonus(
 /**
  * Lista de skills de D&D 5e con su habilidad asociada
  */
-// Lista de skills de D&D 5e con su habilidad asociada (añadimos label)
 export const DND_SKILLS: Array<{ name: string; ability: AbilityKey; label: string }> = [
-  { name: 'Acrobatics', ability: 'dexterity', label: 'Acrobatics' },
-  { name: 'Animal Handling', ability: 'wisdom', label: 'Animal Handling' },
-  { name: 'Arcana', ability: 'intelligence', label: 'Arcana' },
-  { name: 'Athletics', ability: 'strength', label: 'Athletics' },
-  { name: 'Deception', ability: 'charisma', label: 'Deception' },
-  { name: 'History', ability: 'intelligence', label: 'History' },
-  { name: 'Insight', ability: 'wisdom', label: 'Insight' },
-  { name: 'Intimidation', ability: 'charisma', label: 'Intimidation' },
-  { name: 'Investigation', ability: 'intelligence', label: 'Investigation' },
-  { name: 'Medicine', ability: 'wisdom', label: 'Medicine' },
-  { name: 'Nature', ability: 'intelligence', label: 'Nature' },
-  { name: 'Perception', ability: 'wisdom', label: 'Perception' },
-  { name: 'Performance', ability: 'charisma', label: 'Performance' },
-  { name: 'Persuasion', ability: 'charisma', label: 'Persuasion' },
-  { name: 'Religion', ability: 'intelligence', label: 'Religion' },
-  { name: 'Sleight of Hand', ability: 'dexterity', label: 'Sleight of Hand' },
-  { name: 'Stealth', ability: 'dexterity', label: 'Stealth' },
-  { name: 'Survival', ability: 'wisdom', label: 'Survival' },
+  { name: 'Acrobatics', ability: 'dexterity', label: 'Acrobacias' },
+  { name: 'Animal Handling', ability: 'wisdom', label: 'Trato con Animales' },
+  { name: 'Arcana', ability: 'intelligence', label: 'Arcano' },
+  { name: 'Athletics', ability: 'strength', label: 'Atletismo' },
+  { name: 'Deception', ability: 'charisma', label: 'Engaño' },
+  { name: 'History', ability: 'intelligence', label: 'Historia' },
+  { name: 'Insight', ability: 'wisdom', label: 'Perspicacia' },
+  { name: 'Intimidation', ability: 'charisma', label: 'Intimidación' },
+  { name: 'Investigation', ability: 'intelligence', label: 'Investigación' },
+  { name: 'Medicine', ability: 'wisdom', label: 'Medicina' },
+  { name: 'Nature', ability: 'intelligence', label: 'Naturaleza' },
+  { name: 'Perception', ability: 'wisdom', label: 'Percepción' },
+  { name: 'Performance', ability: 'charisma', label: 'Interpretación' },
+  { name: 'Persuasion', ability: 'charisma', label: 'Persuasión' },
+  { name: 'Religion', ability: 'intelligence', label: 'Religión' },
+  { name: 'Sleight of Hand', ability: 'dexterity', label: 'Juego de Manos' },
+  { name: 'Stealth', ability: 'dexterity', label: 'Sigilo' },
+  { name: 'Survival', ability: 'wisdom', label: 'Supervivencia' },
 ];
+
+/**
+ * Crea un formulario vacío de personaje con todos los campos inicializados
+ */
+export function createEmptyCharacterForm(): CharacterForm {
+  return {
+    name: '',
+    class: 'Aventurero',
+    level: 1,
+    maxHp: 10,
+    armorClass: 10,
+    initiative: 0,
+    speed: 30,
+    abilityScores: {
+      strength: 10,
+      dexterity: 10,
+      constitution: 10,
+      intelligence: 10,
+      wisdom: 10,
+      charisma: 10
+    },
+    savingThrows: {
+      strength: false,
+      dexterity: false,
+      constitution: false,
+      intelligence: false,
+      wisdom: false,
+      charisma: false
+    },
+    skills: DND_SKILLS.map(skill => ({
+      name: skill.name,
+      ability: skill.ability,
+      proficient: false,
+      expertise: false
+    }))
+  };
+}
+
+/**
+ * Convierte un Character a CharacterForm para edición
+ */
+export function characterToForm(character: Character): CharacterForm {
+  return {
+    name: character.name,
+    class: character.class,
+    level: character.level,
+    maxHp: character.maxHp,
+    armorClass: character.armorClass,
+    initiative: character.initiative,
+    speed: character.speed,
+    abilityScores: { ...character.abilityScores },
+    savingThrows: { ...character.savingThrows },
+    skills: character.skills.map(s => ({ ...s }))
+  };
+}

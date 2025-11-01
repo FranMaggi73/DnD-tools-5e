@@ -1,4 +1,3 @@
-<!-- frontend/src/lib/components/CharacterCardExtended.svelte -->
 <script lang="ts">
   import type { Character, AbilityKey, Skill } from '$lib/types';
   import { 
@@ -29,11 +28,15 @@
     charisma: getAbilityModifier(character.abilityScores.charisma)
   };
 
-  // Keys para iterar sin casts en template
+  // Keys para iterar
   $: abilityKeys = Object.keys(character.abilityScores) as AbilityKey[];
   $: savingThrowKeys = Object.keys(character.savingThrows) as AbilityKey[];
 
-  // Labels
+  // Filtrar skills por proficiencia
+  $: proficientSkills = character.skills.filter(s => s.proficient || s.expertise);
+  $: otherSkills = character.skills.filter(s => !s.proficient && !s.expertise);
+
+  // Labels en español
   const abilityLabels: Record<AbilityKey, string> = {
     strength: 'FUE',
     dexterity: 'DES',
@@ -81,6 +84,31 @@
     const abilityMod = abilityModifiers[ability];
     const isProficient = character.savingThrows[ability];
     return isProficient ? (abilityMod + proficiencyBonus) : abilityMod;
+  }
+
+  // Función para obtener el nombre traducido de la skill
+  function getSkillLabel(skillName: string): string {
+    const translations: Record<string, string> = {
+      'Acrobatics': 'Acrobacias',
+      'Animal Handling': 'Trato con Animales',
+      'Arcana': 'Arcano',
+      'Athletics': 'Atletismo',
+      'Deception': 'Engaño',
+      'History': 'Historia',
+      'Insight': 'Perspicacia',
+      'Intimidation': 'Intimidación',
+      'Investigation': 'Investigación',
+      'Medicine': 'Medicina',
+      'Nature': 'Naturaleza',
+      'Perception': 'Percepción',
+      'Performance': 'Interpretación',
+      'Persuasion': 'Persuasión',
+      'Religion': 'Religión',
+      'Sleight of Hand': 'Juego de Manos',
+      'Stealth': 'Sigilo',
+      'Survival': 'Supervivencia'
+    };
+    return translations[skillName] || skillName;
   }
 </script>
 
@@ -224,26 +252,57 @@
         </div>
       </div>
 
-      <!-- Skills -->
+      <!-- Skills - Separadas por proficiencia -->
       <div class="mb-4">
         <h4 class="font-medieval text-lg text-neutral mb-3 flex items-center gap-2">
           🎯 Habilidades
         </h4>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-2">
-          {#each character.skills as skill}
-            <div class={"flex items-center gap-2 p-2 rounded-lg border-2 " + (skill.expertise ? 'bg-warning/20 border-warning' : skill.proficient ? 'bg-success/20 border-success' : 'bg-neutral/10 border-neutral/30')}>
-              <div class={"w-4 h-4 rounded-full border-2 flex items-center justify-center " + (skill.expertise ? 'bg-warning border-warning text-xs' : skill.proficient ? 'bg-success border-success' : 'border-neutral/50')}>
-                {#if skill.expertise}★{/if}
-              </div>
-              <div class="flex-1 min-w-0">
-                <div class="text-sm font-medieval truncate">{skill.name}</div>
-              </div>
-              <div class="text-sm font-bold text-neutral">
-                {formatModifier(getSkillBonusForCharacter(skill))}
+
+        <!-- Skills con proficiencia -->
+        {#if proficientSkills.length > 0}
+          <div class="mb-3">
+            <p class="text-xs font-medieval text-neutral/60 mb-2">COMPETENTES</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {#each proficientSkills as skill}
+                <div class={"flex items-center gap-2 p-2 rounded-lg border-2 " + (skill.expertise ? 'bg-warning/20 border-warning' : 'bg-success/20 border-success')}>
+                  <div class={"w-4 h-4 rounded-full border-2 flex items-center justify-center text-xs " + (skill.expertise ? 'bg-warning border-warning' : 'bg-success border-success')}>
+                    {#if skill.expertise}★{/if}
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-medieval truncate">{getSkillLabel(skill.name)}</div>
+                  </div>
+                  <div class="text-sm font-bold text-neutral">
+                    {formatModifier(getSkillBonusForCharacter(skill))}
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+        <!-- Skills sin proficiencia (colapsable) -->
+        {#if otherSkills.length > 0}
+          <details class="collapse collapse-arrow bg-neutral/5 rounded-lg border border-neutral/20">
+            <summary class="collapse-title text-xs font-medieval text-neutral/60">
+              OTRAS HABILIDADES ({otherSkills.length})
+            </summary>
+            <div class="collapse-content">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-2 pt-2">
+                {#each otherSkills as skill}
+                  <div class="flex items-center gap-2 p-2 rounded-lg border-2 bg-neutral/10 border-neutral/30">
+                    <div class="w-4 h-4 rounded-full border-2 border-neutral/50"></div>
+                    <div class="flex-1 min-w-0">
+                      <div class="text-sm font-medieval truncate">{getSkillLabel(skill.name)}</div>
+                    </div>
+                    <div class="text-sm font-bold text-neutral">
+                      {formatModifier(getSkillBonusForCharacter(skill))}
+                    </div>
+                  </div>
+                {/each}
               </div>
             </div>
-          {/each}
-        </div>
+          </details>
+        {/if}
       </div>
     {/if}
   </div>

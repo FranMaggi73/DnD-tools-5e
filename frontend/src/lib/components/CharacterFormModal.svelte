@@ -68,45 +68,68 @@
   $: abilityKeys = Object.keys(form.abilityScores) as AbilityKey[];
   $: savingThrowKeys = Object.keys(form.savingThrows) as AbilityKey[];
 
-  // Validación reactiva
-  $: if (touched.name) {
-    const result = validateCharacterName(form.name);
-    errors.name = result.error || '';
+  // ✅ VALIDACIÓN REACTIVA - Validar independientemente de touched
+  $: {
+    // Name validation
+    const nameResult = validateCharacterName(form.name);
+    errors.name = nameResult.error || '';
+
+    // Class validation
+    if (!form.class || form.class.trim().length < 2) {
+      errors.class = 'La clase debe tener al menos 2 caracteres';
+    } else if (form.class.trim().length > 50) {
+      errors.class = 'La clase no puede tener más de 50 caracteres';
+    } else {
+      errors.class = '';
+    }
+
+    // Level validation
+    const levelResult = validateLevel(form.level);
+    errors.level = levelResult.error || '';
+
+    // MaxHp validation
+    const maxHpResult = validateHP(form.maxHp);
+    errors.maxHp = maxHpResult.error || '';
+
+    // ArmorClass validation
+    const armorClassResult = validateArmorClass(form.armorClass);
+    errors.armorClass = armorClassResult.error || '';
+
+    // Speed validation
+    if (form.speed < 0) {
+      errors.speed = 'La velocidad no puede ser negativa';
+    } else if (form.speed > 120) {
+      errors.speed = 'La velocidad máxima es 120 pies';
+    } else {
+      errors.speed = '';
+    }
   }
 
-  $: if (touched.level) {
-    const result = validateLevel(form.level);
-    errors.level = result.error || '';
-  }
-
-  $: if (touched.maxHp) {
-    const result = validateHP(form.maxHp);
-    errors.maxHp = result.error || '';
-  }
-
-  $: if (touched.armorClass) {
-    const result = validateArmorClass(form.armorClass);
-    errors.armorClass = result.error || '';
-  }
-
-  // Verificar si el paso actual es válido
+  // ✅ VERIFICAR SI EL PASO ACTUAL ES VÁLIDO (sin depender de touched)
   $: isStepValid = validateCurrentStep();
 
   function validateCurrentStep(): boolean {
     switch (currentStep) {
       case 1: // Información básica
-        return form.name.trim() !== '' && 
-               form.class.trim() !== '' && 
-               form.level >= 1 && 
-               form.level <= 20 &&
-               !errors.name && 
-               !errors.class && 
-               !errors.level;
+        const nameValid = form.name.trim() !== '' && !errors.name;
+        const classValid = form.class.trim() !== '' && form.class.trim().length >= 2 && !errors.class;
+        const levelValid = form.level >= 1 && form.level <= 20 && !errors.level;
+        
+        console.log('Step 1 validation:', { 
+          nameValid, 
+          classValid, 
+          levelValid, 
+          name: form.name,
+          class: form.class,
+          level: form.level,
+          errors 
+        });
+        return nameValid && classValid && levelValid;
       
       case 2: // Combat Stats
         return form.maxHp > 0 && 
                form.armorClass > 0 && 
-               form.speed > 0 &&
+               form.speed >= 0 &&
                !errors.maxHp && 
                !errors.armorClass && 
                !errors.speed;
@@ -127,8 +150,27 @@
   }
 
   function nextStep() {
+    // Marcar campos del paso actual como tocados
+    if (currentStep === 1) {
+      touched.name = true;
+      touched.class = true;
+      touched.level = true;
+    } else if (currentStep === 2) {
+      touched.maxHp = true;
+      touched.armorClass = true;
+      touched.speed = true;
+    }
+
     if (isStepValid && currentStep < totalSteps) {
       currentStep++;
+    } else {
+      console.log('❌ Step validation failed:', { 
+        currentStep, 
+        isStepValid, 
+        errors, 
+        form,
+        touched 
+      });
     }
   }
 
@@ -159,7 +201,6 @@
 
   function getSkillBonus(skill: Skill | undefined): number {
     if (!skill) return 0;
-    // ahora Skill.ability es AbilityKey, no hace falta cast
     const abilityMod = abilityModifiers[skill.ability];
     let bonus = abilityMod;
     
@@ -189,6 +230,7 @@
       currentStep = step;
       if (!validateCurrentStep()) {
         allValid = false;
+        console.log('❌ Validation failed at step:', step);
         break;
       }
     }
@@ -297,9 +339,10 @@
                 type="text" 
                 bind:value={form.name}
                 on:blur={() => handleBlur('name')}
+                on:input={() => touched.name = true}
                 placeholder="Ej: Gandalf el Gris"
                 class="input input-bordered bg-[#2d241c] text-base-content 
-                       {errors.name && touched.name ? 'border-error border-2' : 'border-primary/50'}"
+                      {errors.name && touched.name ? 'border-error border-2' : 'border-primary/50'}"
               />
               {#if errors.name && touched.name}
                 <label class="label">
@@ -319,9 +362,16 @@
                   type="text" 
                   bind:value={form.class}
                   on:blur={() => handleBlur('class')}
+                  on:input={() => touched.class = true}
                   placeholder="Ej: Mago"
-                  class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
+                  class="input input-bordered bg-[#2d241c] text-base-content 
+                        {errors.class && touched.class ? 'border-error border-2' : 'border-primary/50'}"
                 />
+                {#if errors.class && touched.class}
+                  <label class="label">
+                    <span class="label-text-alt text-error">⚠️ {errors.class}</span>
+                  </label>
+                {/if}
               </div>
 
               <div class="form-control">
@@ -334,10 +384,11 @@
                   type="number" 
                   bind:value={form.level}
                   on:blur={() => handleBlur('level')}
+                  on:input={() => touched.level = true}
                   min="1"
                   max="20"
                   class="input input-bordered bg-[#2d241c] text-base-content 
-                         {errors.level && touched.level ? 'border-error border-2' : 'border-primary/50'}"
+                        {errors.level && touched.level ? 'border-error border-2' : 'border-primary/50'}"
                 />
                 {#if errors.level && touched.level}
                   <label class="label">

@@ -15,10 +15,10 @@ import (
 )
 
 // ===========================
-// PERSONAJES
+// PERSONAJES - NIVEL 1 COMPLETO
 // ===========================
 
-// CreateCharacter - Crear un nuevo personaje en una campaña
+// CreateCharacter - Crear un nuevo personaje en una campaña (con todos los campos Nivel 1)
 func (h *Handler) CreateCharacter(c *gin.Context) {
 	uid := c.GetString("uid")
 	if uid == "" {
@@ -50,7 +50,7 @@ func (h *Handler) CreateCharacter(c *gin.Context) {
 			return fmt.Errorf("no eres miembro de esta campaña")
 		}
 
-		// ✅ 2. VERIFICAR DUPLICADO DENTRO DE LA TRANSACCIÓN
+		// 2. Verificar duplicado dentro de la transacción
 		existingIter := h.db.Collection("characters").
 			Where("campaignId", "==", campaignID).
 			Where("userId", "==", uid).
@@ -62,7 +62,16 @@ func (h *Handler) CreateCharacter(c *gin.Context) {
 			return fmt.Errorf("ya tienes un personaje en esta campaña")
 		}
 
-		// 3. Crear personaje
+		// 3. Calcular proficiency bonus automáticamente
+		proficiencyBonus := (req.Level-1)/4 + 2
+
+		// 4. Validar y preparar skills
+		skills := req.Skills
+		if skills == nil {
+			skills = []models.Skill{}
+		}
+
+		// 5. Crear personaje con TODOS los campos del Nivel 1
 		character := models.Character{
 			ID:         charRef.ID,
 			CampaignID: campaignID,
@@ -70,13 +79,26 @@ func (h *Handler) CreateCharacter(c *gin.Context) {
 			Name:       req.Name,
 			Class:      req.Class,
 			Level:      req.Level,
+
+			// Combat Stats
 			MaxHP:      req.MaxHP,
-			CurrentHP:  req.MaxHP,
+			CurrentHP:  req.MaxHP, // Inicia con HP completo
 			ArmorClass: req.ArmorClass,
 			Initiative: req.Initiative,
-			Conditions: []string{},
-			CreatedAt:  time.Now(),
-			UpdatedAt:  time.Now(),
+			Speed:      req.Speed,
+			Conditions: []string{}, // ✅ Siempre inicia vacío
+
+			// ===== NIVEL 1: Ability Scores =====
+			AbilityScores: req.AbilityScores,
+
+			// ===== NIVEL 1: Proficiencies =====
+			ProficiencyBonus: proficiencyBonus,
+			SavingThrows:     req.SavingThrows,
+			Skills:           skills,
+
+			// Metadata
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
 		}
 
 		return tx.Set(charRef, character)
@@ -137,7 +159,7 @@ func (h *Handler) GetCampaignCharacters(c *gin.Context) {
 	c.JSON(http.StatusOK, characters)
 }
 
-// UpdateCharacter - Actualizar un personaje
+// UpdateCharacter - Actualizar un personaje (COMPLETO con Nivel 1)
 func (h *Handler) UpdateCharacter(c *gin.Context) {
 	uid := c.GetString("uid")
 	if uid == "" {
@@ -181,14 +203,38 @@ func (h *Handler) UpdateCharacter(c *gin.Context) {
 		return
 	}
 
-	// Actualizar
+	// Calcular proficiency bonus basado en el nivel
+	proficiencyBonus := (req.Level-1)/4 + 2
+
+	// Validar skills
+	skills := req.Skills
+	if skills == nil {
+		skills = []models.Skill{}
+	}
+
+	// ✅ Actualizar TODOS los campos incluyendo Nivel 1
+	// ⚠️ NO tocamos currentHp ni conditions (se manejan en combate)
 	updates := []firestore.Update{
+		// Basic Info
 		{Path: "name", Value: req.Name},
 		{Path: "class", Value: req.Class},
 		{Path: "level", Value: req.Level},
+
+		// Combat Stats (solo maxHp, AC, initiative, speed)
 		{Path: "maxHp", Value: req.MaxHP},
 		{Path: "armorClass", Value: req.ArmorClass},
 		{Path: "initiative", Value: req.Initiative},
+		{Path: "speed", Value: req.Speed},
+
+		// ===== NIVEL 1: Ability Scores =====
+		{Path: "abilityScores", Value: req.AbilityScores},
+
+		// ===== NIVEL 1: Proficiencies =====
+		{Path: "proficiencyBonus", Value: proficiencyBonus},
+		{Path: "savingThrows", Value: req.SavingThrows},
+		{Path: "skills", Value: skills},
+
+		// Metadata
 		{Path: "updatedAt", Value: time.Now()},
 	}
 

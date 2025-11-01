@@ -1,15 +1,15 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
-  import { goto } from '$app/navigation';
   import { userStore } from '$lib/stores/authStore';
   import { api } from '$lib/api/api';
   import type { Campaign, Character, CharacterForm } from '$lib/types';
+  import { DND_SKILLS, getProficiencyBonus } from '$lib/types';
   import CharacterCard from '$lib/components/CharacterCard.svelte';
   import CharacterFormModal from '$lib/components/CharacterFormModal.svelte';
   import { headerTitle } from '$lib/stores/uiStore';
 
-  // ===== NUEVO: Importar Firestore =====
+  // ===== Importar Firestore para listeners en tiempo real =====
   import { getFirestore, collection, query, where, onSnapshot } from 'firebase/firestore';
   import { app } from '$lib/firebase';
 
@@ -26,43 +26,74 @@
   let editingCharacter: Character | null = null;
   let isEdit = false;
 
+  // ===== HELPER: Crear formulario vacío con TODOS los campos Nivel 1 =====
   function emptyCharacterForm(): CharacterForm {
-  return {
-    name: '',
-    class: 'Aventurero',
-    level: 1,
-    maxHp: 10,
-    armorClass: 10,
-    initiative: 0,
-    speed: 30,
-    abilityScores: {
-      strength: 10,
-      dexterity: 10,
-      constitution: 10,
-      intelligence: 10,
-      wisdom: 10,
-      charisma: 10
-    },
-    savingThrows: {
-      strength: false,
-      dexterity: false,
-      constitution: false,
-      intelligence: false,
-      wisdom: false,
-      charisma: false
-    },
-    skills: []
-  };
-}
+    return {
+      name: '',
+      class: 'Aventurero',
+      level: 1,
+      maxHp: 10,
+      armorClass: 10,
+      initiative: 0,
+      speed: 30,
+      abilityScores: {
+        strength: 10,
+        dexterity: 10,
+        constitution: 10,
+        intelligence: 10,
+        wisdom: 10,
+        charisma: 10
+      },
+      savingThrows: {
+        strength: false,
+        dexterity: false,
+        constitution: false,
+        intelligence: false,
+        wisdom: false,
+        charisma: false
+      },
+      // ✅ IMPORTANTE: Inicializar con TODAS las skills de D&D 5e
+      skills: DND_SKILLS.map(skill => ({
+        name: skill.name,
+        ability: skill.ability,
+        proficient: false,
+        expertise: false
+      }))
+    };
+  }
 
-let form: CharacterForm = emptyCharacterForm();
+  // ===== HELPER: Convertir Character a Form para edición =====
+  function characterToForm(character: Character): CharacterForm {
+    return {
+      name: character.name,
+      class: character.class,
+      level: character.level,
+      maxHp: character.maxHp,
+      armorClass: character.armorClass,
+      initiative: character.initiative,
+      speed: character.speed,
+      abilityScores: { ...character.abilityScores },
+      savingThrows: { ...character.savingThrows },
+      // ✅ Asegurar que todas las skills existan (por si faltan algunas)
+      skills: DND_SKILLS.map(skillDef => {
+        const existingSkill = character.skills?.find(s => s.name === skillDef.name);
+        return existingSkill ? { ...existingSkill } : {
+          name: skillDef.name,
+          ability: skillDef.ability,
+          proficient: false,
+          expertise: false
+        };
+      })
+    };
+  }
 
-function resetForm() {
-  form = emptyCharacterForm();
-}
+  let form: CharacterForm = emptyCharacterForm();
 
+  function resetForm() {
+    form = emptyCharacterForm();
+  }
 
-  // ===== NUEVO: Listener para sincronización en tiempo real =====
+  // ===== Listener para sincronización en tiempo real =====
   let charactersUnsubscribe: (() => void) | null = null;
   const db = getFirestore(app);
 
@@ -78,7 +109,7 @@ function resetForm() {
     if (charactersUnsubscribe) charactersUnsubscribe();
   });
 
-  // ===== NUEVO: Setup listener en tiempo real =====
+  // ===== Setup listener en tiempo real =====
   function setupCharactersListener() {
     try {
       loading = true;
@@ -125,33 +156,43 @@ function resetForm() {
   }
 
   function openEditModal(character: Character) {
-  editingCharacter = character;
-  isEdit = true;
-  form = {
-    ...emptyCharacterForm(),
-    ...character
-  };
-  showFormModal = true;
-}
-
+    editingCharacter = character;
+    isEdit = true;
+    // ✅ Usar helper para convertir correctamente
+    form = characterToForm(character);
+    showFormModal = true;
+  }
 
   async function handleSubmit() {
     try {
+      // ✅ Calcular proficiency bonus automáticamente
+      const proficiencyBonus = getProficiencyBonus(form.level);
+      
+      // ✅ Preparar datos completos del personaje Nivel 1
+      const characterData = {
+        name: form.name,
+        class: form.class,
+        level: form.level,
+        maxHp: form.maxHp,
+        armorClass: form.armorClass,
+        initiative: form.initiative,
+        speed: form.speed,
+        // Nivel 1: Ability Scores
+        abilityScores: form.abilityScores,
+        // Nivel 1: Proficiencies
+        proficiencyBonus: proficiencyBonus,
+        savingThrows: form.savingThrows,
+        skills: form.skills
+      };
+
       if (isEdit && editingCharacter) {
-        await api.updateCharacter(editingCharacter.id, {
-          ...form,
-          class: editingCharacter.class,
-          level: editingCharacter.level,
-          initiative: editingCharacter.initiative
-        });
+        // Actualizar personaje existente
+        await api.updateCharacter(editingCharacter.id, characterData);
       } else {
-        await api.createCharacter(campaignId, {
-          ...form,
-          class: 'Aventurero',
-          level: 1,
-          initiative: 0
-        });
+        // Crear nuevo personaje
+        await api.createCharacter(campaignId, characterData);
       }
+      
       showFormModal = false;
       resetForm();
       // No necesitamos recargar, el listener lo hará automáticamente
@@ -206,33 +247,33 @@ function resetForm() {
           <!-- Mi Personaje -->
           <div class="mb-10">
             {#if myCharacter}
-            <div class="flex justify-center">
-              <div class="max-w-md">
-                <CharacterCard 
-                  character={myCharacter}
-                  isOwner={true}
-                  on:edit={(e) => openEditModal(e.detail)}
-                  on:delete={(e) => handleDelete(e.detail)}
-                />
+              <div class="flex justify-center">
+                <div class="max-w-4xl w-full">
+                  <CharacterCard 
+                    character={myCharacter}
+                    isOwner={true}
+                    on:edit={(e) => openEditModal(e.detail)}
+                    on:delete={(e) => handleDelete(e.detail)}
+                  />
+                </div>
               </div>
-            </div>
             {:else}
-            <div class="flex justify-center">
-              <div class="card-parchment p-8 text-center max-w-2xl justify-center items-center corner-ornament">
-                <div class="text-6xl mb-4">🧙‍♂️</div>
-                <h3 class="text-2xl font-medieval text-neutral mb-3">No tienes personaje</h3>
-                <p class="text-neutral/70 font-body mb-6">
-                  Crea tu personaje para unirte a las aventuras de esta campaña
-                </p>
-                <button 
-                  on:click={openCreateModal}
-                  class="btn btn-dnd btn-lg"
-                >
-                  <span class="text-2xl">✨</span>
-                  Crear Mi Personaje
-                </button>
-              </div>              
-            </div>
+              <div class="flex justify-center">
+                <div class="card-parchment p-8 text-center max-w-2xl corner-ornament">
+                  <div class="text-6xl mb-4">🧙‍♂️</div>
+                  <h3 class="text-2xl font-medieval text-neutral mb-3">No tienes personaje</h3>
+                  <p class="text-neutral/70 font-body mb-6">
+                    Crea tu personaje para unirte a las aventuras de esta campaña
+                  </p>
+                  <button 
+                    on:click={openCreateModal}
+                    class="btn btn-dnd btn-lg"
+                  >
+                    <span class="text-2xl">✨</span>
+                    Crear Mi Personaje
+                  </button>
+                </div>              
+              </div>
             {/if}
           </div>
 
@@ -241,16 +282,23 @@ function resetForm() {
             <div class="divider text-neutral/50 my-8">⚔️</div>
             
             <div class="mb-6">
-              <h2 class="text-3xl font-medieval text-center text-secondary mb-2">Compañeros de Aventura</h2>
-              <p class="text-primary text-center font-body italic">Los demás héroes de esta campaña</p>
+              <h2 class="text-3xl font-medieval text-center text-secondary mb-2">
+                Compañeros de Aventura
+              </h2>
+              <p class="text-primary text-center font-body italic">
+                Los demás héroes de esta campaña
+              </p>
             </div>
-            <div class="w-3/4 mx-auto">
-              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+            
+            <div class="container mx-auto max-w-7xl">
+              <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 {#each otherCharacters as character}
-                  <CharacterCard 
-                    {character}
-                    isOwner={false}
-                  />
+                  <div class="flex justify-center">
+                    <CharacterCard 
+                      {character}
+                      isOwner={false}
+                    />
+                  </div>
                 {/each}
               </div>              
             </div>
@@ -261,12 +309,11 @@ function resetForm() {
   </div>
 </div>
 
-<div class="justify-center items-center">
-  <CharacterFormModal
-    bind:isOpen={showFormModal}
-    {isEdit}
-    {form}
-    on:submit={handleSubmit}
-    on:close={handleClose}
-  />  
-</div>
+<!-- Modal del Formulario -->
+<CharacterFormModal
+  bind:isOpen={showFormModal}
+  {isEdit}
+  bind:form
+  on:submit={handleSubmit}
+  on:close={handleClose}
+/>
