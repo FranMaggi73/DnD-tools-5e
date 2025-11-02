@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -16,6 +17,10 @@ import (
 // ===========================
 // INVENTORY ITEMS
 // ===========================
+
+const (
+	MAX_ITEMS_PER_CHARACTER = 500 // ✅ NUEVO
+)
 
 // CreateItem - Agregar item al inventario
 func (h *Handler) CreateItem(c *gin.Context) {
@@ -61,6 +66,94 @@ func (h *Handler) CreateItem(c *gin.Context) {
 		}
 	}
 
+	itemsIter := h.db.Collection("inventory_items").
+		Where("characterId", "==", characterID).
+		Documents(ctx)
+
+	itemCount := 0
+	for {
+		_, err := itemsIter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err == nil {
+			itemCount++
+		}
+	}
+
+	if itemCount >= MAX_ITEMS_PER_CHARACTER {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Límite de items alcanzado (%d/%d). Elimina items antes de agregar más.",
+				itemCount, MAX_ITEMS_PER_CHARACTER),
+		})
+		return
+	}
+
+	if req.Open5eSlug != "" {
+		// Buscar por slug de Open5e
+		existingIter := h.db.Collection("inventory_items").
+			Where("characterId", "==", characterID).
+			Where("open5eSlug", "==", req.Open5eSlug).
+			Limit(1).
+			Documents(ctx)
+
+		if existingDoc, err := existingIter.Next(); err != iterator.Done {
+			// Item idéntico encontrado, incrementar quantity
+			var existing models.InventoryItem
+			if err := existingDoc.DataTo(&existing); err == nil {
+				newQuantity := existing.Quantity + req.Quantity
+
+				_, updateErr := h.db.Collection("inventory_items").Doc(existing.ID).Update(ctx, []firestore.Update{
+					{Path: "quantity", Value: newQuantity},
+					{Path: "updatedAt", Value: time.Now()},
+				})
+
+				if updateErr == nil {
+					// Invalidar cache
+					h.invalidateCharacterCache(ctx, characterID)
+
+					// Devolver item actualizado
+					existing.Quantity = newQuantity
+					existing.UpdatedAt = time.Now()
+					c.JSON(http.StatusCreated, existing)
+					return
+				}
+			}
+		}
+	} else {
+		// Buscar por nombre exacto (para items manuales)
+		existingIter := h.db.Collection("inventory_items").
+			Where("characterId", "==", characterID).
+			Where("name", "==", req.Name).
+			Where("type", "==", req.Type).
+			Limit(1).
+			Documents(ctx)
+
+		if existingDoc, err := existingIter.Next(); err != iterator.Done {
+			var existing models.InventoryItem
+			if err := existingDoc.DataTo(&existing); err == nil {
+				// Solo stackear si NO tiene datos de arma/armadura
+				if existing.WeaponData == nil && existing.ArmorData == nil {
+					newQuantity := existing.Quantity + req.Quantity
+
+					_, updateErr := h.db.Collection("inventory_items").Doc(existing.ID).Update(ctx, []firestore.Update{
+						{Path: "quantity", Value: newQuantity},
+						{Path: "updatedAt", Value: time.Now()},
+					})
+
+					if updateErr == nil {
+						h.invalidateCharacterCache(ctx, characterID)
+
+						existing.Quantity = newQuantity
+						existing.UpdatedAt = time.Now()
+						c.JSON(http.StatusCreated, existing)
+						return
+					}
+				}
+			}
+		}
+	}
+
 	// Crear item
 	itemRef := h.db.Collection("inventory_items").NewDoc()
 	item := models.InventoryItem{
@@ -83,6 +176,7 @@ func (h *Handler) CreateItem(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creando item"})
 		return
 	}
+	h.invalidateCharacterCache(ctx, characterID)
 
 	c.JSON(http.StatusCreated, item)
 }
@@ -91,6 +185,14 @@ func (h *Handler) CreateItem(c *gin.Context) {
 func (h *Handler) GetCharacterInventory(c *gin.Context) {
 	characterID := c.Param("charId")
 	ctx := context.Background()
+
+	if cached, cachedAt, found := h.cache.GetInventory(characterID); found {
+		// Validar que tenga menos de 15 segundos
+		if time.Since(cachedAt) < 15*time.Second {
+			c.JSON(http.StatusOK, cached)
+			return
+		}
+	}
 
 	charDoc, err := h.db.Collection("characters").Doc(characterID).Get(ctx)
 	if err != nil {
@@ -152,6 +254,8 @@ func (h *Handler) GetCharacterInventory(c *gin.Context) {
 		Currency:   currency,
 		TotalValue: totalValue,
 	}
+
+	h.cache.SetInventory(characterID, response)
 
 	c.JSON(http.StatusOK, response)
 }
@@ -225,6 +329,8 @@ func (h *Handler) UpdateItem(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error eliminando item"})
 				return
 			}
+			h.invalidateCharacterCache(ctx, item.CharacterID)
+
 			c.JSON(http.StatusOK, gin.H{"message": "Item eliminado", "deleted": true})
 			return
 		}
@@ -239,6 +345,8 @@ func (h *Handler) UpdateItem(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error actualizando item"})
 		return
 	}
+
+	h.invalidateCharacterCache(ctx, item.CharacterID)
 
 	// Obtener item actualizado
 	updatedDoc, _ := h.db.Collection("inventory_items").Doc(itemID).Get(ctx)
@@ -389,10 +497,20 @@ func (h *Handler) UpdateCurrency(c *gin.Context) {
 		return
 	}
 
+	const MAX_CURRENCY = 999999999
+	if currency.Copper > MAX_CURRENCY || currency.Silver > MAX_CURRENCY ||
+		currency.Gold > MAX_CURRENCY || currency.Platinum > MAX_CURRENCY {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("El máximo de monedas por tipo es %d", MAX_CURRENCY),
+		})
+		return
+	}
+
 	if _, err := currencyRef.Set(ctx, currency); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error actualizando currency"})
 		return
 	}
+	h.invalidateCharacterCache(ctx, characterID) // 👈 AGREGAR
 
 	c.JSON(http.StatusOK, currency)
 }

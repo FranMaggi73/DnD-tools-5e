@@ -275,3 +275,24 @@ func (c *Cache) InvalidateEncounter(encounterID string) {
 	c.Delete("encounter:" + encounterID)
 	c.InvalidatePattern("combatants:" + encounterID)
 }
+
+// Al final del archivo, agregar helpers para inventario
+
+// GetInventory helper con timestamp
+func (c *Cache) GetInventory(characterID string) (interface{}, time.Time, bool) {
+	data, cachedAt, found := c.Get("inventory:" + characterID)
+	if !found {
+		return nil, time.Time{}, false
+	}
+	return data, cachedAt, true
+}
+
+// SetInventory helper (TTL: 15 segundos - cambia frecuentemente)
+func (c *Cache) SetInventory(characterID string, inventory interface{}) {
+	c.SetWithTTL("inventory:"+characterID, inventory, 15*time.Second)
+}
+
+// InvalidateInventory elimina inventario del cache
+func (c *Cache) InvalidateInventory(characterID string) {
+	c.Delete("inventory:" + characterID)
+}

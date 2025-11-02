@@ -134,3 +134,15 @@ func (h *Handler) GetCacheStats(c *gin.Context) {
 
 	c.JSON(http.StatusOK, stats)
 }
+
+func (h *Handler) invalidateCharacterCache(ctx context.Context, characterID string) {
+	if h.invalidator != nil {
+		if err := h.invalidator.InvalidatePattern(ctx, "character:"+characterID); err != nil {
+			log.Printf("⚠️  Error en invalidación distribuida: %v", err)
+			h.cache.InvalidatePattern("character:" + characterID)
+		}
+	} else {
+		h.cache.InvalidatePattern("character:" + characterID)
+		h.cache.InvalidateInventory(characterID)
+	}
+}
