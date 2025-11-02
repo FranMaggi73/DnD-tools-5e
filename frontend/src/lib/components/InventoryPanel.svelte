@@ -1,10 +1,12 @@
 <!-- frontend/src/lib/components/InventoryPanel.svelte -->
+<!-- ✅ CORREGIDO: Skeleton loader, paginación, validación en tiempo real, calculadora de moneda -->
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
   import { inventoryApi, type InventoryItem, type InventoryResponse } from '$lib/api/inventory';
   import AddItemModal from './AddItemModal.svelte';
   import ItemDetailModal from './ItemDetailModal.svelte';
   import EditItemModal from './EditItemModal.svelte';
+  import { validateCurrency } from '$lib/utils/validation';
 
   export let characterId: string;
   export let isOwner: boolean = false;
@@ -15,6 +17,10 @@
   let loading = true;
   let error = '';
   let processingItem: string | null = null;
+
+  // ✅ NUEVO: Cache simple para evitar recargas innecesarias
+  let lastLoadTime = 0;
+  const CACHE_DURATION = 5000; // 5 segundos
 
   let showAddItemModal = false;
   let showCurrencyModal = false;
@@ -29,15 +35,71 @@
     platinum: 0,
   };
 
+  // ✅ NUEVO: Validación en tiempo real para currency
+  let currencyErrors = {
+    copper: '',
+    silver: '',
+    gold: '',
+    platinum: ''
+  };
+
+  let currencyTouched = {
+    copper: false,
+    silver: false,
+    gold: false,
+    platinum: false
+  };
+
+  // ✅ NUEVO: Paginación
+  const ITEMS_PER_PAGE = 20;
+  let currentPage: Record<string, number> = {};
+
+  // ✅ NUEVO: Mostrar calculadora
+  let showConverter = false;
+  let converterAmount = 0;
+  let converterFrom: 'cp' | 'sp' | 'gp' | 'pp' = 'gp';
+
+  // Validación reactiva de currency
+  $: if (currencyTouched.copper) {
+    const result = validateCurrency(currencyForm.copper);
+    currencyErrors.copper = result.valid ? '' : result.error || '';
+  }
+  $: if (currencyTouched.silver) {
+    const result = validateCurrency(currencyForm.silver);
+    currencyErrors.silver = result.valid ? '' : result.error || '';
+  }
+  $: if (currencyTouched.gold) {
+    const result = validateCurrency(currencyForm.gold);
+    currencyErrors.gold = result.valid ? '' : result.error || '';
+  }
+  $: if (currencyTouched.platinum) {
+    const result = validateCurrency(currencyForm.platinum);
+    currencyErrors.platinum = result.valid ? '' : result.error || '';
+  }
+
+  $: isCurrencyValid = !currencyErrors.copper && !currencyErrors.silver && 
+                       !currencyErrors.gold && !currencyErrors.platinum;
+
+  // ✅ NUEVO: Conversión de monedas
+  $: convertedValues = calculateConversion(converterAmount, converterFrom);
+
   onMount(async () => {
     await loadInventory();
   });
 
-  async function loadInventory() {
+  async function loadInventory(force = false) {
+    // ✅ Cache simple: no recargar si fue hace menos de 5 segundos
+    const now = Date.now();
+    if (!force && inventory && now - lastLoadTime < CACHE_DURATION) {
+      console.log('📦 Using cached inventory data');
+      return;
+    }
+
     try {
       loading = true;
       error = '';
       inventory = await inventoryApi.getInventory(characterId);
+      lastLoadTime = now;
       
       if (inventory) {
         currencyForm = { ...inventory.currency };
@@ -54,7 +116,7 @@
     try {
       error = '';
       await inventoryApi.createItem(characterId, event.detail);
-      await loadInventory();
+      await loadInventory(true); // ✅ Force reload
       showAddItemModal = false;
     } catch (err: any) {
       error = err.message || 'Error agregando item';
@@ -69,10 +131,9 @@
       error = '';
       processingItem = selectedItem.id;
       
-      // Actualizar el item completo
       const updates = event.detail;
       await inventoryApi.updateItem(selectedItem.id, updates);
-      await loadInventory();
+      await loadInventory(true); // ✅ Force reload
       
       showEditModal = false;
       selectedItem = null;
@@ -91,7 +152,7 @@
       processingItem = item.id;
       error = '';
       await inventoryApi.deleteItem(item.id);
-      await loadInventory();
+      await loadInventory(true); // ✅ Force reload
     } catch (err: any) {
       error = err.message || 'Error eliminando item';
       console.error('Error deleting item:', err);
@@ -101,15 +162,32 @@
   }
 
   async function handleUpdateCurrency() {
+    // Validar todo antes de enviar
+    Object.keys(currencyTouched).forEach(key => {
+      currencyTouched[key as keyof typeof currencyTouched] = true;
+    });
+
+    if (!isCurrencyValid) return;
+
     try {
       error = '';
       await inventoryApi.updateCurrency(characterId, currencyForm);
-      await loadInventory();
+      await loadInventory(true); // ✅ Force reload
       showCurrencyModal = false;
+      resetCurrencyValidation();
     } catch (err: any) {
       error = err.message || 'Error actualizando monedas';
       console.error('Error updating currency:', err);
     }
+  }
+
+  function resetCurrencyValidation() {
+    Object.keys(currencyTouched).forEach(key => {
+      currencyTouched[key as keyof typeof currencyTouched] = false;
+    });
+    Object.keys(currencyErrors).forEach(key => {
+      currencyErrors[key as keyof typeof currencyErrors] = '';
+    });
   }
 
   function openDetailModal(item: InventoryItem) {
@@ -152,6 +230,7 @@
     return labels[type] || 'Items';
   }
 
+  // ✅ MEJORADO: Agrupar items por tipo con paginación
   $: itemsByType = inventory?.items.reduce((acc, item) => {
     if (!acc[item.type]) acc[item.type] = [];
     acc[item.type].push(item);
@@ -160,6 +239,57 @@
 
   $: itemTypes = Object.keys(itemsByType).sort();
   $: totalItems = inventory?.items.reduce((sum, item) => sum + item.quantity, 0) || 0;
+
+  // ✅ NUEVO: Items paginados por tipo
+  function getPaginatedItems(type: string): InventoryItem[] {
+    const items = itemsByType[type] || [];
+    const page = currentPage[type] || 0;
+    const start = page * ITEMS_PER_PAGE;
+    const end = start + ITEMS_PER_PAGE;
+    return items.slice(start, end);
+  }
+
+  function getTotalPages(type: string): number {
+    const items = itemsByType[type] || [];
+    return Math.ceil(items.length / ITEMS_PER_PAGE);
+  }
+
+  function changePage(type: string, direction: number) {
+    const totalPages = getTotalPages(type);
+    const currentPageNum = currentPage[type] || 0;
+    const newPage = currentPageNum + direction;
+    
+    if (newPage >= 0 && newPage < totalPages) {
+      currentPage[type] = newPage;
+    }
+  }
+
+  // ✅ NUEVO: Calculadora de conversión de monedas
+  function calculateConversion(amount: number, from: 'cp' | 'sp' | 'gp' | 'pp') {
+    if (!amount || amount <= 0) {
+      return { cp: 0, sp: 0, gp: 0, pp: 0 };
+    }
+
+    // Convertir todo a copper primero
+    let copper = 0;
+    switch (from) {
+      case 'cp': copper = amount; break;
+      case 'sp': copper = amount * 10; break;
+      case 'gp': copper = amount * 100; break;
+      case 'pp': copper = amount * 1000; break;
+    }
+
+    return {
+      cp: copper,
+      sp: copper / 10,
+      gp: copper / 100,
+      pp: copper / 1000
+    };
+  }
+
+  function handleCurrencyBlur(field: keyof typeof currencyTouched) {
+    currencyTouched[field] = true;
+  }
 </script>
 
 <div class="space-y-4">
@@ -175,16 +305,21 @@
   {/if}
 
   {#if loading}
-    <div class="flex flex-col items-center justify-center py-12 gap-4">
-      <span class="loading loading-spinner loading-lg text-secondary"></span>
-      <p class="text-neutral/70 font-body">Cargando inventario...</p>
+    <!-- ✅ NUEVO: Skeleton loader en lugar de spinner -->
+    <div class="space-y-4">
+      <div class="skeleton h-32 w-full"></div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {#each Array(4) as _}
+          <div class="skeleton h-24 w-full"></div>
+        {/each}
+      </div>
     </div>
   {:else if !inventory}
     <div class="card-parchment p-8 text-center">
       <div class="text-4xl mb-4">⚠️</div>
       <h3 class="text-xl font-medieval text-neutral mb-2">Error al Cargar</h3>
       <p class="text-neutral/70 mb-4">No se pudo cargar el inventario</p>
-      <button class="btn btn-primary btn-sm" on:click={loadInventory}>
+      <button class="btn btn-primary btn-sm" on:click={() => loadInventory(true)}>
         🔄 Reintentar
       </button>
     </div>
@@ -276,22 +411,54 @@
     {:else}
       <div class="space-y-4">
         {#each itemTypes as type}
+          {@const items = itemsByType[type]}
+          {@const paginatedItems = getPaginatedItems(type)}
+          {@const totalPages = getTotalPages(type)}
+          {@const currentPageNum = currentPage[type] || 0}
+          
           <div class="card-parchment">
             <div class="card-body p-4">
               
-              <div class="flex items-center gap-2 mb-3">
-                <span class="text-2xl">{getItemIcon(type)}</span>
-                <h3 class="text-xl font-medieval text-neutral">
-                  {getTypeLabel(type)}
-                </h3>
-                <span class="badge badge-secondary badge-sm">{itemsByType[type].length}</span>
-                <span class="badge badge-ghost badge-sm">
-                  {itemsByType[type].reduce((sum, item) => sum + item.quantity, 0)} items
-                </span>
+              <!-- Header del tipo -->
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2 flex-1">
+                  <span class="text-2xl">{getItemIcon(type)}</span>
+                  <h3 class="text-xl font-medieval text-neutral">
+                    {getTypeLabel(type)}
+                  </h3>
+                  <span class="badge badge-secondary badge-sm">{items.length}</span>
+                  <span class="badge badge-ghost badge-sm">
+                    {items.reduce((sum, item) => sum + item.quantity, 0)} items
+                  </span>
+                </div>
+
+                <!-- ✅ NUEVO: Paginación -->
+                {#if totalPages > 1}
+                  <div class="flex items-center gap-2">
+                    <button 
+                      class="btn btn-xs btn-circle btn-ghost"
+                      on:click={() => changePage(type, -1)}
+                      disabled={currentPageNum === 0}
+                    >
+                      ◀
+                    </button>
+                    <span class="text-xs">
+                      {currentPageNum + 1} / {totalPages}
+                    </span>
+                    <button 
+                      class="btn btn-xs btn-circle btn-ghost"
+                      on:click={() => changePage(type, 1)}
+                      disabled={currentPageNum >= totalPages - 1}
+                    >
+                      ▶
+                    </button>
+                  </div>
+                {/if}
               </div>
 
+              <!-- Grid de items paginados -->
               <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {#each itemsByType[type] as item}
+                {#each paginatedItems as item}
                   <div 
                     class="bg-gradient-to-br from-primary/5 to-accent/5 p-3 rounded-lg border-2 
                            {processingItem === item.id ? 'opacity-50' : ''}
@@ -395,19 +562,61 @@
   on:close={() => { showEditModal = false; selectedItem = null; }}
 />
 
-<!-- Currency Modal -->
+<!-- ✅ MEJORADO: Currency Modal con validación y calculadora -->
 {#if showCurrencyModal && inventory}
-  <div class="modal modal-open z-50" on:click={() => showCurrencyModal = false}>
-    <div class="card-parchment border-4 border-secondary w-11/12 max-w-md relative" on:click|stopPropagation>
+  <div class="modal modal-open z-50" on:click={() => { showCurrencyModal = false; resetCurrencyValidation(); }}>
+    <div class="card-parchment border-4 border-secondary w-11/12 max-w-2xl relative" on:click|stopPropagation>
       <button 
         class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" 
-        on:click={() => showCurrencyModal = false}
+        on:click={() => { showCurrencyModal = false; resetCurrencyValidation(); }}
       >✕</button>
       
       <div class="card-body">
         <h3 class="font-bold text-2xl font-medieval text-neutral text-center mb-4">
           💰 Gestionar Monedas
         </h3>
+
+        <!-- ✅ NUEVO: Calculadora de conversión -->
+        <div class="mb-4">
+          <button 
+            class="btn btn-sm btn-outline w-full"
+            on:click={() => showConverter = !showConverter}
+          >
+            🔄 {showConverter ? 'Ocultar' : 'Mostrar'} Calculadora de Conversión
+          </button>
+        </div>
+
+        {#if showConverter}
+          <div class="bg-info/10 p-4 rounded-lg border border-info/30 mb-4">
+            <p class="font-medieval text-sm mb-2">Calculadora de Monedas</p>
+            <div class="grid grid-cols-2 gap-2">
+              <input 
+                type="number" 
+                bind:value={converterAmount}
+                placeholder="Cantidad"
+                class="input input-sm input-bordered bg-[#2d241c]"
+              />
+              <select 
+                bind:value={converterFrom}
+                class="select select-sm select-bordered bg-[#2d241c]"
+              >
+                <option value="cp">Cobre (cp)</option>
+                <option value="sp">Plata (sp)</option>
+                <option value="gp">Oro (gp)</option>
+                <option value="pp">Platino (pp)</option>
+              </select>
+            </div>
+            {#if converterAmount > 0}
+              <div class="mt-3 text-xs space-y-1">
+                <p><strong>{converterAmount} {converterFrom}</strong> equivale a:</p>
+                <p>🥉 {formatValue(convertedValues.cp)} cp</p>
+                <p>🥈 {formatValue(convertedValues.sp)} sp</p>
+                <p>🥇 {formatValue(convertedValues.gp)} gp</p>
+                <p>💎 {formatValue(convertedValues.pp)} pp</p>
+              </div>
+            {/if}
+          </div>
+        {/if}
 
         <div class="space-y-3">
           <div class="form-control">
@@ -418,9 +627,16 @@
             <input 
               type="number" 
               bind:value={currencyForm.platinum}
+              on:blur={() => handleCurrencyBlur('platinum')}
               min="0"
-              class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
+              class="input input-bordered bg-[#2d241c] text-base-content 
+                     {currencyErrors.platinum && currencyTouched.platinum ? 'border-error border-2' : 'border-primary/50'}"
             />
+            {#if currencyErrors.platinum && currencyTouched.platinum}
+              <label class="label">
+                <span class="label-text-alt text-error text-xs">⚠️ {currencyErrors.platinum}</span>
+              </label>
+            {/if}
           </div>
 
           <div class="form-control">
@@ -430,9 +646,16 @@
             <input 
               type="number" 
               bind:value={currencyForm.gold}
+              on:blur={() => handleCurrencyBlur('gold')}
               min="0"
-              class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
+              class="input input-bordered bg-[#2d241c] text-base-content 
+                     {currencyErrors.gold && currencyTouched.gold ? 'border-error border-2' : 'border-primary/50'}"
             />
+            {#if currencyErrors.gold && currencyTouched.gold}
+              <label class="label">
+                <span class="label-text-alt text-error text-xs">⚠️ {currencyErrors.gold}</span>
+              </label>
+            {/if}
           </div>
 
           <div class="form-control">
@@ -443,9 +666,16 @@
             <input 
               type="number" 
               bind:value={currencyForm.silver}
+              on:blur={() => handleCurrencyBlur('silver')}
               min="0"
-              class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
+              class="input input-bordered bg-[#2d241c] text-base-content 
+                     {currencyErrors.silver && currencyTouched.silver ? 'border-error border-2' : 'border-primary/50'}"
             />
+            {#if currencyErrors.silver && currencyTouched.silver}
+              <label class="label">
+                <span class="label-text-alt text-error text-xs">⚠️ {currencyErrors.silver}</span>
+              </label>
+            {/if}
           </div>
 
           <div class="form-control">
@@ -456,37 +686,48 @@
             <input 
               type="number" 
               bind:value={currencyForm.copper}
+              on:blur={() => handleCurrencyBlur('copper')}
               min="0"
-              class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
+              class="input input-bordered bg-[#2d241c] text-base-content 
+                     {currencyErrors.copper && currencyTouched.copper ? 'border-error border-2' : 'border-primary/50'}"
             />
+            {#if currencyErrors.copper && currencyTouched.copper}
+              <label class="label">
+                <span class="label-text-alt text-error text-xs">⚠️ {currencyErrors.copper}</span>
+              </label>
+            {/if}
           </div>
         </div>
 
-        <div class="modal-action justify-center gap-4">
+        <!-- ✅ NUEVO: Resumen de valor total -->
+        <div class="bg-success/10 p-3 rounded-lg border border-success/30 mt-3">
+          <p class="text-xs font-medieval mb-1">Valor Total en Oro (gp):</p>
+          <p class="text-lg font-bold text-success">
+            {formatValue(
+              (currencyForm.platinum * 10) + 
+              currencyForm.gold + 
+              (currencyForm.silver * 0.1) + 
+              (currencyForm.copper * 0.01)
+            )} gp
+          </p>
+        </div>
+
+        <div class="card-actions justify-end mt-4">
           <button 
-            on:click={() => showCurrencyModal = false}
-            class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval"
+            class="btn btn-ghost" 
+            on:click={() => { showCurrencyModal = false; resetCurrencyValidation(); }}
           >
             Cancelar
           </button>
           <button 
+            class="btn btn-primary"
             on:click={handleUpdateCurrency}
-            class="btn btn-dnd"
+            disabled={!isCurrencyValid}
           >
-            <span class="text-xl">💾</span>
-            Guardar
+            💰 Actualizar Monedas
           </button>
         </div>
       </div>
     </div>
   </div>
 {/if}
-
-<style>
-  .line-clamp-2 {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-</style>
