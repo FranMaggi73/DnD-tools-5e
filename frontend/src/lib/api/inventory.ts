@@ -21,14 +21,10 @@ export interface InventoryItem {
   description?: string;
   quantity: number;
   value: number;
-  weight?: number; // ✅ NUEVO
-  equipped?: boolean; // ✅ NUEVO
   weaponData?: WeaponData;
   armorData?: ArmorData;
   open5eSlug?: string;
   rarity?: string; // ✅ NUEVO
-  attunement?: boolean; // ✅ NUEVO
-  attuned?: boolean; // ✅ NUEVO
   createdAt: string;
   updatedAt: string;
 }
@@ -88,8 +84,6 @@ export interface Open5eItem {
   desc: string;
   rarity?: string;
   cost?: string | number | { amount?: number; currency?: string };
-  weight?: string | number;
-  requires_attunement?: boolean | string;
   
   // Weapon
   damage?: string;
@@ -184,12 +178,10 @@ export const inventoryApi = {
     description?: string;
     quantity: number;
     value: number;
-    weight?: number;
     weaponData?: any;
     armorData?: any;
     open5eSlug?: string;
     rarity?: string;
-    attunement?: boolean;
   }) =>
     fetchWithAuth<InventoryItem>(`/characters/${characterId}/items`, {
       method: 'POST',
@@ -201,8 +193,6 @@ export const inventoryApi = {
     description?: string;
     quantity?: number;
     value?: number;
-    equipped?: boolean;
-    attuned?: boolean;
   }) =>
     fetchWithAuth<InventoryItem>(`/items/${itemId}`, {
       method: 'PUT',
@@ -345,10 +335,6 @@ export const open5eInventoryApi = {
     const costRaw = getSafe(open5eItem, 'cost', 'price', 'cost_string', 'value', 'cost_text');
     const value = parseCostRobust(costRaw);
 
-    // ✅ MEJORADO: Peso
-    const weightRaw = getSafe(open5eItem, 'weight');
-    const weight = parseWeight(weightRaw);
-
     // Detectar origen/categoría
     const sourceField = String(getSafe(open5eItem, 'source', 'category', 'type', 'document__slug') || '').toLowerCase();
     const name = String(open5eItem.name || open5eItem.title || '').trim();
@@ -369,15 +355,6 @@ export const open5eInventoryApi = {
     } else if (open5eItem.rarity && !['common', 'none'].includes(String(open5eItem.rarity).toLowerCase())) {
       inferredType = 'treasure';
     }
-
-    // ✅ MEJORADO: Attunement detection
-    const attuneRaw = getSafe(open5eItem, 'requires_attunement', 'attunement', 'requiresAttunement');
-    let attunement = false;
-    if (attuneRaw !== undefined) {
-      const attuneStr = String(attuneRaw).toLowerCase();
-      attunement = attuneStr.includes('yes') || attuneStr.includes('requires') || attuneRaw === true;
-    }
-
     // Crear objeto base
     const item: Partial<InventoryItem> = {
       name,
@@ -385,10 +362,8 @@ export const open5eInventoryApi = {
       quantity: 1,
       open5eSlug: getSafe(open5eItem, 'slug', 'document__slug', 'id'),
       value,
-      weight,
       type: inferredType,
       rarity: open5eItem.rarity || 'common',
-      attunement,
     };
 
     // Parsear datos específicos
@@ -491,23 +466,6 @@ function convertToGold(amount: number, currency: string): number {
   };
   
   return amount * (conversions[currency] || 1);
-}
-
-/**
- * ✅ NUEVO: Parser de peso
- */
-function parseWeight(weight: any): number {
-  if (typeof weight === 'number') return weight;
-  if (!weight) return 0;
-  
-  const weightStr = String(weight).toLowerCase();
-  const match = weightStr.match(/(\d+(?:\.\d+)?)\s*(?:lb|lbs|pound|pounds)?/);
-  
-  if (match) {
-    return parseFloat(match[1]);
-  }
-  
-  return 0;
 }
 
 /**

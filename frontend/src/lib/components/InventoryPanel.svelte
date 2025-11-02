@@ -1,5 +1,4 @@
 <!-- frontend/src/lib/components/InventoryPanel.svelte -->
-<!-- ✅ CORREGIDO: Skeleton loader, paginación, validación en tiempo real, calculadora de moneda -->
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
   import { inventoryApi, type InventoryItem, type InventoryResponse } from '$lib/api/inventory';
@@ -17,6 +16,7 @@
   let loading = true;
   let error = '';
   let processingItem: string | null = null;
+  let searchLocalQuery = '';
 
   // ✅ NUEVO: Cache simple para evitar recargas innecesarias
   let lastLoadTime = 0;
@@ -52,7 +52,15 @@
 
   // ✅ NUEVO: Paginación
   const ITEMS_PER_PAGE = 20;
-  let currentPage: Record<string, number> = {};
+  let currentPage: Record<string, number> = (() => {
+  if (typeof window === 'undefined') return {};
+    const saved = sessionStorage.getItem(`inventory-pages-${characterId}`);
+    return saved ? JSON.parse(saved) : {};
+    })();
+
+    $: if (typeof window !== 'undefined') {
+    sessionStorage.setItem(`inventory-pages-${characterId}`, JSON.stringify(currentPage));
+    }
 
   // ✅ NUEVO: Mostrar calculadora
   let showConverter = false;
@@ -237,32 +245,64 @@
     return acc;
   }, {} as Record<string, InventoryItem[]>) || {};
 
-  $: itemTypes = Object.keys(itemsByType).sort();
+
+    // ✅ NUEVO: Filtrado adicional por búsqueda local
+    $: itemsByTypeFiltered = (() => {
+    if (!searchLocalQuery.trim()) return itemsByType;
+    
+    const search = searchLocalQuery.toLowerCase();
+    const filtered: Record<string, InventoryItem[]> = {};
+    
+    Object.keys(itemsByType).forEach(type => {
+        const items = itemsByType[type].filter(item => 
+        item.name.toLowerCase().includes(search) ||
+        (item.description && item.description.toLowerCase().includes(search)) ||
+        (item.weaponData?.weaponType.toLowerCase().includes(search)) ||
+        (item.armorData?.armorType.toLowerCase().includes(search))
+        );
+        
+        if (items.length > 0) {
+        filtered[type] = items;
+        }
+    });
+    
+    return filtered;
+    })();
+
+    $: itemTypes = Object.keys(itemsByTypeFiltered).sort();
+
   $: totalItems = inventory?.items.reduce((sum, item) => sum + item.quantity, 0) || 0;
 
   // ✅ NUEVO: Items paginados por tipo
-  function getPaginatedItems(type: string): InventoryItem[] {
-    const items = itemsByType[type] || [];
-    const page = currentPage[type] || 0;
-    const start = page * ITEMS_PER_PAGE;
-    const end = start + ITEMS_PER_PAGE;
-    return items.slice(start, end);
-  }
+ function getPaginatedItems(type: string): InventoryItem[] {
+  const items = itemsByTypeFiltered[type] || [];
+  const page = currentPage[type] || 0;
+  const start = page * ITEMS_PER_PAGE;
+  const end = start + ITEMS_PER_PAGE;
+  return items.slice(start, end);
+    }
 
-  function getTotalPages(type: string): number {
-    const items = itemsByType[type] || [];
+    function getTotalPages(type: string): number {
+    const items = itemsByTypeFiltered[type] || [];
     return Math.ceil(items.length / ITEMS_PER_PAGE);
-  }
+    }
 
   function changePage(type: string, direction: number) {
-    const totalPages = getTotalPages(type);
-    const currentPageNum = currentPage[type] || 0;
-    const newPage = currentPageNum + direction;
-    
-    if (newPage >= 0 && newPage < totalPages) {
-      currentPage[type] = newPage;
-    }
+  const totalPages = getTotalPages(type);
+  const currentPageNum = currentPage[type] || 0;
+  const newPage = currentPageNum + direction;
+  
+  if (newPage >= 0 && newPage < totalPages) {
+    currentPage = { ...currentPage, [type]: newPage }; // ✅ FIX: Trigger reactivity
   }
+}
+
+// ✅ NUEVO: Reset páginas al buscar
+$: if (searchLocalQuery) {
+  Object.keys(currentPage).forEach(type => {
+    currentPage[type] = 0;
+  });
+}
 
   // ✅ NUEVO: Calculadora de conversión de monedas
   function calculateConversion(amount: number, from: 'cp' | 'sp' | 'gp' | 'pp') {
@@ -324,7 +364,41 @@
       </button>
     </div>
   {:else}
-    
+
+    <!-- ✅ NUEVO: Búsqueda local de items -->
+    {#if inventory.items.length > 0}
+    <div class="mb-4">
+        <div class="form-control">
+        <div class="relative">
+            <input 
+            type="text" 
+            bind:value={searchLocalQuery}
+            placeholder="🔍 Buscar en tu inventario..."
+            class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full pr-10"
+            />
+            {#if searchLocalQuery}
+            <button 
+                class="btn btn-ghost btn-sm btn-circle absolute right-2 top-1/2 -translate-y-1/2"
+                on:click={() => searchLocalQuery = ''}
+            >
+                ✕
+            </button>
+            {/if}
+        </div>
+        {#if searchLocalQuery}
+            <label class="label">
+            <span class="label-text-alt text-success">
+                ✓ {inventory.items.filter(item => 
+                item.name.toLowerCase().includes(searchLocalQuery.toLowerCase()) ||
+                (item.description && item.description.toLowerCase().includes(searchLocalQuery.toLowerCase()))
+                ).length} items encontrados
+            </span>
+            </label>
+        {/if}
+        </div>
+    </div>
+    {/if}
+        
     <!-- Header con stats -->
     <div class="bg-gradient-to-r from-primary/10 to-accent/10 p-4 rounded-lg border-2 border-primary/30">
       <div class="flex flex-wrap justify-between items-center gap-4">

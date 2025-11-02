@@ -245,19 +245,6 @@ export function validateItemDescription(description: string): ValidationResult {
   return { valid: true };
 }
 
-// ✅ NUEVO: Validación de peso
-export function validateItemWeight(weight: number): ValidationResult {
-  if (weight < 0) {
-    return { valid: false, error: 'El peso no puede ser negativo' };
-  }
-  
-  if (weight > 1000) {
-    return { valid: false, error: 'El peso máximo es 1000 lb' };
-  }
-  
-  return { valid: true };
-}
-
 // ===== VALIDACIÓN DE CURRENCY =====
 
 export function validateCurrency(currency: number): ValidationResult {
@@ -305,7 +292,6 @@ export interface CreateItemData {
   description?: string;
   quantity: number;
   value: number;
-  weight?: number;
 }
 
 export function validateCompleteItem(data: CreateItemData): ValidationResult {
@@ -323,19 +309,7 @@ export function validateCompleteItem(data: CreateItemData): ValidationResult {
     if (!descValidation.valid) return descValidation;
   }
   
-  if (data.weight !== undefined) {
-    const weightValidation = validateItemWeight(data.weight);
-    if (!weightValidation.valid) return weightValidation;
-  }
-  
   return { valid: true };
-}
-
-// ✅ NUEVO: Calcular peso total del inventario
-export function calculateTotalWeight(items: Array<{ weight?: number; quantity: number }>): number {
-  return items.reduce((total, item) => {
-    return total + ((item.weight || 0) * item.quantity);
-  }, 0);
 }
 
 // ✅ NUEVO: Convertir monedas a GP

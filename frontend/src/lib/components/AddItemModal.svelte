@@ -28,7 +28,6 @@
     description: '',
     quantity: 1,
     value: 0,
-    weight: 0,
   };
 
   // ✅ NUEVO: Estados de validación
@@ -110,7 +109,6 @@
         description: open5eInventoryApi.cleanDescription(converted.description || fullItem.desc || '', 500),
         quantity: 1,
         value: typeof converted.value === 'number' ? converted.value : parseFloat(String(converted.value || 0)) || 0,
-        weight: converted.weight || 0,
       };
 
       suggestions = [];
@@ -132,7 +130,6 @@
       description: manualForm.description,
       quantity: manualForm.quantity,
       value: manualForm.value,
-      weight: manualForm.weight,
     };
     
     const result = validateCompleteItem(itemData);
@@ -153,7 +150,6 @@
       description: manualForm.description,
       quantity: manualForm.quantity,
       value: manualForm.value,
-      weight: manualForm.weight,
     };
     
     const validation = validateCompleteItem(itemData);
@@ -195,7 +191,6 @@
       description: '',
       quantity: 1,
       value: 0,
-      weight: 0,
     };
     noResults = false;
     loading = false;
@@ -500,19 +495,6 @@
                   on:input={() => touched = true}
                   min="0"
                   step="0.01"
-                  class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
-                />
-              </div>
-              <div class="form-control">
-                <label class="label">
-                  <span class="label-text font-medieval text-neutral">Peso (lb)</span>
-                </label>
-                <input 
-                  type="number" 
-                  bind:value={manualForm.weight}
-                  on:input={() => touched = true}
-                  min="0"
-                  step="0.1"
                   class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
                 />
               </div>
