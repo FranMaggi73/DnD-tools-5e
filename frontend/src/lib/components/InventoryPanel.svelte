@@ -565,7 +565,7 @@
                           
                           {#if item.weaponData}
                             <span class="badge badge-error badge-xs">
-                              ⚔️ {item.weaponData.damageDice}/{#if item.weaponData.properties.versatile}/{item.weaponData.properties.versatile}{/if}
+                              ⚔️ {item.weaponData.damageDice}{#if item.weaponData.properties.versatile}/{item.weaponData.properties.versatile}{/if}
                               {#if item.weaponData.damageType}
                                 {item.weaponData.damageType}
                               {/if}
