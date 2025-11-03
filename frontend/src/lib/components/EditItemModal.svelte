@@ -33,7 +33,6 @@
     armorMagicBonus: 0,
   };
 
-  // tipos para los errores y touched
   let validationErrors: { name: string; quantity: string; value: string; description: string } = {
     name: '',
     quantity: '',
@@ -48,56 +47,89 @@
     description: false
   };
 
-  // ya declarado explícitamente para evitar boolean | undefined
   let hasChanges: boolean = false;
   let isValid: boolean = false;
+  
+  // ✅ NUEVO: Variable para controlar si ya se inicializó el formulario
+  let formInitialized = false;
+  let lastItemId: string | null = null;
 
+  // ✅ CORRECCIÓN PRINCIPAL: Inicializar solo cuando cambia el item o se abre por primera vez
   $: if (item && isOpen) {
-    form = {
-      name: item.name,
-      description: item.description || '',
-      quantity: item.quantity,
-      value: item.value,
-      weaponMagicBonus: item.weaponData?.magicBonus || 0,
-      armorMagicBonus: item.armorData?.magicBonus || 0,
-    };
-    resetValidation();
+    // Solo inicializar si es un item diferente o es la primera vez
+    if (!formInitialized || lastItemId !== item.id) {
+      form = {
+        name: item.name,
+        description: item.description || '',
+        quantity: item.quantity,
+        value: item.value,
+        weaponMagicBonus: item.weaponData?.magicBonus || 0,
+        armorMagicBonus: item.armorData?.magicBonus || 0,
+      };
+      resetValidation();
+      formInitialized = true;
+      lastItemId = item.id;
+    }
   }
 
-  $: if (touched.name) {
-    const result = validateItemName(form.name);
-    validationErrors.name = result.valid ? '' : result.error || '';
+  // ✅ Reset cuando se cierra el modal
+  $: if (!isOpen) {
+    formInitialized = false;
+    lastItemId = null;
   }
 
-  $: if (touched.quantity) {
-    const result = validateItemQuantity(form.quantity);
-    validationErrors.quantity = result.valid ? '' : result.error || '';
+  // Validaciones reactivas - SIN setTimeout
+  $: {
+    if (touched.name && form.name !== undefined) {
+      const result = validateItemName(form.name);
+      validationErrors.name = result.valid ? '' : result.error || '';
+    }
   }
 
-  $: if (touched.value) {
-    const result = validateItemValue(form.value);
-    validationErrors.value = result.valid ? '' : result.error || '';
+  $: {
+    if (touched.quantity && form.quantity !== undefined) {
+      const result = validateItemQuantity(form.quantity);
+      validationErrors.quantity = result.valid ? '' : result.error || '';
+    }
   }
 
-  $: if (touched.description) {
-    const result = validateItemDescription(form.description);
-    validationErrors.description = result.valid ? '' : result.error || '';
+  $: {
+    if (touched.value && form.value !== undefined) {
+      const result = validateItemValue(form.value);
+      validationErrors.value = result.valid ? '' : result.error || '';
+    }
   }
 
+  $: {
+    if (touched.description && form.description !== undefined) {
+      const result = validateItemDescription(form.description);
+      validationErrors.description = result.valid ? '' : result.error || '';
+    }
+  }
 
-$: if (item) {
-  hasChanges = (
-    form.name !== item.name ||
-    form.description !== (item.description ?? '') ||
-    form.quantity !== item.quantity ||
-    form.value !== item.value ||
-    (item.weaponData ? form.weaponMagicBonus !== (item.weaponData.magicBonus ?? 0) : false) ||
-    (item.armorData ? form.armorMagicBonus !== (item.armorData.magicBonus ?? 0) : false)
-  );
-} else {
-  hasChanges = false;
-}
-
+  // Cálculo de cambios
+  $: {
+    if (item && formInitialized) {
+      const nameChanged = form.name !== item.name;
+      const descChanged = form.description !== (item.description || '');
+      const qtyChanged = Number(form.quantity) !== Number(item.quantity);
+      const valueChanged = Number(form.value) !== Number(item.value);
+      
+      let weaponChanged = false;
+      if (item.weaponData) {
+        weaponChanged = Number(form.weaponMagicBonus) !== Number(item.weaponData.magicBonus || 0);
+      }
+      
+      let armorChanged = false;
+      if (item.armorData) {
+        armorChanged = Number(form.armorMagicBonus) !== Number(item.armorData.magicBonus || 0);
+      }
+      
+      hasChanges = nameChanged || descChanged || qtyChanged || valueChanged || weaponChanged || armorChanged;
+    } else {
+      hasChanges = false;
+    }
+  }
 
   $: isValid = !validationErrors.name && !validationErrors.quantity &&
                !validationErrors.value && !validationErrors.description &&
@@ -143,10 +175,13 @@ $: if (item) {
     }
 
     dispatch('update', updates);
+    handleClose();
   }
 
   function handleClose() {
     resetValidation();
+    formInitialized = false;
+    lastItemId = null;
     dispatch('close');
   }
 
@@ -217,10 +252,11 @@ $: if (item) {
           <input 
             type="text" 
             bind:value={form.name}
+            on:input={() => touched.name = true}
             on:blur={() => handleBlur('name')}
             placeholder="Nombre del item"
             class="input input-bordered bg-[#2d241c] text-base-content 
-                   {validationErrors.name && touched.name ? 'border-error border-2' : 'border-primary/50'}"
+                  {validationErrors.name && touched.name ? 'border-error border-2' : 'border-primary/50'}"
             required
           />
           {#if validationErrors.name && touched.name}
@@ -247,17 +283,19 @@ $: if (item) {
               >
                 ➖
               </button>
-              <input 
-                type="number" 
-                bind:value={form.quantity}
-                on:blur={() => { handleBlur('quantity'); handleQuantityChange(); }}
-                on:change={handleQuantityChange}
-                min="0"
-                max="999"
-                class="input input-bordered bg-[#2d241c] text-base-content 
-                       {validationErrors.quantity && touched.quantity ? 'border-error border-2' : 'border-primary/50'} 
-                       join-item text-center flex-1 w-full"
-              />
+                <input 
+                  type="number" 
+                  bind:value={form.quantity}
+                  on:input={() => touched.quantity = true}
+                  on:blur={() => { handleBlur('quantity'); handleQuantityChange(); }}
+                  on:change={handleQuantityChange}
+                  min="0"
+                  max="999"
+                  step="1"
+                  class="input input-bordered bg-[#2d241c] text-base-content 
+                        {validationErrors.quantity && touched.quantity ? 'border-error border-2' : 'border-primary/50'} 
+                        join-item text-center flex-1 w-full"
+                />
               <button 
                 type="button"
                 on:click={incrementQuantity}
@@ -291,15 +329,16 @@ $: if (item) {
             <label class="label">
               <span class="label-text font-medieval text-neutral">Valor (gp)</span>
             </label>
-            <input 
-              type="number" 
-              bind:value={form.value}
-              on:blur={() => handleBlur('value')}
-              min="0"
-              step="0.01"
-              class="input input-bordered bg-[#2d241c] text-base-content 
-                     {validationErrors.value && touched.value ? 'border-error border-2' : 'border-primary/50'}"
-            />
+              <input 
+                type="number" 
+                bind:value={form.value}
+                on:input={() => touched.value = true}
+                on:blur={() => handleBlur('value')}
+                min="0"
+                step="0.01"
+                class="input input-bordered bg-[#2d241c] text-base-content 
+                      {validationErrors.value && touched.value ? 'border-error border-2' : 'border-primary/50'}"
+              />
             {#if validationErrors.value && touched.value}
               <label class="label">
                 <span class="label-text-alt text-error text-xs">⚠️ {validationErrors.value}</span>

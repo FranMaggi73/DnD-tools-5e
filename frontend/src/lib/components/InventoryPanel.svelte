@@ -1,6 +1,6 @@
 <!-- frontend/src/lib/components/InventoryPanel.svelte -->
 <script lang="ts">
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { onMount } from 'svelte';
   import { inventoryApi, type InventoryItem, type InventoryResponse } from '$lib/api/inventory';
   import AddItemModal from './AddItemModal.svelte';
   import ItemDetailModal from './ItemDetailModal.svelte';
@@ -94,7 +94,6 @@
   async function loadInventory(force = false) {
     const now = Date.now();
     if (!force && inventory && now - lastLoadTime < CACHE_DURATION) {
-      console.log('📦 Using cached inventory data');
       return;
     }
 
@@ -564,10 +563,14 @@
                             </span>
                           {/if}
                           
+                          <!-- ✅ WEAPON DATA -->
                           {#if item.weaponData}
                             <span class="badge badge-error badge-xs">
-                              {item.weaponData.damageDice} {item.weaponData.damageType}
-                              {#if item.weaponData.magicBonus}
+                              ⚔️ {item.weaponData.damageDice}
+                              {#if item.weaponData.damageType}
+                                {item.weaponData.damageType}
+                              {/if}
+                              {#if item.weaponData.magicBonus && item.weaponData.magicBonus > 0}
                                 +{item.weaponData.magicBonus}
                               {/if}
                             </span>

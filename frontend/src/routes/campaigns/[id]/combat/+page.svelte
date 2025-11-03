@@ -259,7 +259,6 @@
         : [];
       
       if (currentConditions.includes(condition)) {
-        console.log('Condición ya existe, ignorando');
         return;
       }
       

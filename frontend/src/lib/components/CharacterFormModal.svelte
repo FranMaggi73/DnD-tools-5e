@@ -95,7 +95,6 @@
 
   // ✅ FIX: Simplificar validación de pasos
   $: isStepValid = (() => {
-    console.log(`🔍 Validating step ${currentStep}:`, { form, errors });
     
     switch (currentStep) {
       case 1: {
@@ -104,25 +103,21 @@
         const levelValid = form.level >= 1 && form.level <= 20 && !errors.level;
         
         const valid = nameValid && classValid && levelValid;
-        console.log('Step 1:', { nameValid, classValid, levelValid, valid });
         return valid;
       }
       
       case 2: {
         const valid = form.maxHp > 0 && form.armorClass > 0 && form.speed >= 0 &&
                       !errors.maxHp && !errors.armorClass && !errors.speed;
-        console.log('Step 2:', { valid, maxHp: form.maxHp, armorClass: form.armorClass, errors });
         return valid;
       }
       
       case 3: {
         const valid = Object.values(form.abilityScores).every(score => score >= 1 && score <= 30);
-        console.log('Step 3:', { valid, abilityScores: form.abilityScores });
         return valid;
       }
       
       case 4: {
-        console.log('Step 4: always valid');
         return true;
       }
       
@@ -137,10 +132,8 @@
 
   function nextStep() {
     // ✅ FIX: Solo validar el paso actual
-    console.log(`➡️ Next step: current=${currentStep}, valid=${isStepValid}`);
     
     if (!isStepValid) {
-      console.log('❌ Step validation failed');
       // Marcar campos como touched para mostrar errores
       if (currentStep === 1) {
         touched.name = true;
@@ -156,7 +149,6 @@
 
     if (currentStep < totalSteps) {
       currentStep++;
-      console.log(`✅ Moved to step ${currentStep}`);
     }
   }
 
@@ -233,7 +225,6 @@
   }
 
   function handleSubmit() {
-    console.log('🚀 Submit form:', { currentStep, isStepValid, form });
     
     // ✅ FIX: Validar todos los pasos antes de enviar
     Object.keys(touched).forEach(key => {
@@ -244,12 +235,10 @@
     for (let step = 1; step <= totalSteps; step++) {
       currentStep = step;
       if (!isStepValid) {
-        console.log(`❌ Validation failed at step ${step}`);
         return;
       }
     }
 
-    console.log('✅ All steps valid, dispatching submit');
     dispatch('submit', form);
     resetValidation();
   }

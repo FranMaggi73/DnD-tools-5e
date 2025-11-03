@@ -61,10 +61,8 @@
       suggestions = (result.results || []).slice(0, 20);
       noResults = suggestions.length === 0;
       
-      console.log('🔍 Search results:', suggestions.length, 'items');
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        console.log('🚫 Search cancelled');
         return;
       }
       console.error('Error buscando items:', err);
@@ -78,7 +76,6 @@
 
   // ✅ MEJORADO: Selección de item con mejor manejo de errores
   async function selectItem(item: Open5eItem) {
-    console.log('📦 Selected item (summary):', item);
     loading = true;
     noResults = false;
 
@@ -90,7 +87,6 @@
       if ((item as any).source) {
         try {
           fullItem = await open5eInventoryApi.getItem(item.slug, category);
-          console.log('📥 Fetched full item:', fullItem);
         } catch (err) {
           console.warn('Could not fetch full item, using summary:', err);
           fullItem = item;
@@ -168,7 +164,6 @@
       open5eSlug: selectedItem?.slug,
     };
     
-    console.log('💾 Adding item:', fullItemData);
     dispatch('add', fullItemData);
     handleClose();
   }

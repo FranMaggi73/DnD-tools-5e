@@ -227,7 +227,6 @@ export const open5eInventoryApi = {
     // ✅ Verificar cache primero
     const cached = getCachedSearch(searchQuery);
     if (cached) {
-      console.log('📦 Using cached search results for:', searchQuery);
       return cached;
     }
 
@@ -294,7 +293,6 @@ export const open5eInventoryApi = {
       return result;
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        console.log('🚫 Search cancelled');
         throw error;
       }
       console.error('Error searching Open5e:', error);
@@ -318,31 +316,33 @@ export const open5eInventoryApi = {
    */
 // REEMPLAZAR CON:
 convertToInventoryItem: (open5eItem: any): Partial<InventoryItem> => {
-  // ✅ Usar campos directos sin matcheos
   const name = open5eItem.name || '';
   const description = cleanDescription(open5eItem.desc || '', 1000);
   const value = parseCostRobust(open5eItem.cost);
   
-  // ✅ Inferir tipo SOLO basado en campos estructurados de Open5e
   let inferredType: InventoryItem['type'] = 'other';
   
-  // Weapon: tiene damage o damage_type
-  if (open5eItem.damage || open5eItem.damage_type) {
+  // 🔥 FIX: Detectar armas PRIMERO (más específico)
+  if (open5eItem.damage_dice || open5eItem.damage_type || open5eItem.damage) {
     inferredType = 'weapon';
   }
   // Armor: tiene armor_class o ac_string
   else if (open5eItem.armor_class || open5eItem.ac_string) {
-    inferredType = 'armor'; // Shield se detecta por category
+    inferredType = 'armor';
   }
-  // ✅ CONSUMABLES: solo por keywords necesarios (no hay campo directo)
+  // Shield: categoría específica
+  else if (open5eItem.category && open5eItem.category.toLowerCase().includes('shield')) {
+    inferredType = 'shield';
+  }
+  // Consumables
   else if (detectConsumable(name, description)) {
     inferredType = 'consumable';
   }
-  // Tool: basado en category
+  // Tool
   else if (open5eItem.category && open5eItem.category.toLowerCase().includes('tool')) {
     inferredType = 'tool';
   }
-  // Treasure: items raros sin stats de combate
+  // Treasure
   else if (open5eItem.rarity && !['common', 'none'].includes(open5eItem.rarity.toLowerCase())) {
     inferredType = 'treasure';
   }
@@ -357,19 +357,19 @@ convertToInventoryItem: (open5eItem: any): Partial<InventoryItem> => {
     rarity: open5eItem.rarity || 'common',
   };
 
-  // ✅ Weapon data: usar campos directos
+  // ✅ Weapon data
   if (inferredType === 'weapon') {
     item.weaponData = {
       weaponType: open5eItem.category || 'simple',
-      damageDice: open5eItem.damage,
+      damageDice: open5eItem.damage_dice || open5eItem.damage || '1d4',
       damageType: open5eItem.damage_type || 'bludgeoning',
       properties: parseWeaponProperties(open5eItem.properties, open5eItem.desc),
       magicBonus: extractMagicBonus(name)
     };
   }
 
-  // ✅ Armor data: usar campos directos
-  if (inferredType === 'armor') {
+  // ✅ Armor data
+  if (inferredType === 'armor' || inferredType === 'shield') {
     item.armorData = {
       armorType: open5eItem.category || 'light',
       baseAC: parseBaseAC(open5eItem.armor_class || open5eItem.ac_string),
@@ -541,7 +541,6 @@ function parseBaseAC(armorClass: any): number {
 function parseDexModifier(item: any): string {
   // ✅ Open5e tiene campo 'category' que define esto directamente
   const category = (item.category || '').toLowerCase();
-  console.log('Category:', category);
   // Map directo sin includes
   const modifiers: Record<string, string> = {
     'Heavy Armor': 'none',

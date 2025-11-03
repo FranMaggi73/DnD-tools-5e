@@ -38,11 +38,9 @@
     
     const currentConditions = Array.isArray(combatant.conditions) ? combatant.conditions : [];
     if (currentConditions.includes(conditionName)) {
-      console.log('Condición ya existe:', conditionName);
       return;
     }
 
-    console.log('Agregando condición:', conditionName);
     dispatch('add', conditionName);
     searchQuery = '';
     suggestions = [];
@@ -50,7 +48,6 @@
 
   function removeCondition(conditionName: string) {
     if (!combatant || !isDM) return; // 👈 VERIFICAR isDM
-    console.log('Removiendo condición:', conditionName);
     dispatch('remove', conditionName);
   }
 
