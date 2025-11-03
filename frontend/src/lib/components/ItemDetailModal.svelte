@@ -152,7 +152,7 @@
             </div>
 
             <!-- Propiedades del arma -->
-            {#if Object.entries(item.weaponData.properties).some(([key, value]) => value === true)}
+            {#if item.weaponData.properties && Object.keys(item.weaponData.properties).length > 0}
               <div class="mt-3">
                 <p class="text-xs font-medieval text-neutral/60 mb-2">PROPIEDADES</p>
                 <div class="flex flex-wrap gap-2">
@@ -179,6 +179,9 @@
                   {/if}
                   {#if item.weaponData.properties.ammunition}
                     <span class="badge badge-sm badge-accent">Munición</span>
+                  {/if}
+                  {#if item.weaponData.properties.versatile}
+                    <span class="badge badge-sm badge-secondary">Versátil</span>
                   {/if}
                 </div>
               </div>
