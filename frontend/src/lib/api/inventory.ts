@@ -1,5 +1,4 @@
 // frontend/src/lib/api/inventory.ts
-// ✨ CORREGIDO: Mejor parsing, manejo de errores, cache de búsquedas
 
 import { get } from 'svelte/store';
 import { tokenStore } from '$lib/stores/authStore';
@@ -317,78 +316,78 @@ export const open5eInventoryApi = {
   /**
    * ✅ MEJORADO: Conversión más robusta con mejor manejo de datos
    */
-  convertToInventoryItem: (open5eItem: any): Partial<InventoryItem> => {
-    // Helper para extraer valor seguro
-    const getSafe = (obj: any, ...keys: string[]): any => {
-      for (const key of keys) {
-        const val = obj?.[key];
-        if (val !== undefined && val !== null && val !== '') return val;
-      }
-      return undefined;
+// REEMPLAZAR CON:
+convertToInventoryItem: (open5eItem: any): Partial<InventoryItem> => {
+  const getSafe = (obj: any, ...keys: string[]): any => {
+    for (const key of keys) {
+      const val = obj?.[key];
+      if (val !== undefined && val !== null && val !== '') return val;
+    }
+    return undefined;
+  };
+
+  const descriptionRaw = getSafe(open5eItem, 'desc', 'description', 'long_description', 'text');
+  const description = cleanDescription(descriptionRaw || '', 1000);
+  const costRaw = getSafe(open5eItem, 'cost', 'price', 'cost_string', 'value', 'cost_text');
+  const value = parseCostRobust(costRaw);
+
+  const sourceField = String(getSafe(open5eItem, 'source', 'category', 'type', 'document__slug') || '').toLowerCase();
+  const name = String(open5eItem.name || open5eItem.title || '').trim();
+  const nameLower = name.toLowerCase();
+
+  // ✅ SOLO inferir el tipo básico
+  let inferredType: InventoryItem['type'] = 'other';
+  if (sourceField.includes('weapon') || open5eItem.damage || open5eItem.damage_type) {
+    inferredType = 'weapon';
+  } else if (sourceField.includes('armor') || open5eItem.armor_class || open5eItem.ac_string) {
+    if (nameLower.includes('shield') || sourceField.includes('shield')) {
+      inferredType = 'shield';
+    } else {
+      inferredType = 'armor';
+    }
+  } else if (nameLower.match(/potion|elixir|scroll|oil/) || 
+             (open5eItem.subtype && open5eItem.subtype.toLowerCase().includes('consumable'))) {
+    inferredType = 'consumable';
+  } else if (open5eItem.rarity && !['common', 'none'].includes(String(open5eItem.rarity).toLowerCase())) {
+    inferredType = 'treasure';
+  }
+
+  const item: Partial<InventoryItem> = {
+    name,
+    description,
+    quantity: 1,
+    open5eSlug: getSafe(open5eItem, 'slug', 'document__slug', 'id'),
+    value,
+    type: inferredType,
+    rarity: open5eItem.rarity || 'common',
+  };
+
+  // ✅ Guardar datos de arma TAL CUAL vienen de la API
+  if (inferredType === 'weapon' && open5eItem.damage) {
+    item.weaponData = {
+      weaponType: open5eItem.category || open5eItem.type || 'unknown',
+      damageDice: open5eItem.damage,
+      damageType: open5eItem.damage_type || 'bludgeoning',
+      properties: parseWeaponProperties(open5eItem),
+      magicBonus: extractMagicBonus(name)
     };
+  }
 
-    // Descripción limpia
-    const descriptionRaw = getSafe(open5eItem, 'desc', 'description', 'long_description', 'text');
-    const description = cleanDescription(descriptionRaw || '', 1000);
-
-    // ✅ MEJORADO: Parser de costo más robusto
-    const costRaw = getSafe(open5eItem, 'cost', 'price', 'cost_string', 'value', 'cost_text');
-    const value = parseCostRobust(costRaw);
-
-    // Detectar origen/categoría
-    const sourceField = String(getSafe(open5eItem, 'source', 'category', 'type', 'document__slug') || '').toLowerCase();
-    const name = String(open5eItem.name || open5eItem.title || '').trim();
-    const nameLower = name.toLowerCase();
-
-    // ✅ MEJORADO: Detección de tipo
-    let inferredType: InventoryItem['type'] = 'other';
-    if (sourceField.includes('weapon') || open5eItem.damage || open5eItem.damage_type || nameLower.match(/sword|axe|bow|mace|spear|dagger/)) {
-      inferredType = 'weapon';
-    } else if (sourceField.includes('armor') || open5eItem.armor_class || open5eItem.ac_string || nameLower.includes('armor') || nameLower.includes('armour')) {
-      if (nameLower.includes('shield') || sourceField.includes('shield')) {
-        inferredType = 'shield';
-      } else {
-        inferredType = 'armor';
-      }
-    } else if (nameLower.match(/potion|elixir|scroll|oil/) || (open5eItem.subtype && open5eItem.subtype.toLowerCase().includes('consumable'))) {
-      inferredType = 'consumable';
-    } else if (open5eItem.rarity && !['common', 'none'].includes(String(open5eItem.rarity).toLowerCase())) {
-      inferredType = 'treasure';
-    }
-    // Crear objeto base
-    const item: Partial<InventoryItem> = {
-      name,
-      description,
-      quantity: 1,
-      open5eSlug: getSafe(open5eItem, 'slug', 'document__slug', 'id'),
-      value,
-      type: inferredType,
-      rarity: open5eItem.rarity || 'common',
+  // ✅ Guardar datos de armadura TAL CUAL vienen de la API
+  if ((inferredType === 'armor' || inferredType === 'shield') && 
+      (open5eItem.armor_class || open5eItem.ac_string)) {
+    item.armorData = {
+      armorType: open5eItem.category || open5eItem.type || 'unknown',
+      baseAC: parseBaseAC(open5eItem),
+      dexModifier: parseDexModifier(open5eItem),
+      strengthRequirement: open5eItem.strength_requirement,
+      stealthDisadvantage: open5eItem.stealth_disadvantage || false,
+      magicBonus: extractMagicBonus(name)
     };
+  }
 
-    // Parsear datos específicos
-    try {
-      if (inferredType === 'weapon') {
-        item.weaponData = parseWeaponDataRobust(open5eItem);
-      } else if (inferredType === 'armor' || inferredType === 'shield') {
-        item.armorData = parseArmorDataRobust(open5eItem);
-      }
-    } catch (err) {
-      console.warn('Error parsing weapon/armor data:', err);
-    }
-
-    // Detectar magic bonus en el nombre
-    const magicMatch = name.match(/\+(\d+)/);
-    if (magicMatch) {
-      const bonus = parseInt(magicMatch[1], 10);
-      if (!isNaN(bonus)) {
-        if (item.weaponData) item.weaponData.magicBonus = bonus;
-        if (item.armorData) item.armorData.magicBonus = bonus;
-      }
-    }
-
-    return item;
-  },
+  return item;
+},
 
   cleanDescription: (html: string, maxLength: number = 200): string => {
     return cleanDescription(html, maxLength);
@@ -432,7 +431,7 @@ function parseCostRobust(cost: any): number {
   const costStr = String(cost).toLowerCase();
   
   // ✅ Buscar patrón: número + moneda
-  const match = costStr.match(/(\d+(?:[.,]\d+)?)\s*(?:pieces?\s+of\s+)?(cp|sp|ep|gp|pp|copper|silver|electrum|gold|platinum)/);
+  const match = costStr.match(/(\d+(?:[.,]\d+)?)\s*(?:pieces?\s+of\s+)?(cp|sp|gp|pp|copper|silver|gold|platinum)/);
   if (match) {
     const amount = parseFloat(match[1].replace(',', '.'));
     let currency = match[2];
@@ -440,7 +439,6 @@ function parseCostRobust(cost: any): number {
     // Normalizar nombres largos
     if (currency === 'copper') currency = 'cp';
     if (currency === 'silver') currency = 'sp';
-    if (currency === 'electrum') currency = 'ep';
     if (currency === 'gold') currency = 'gp';
     if (currency === 'platinum') currency = 'pp';
     
@@ -471,25 +469,11 @@ function convertToGold(amount: number, currency: string): number {
 /**
  * ✅ MEJORADO: Parser de datos de arma más robusto
  */
-function parseWeaponDataRobust(item: any): WeaponData {
-  const weaponData: WeaponData = {
-    weaponType: item.category || 'simple_melee',
-    damageDice: item.damage || '1d4',
-    damageType: item.damage_type || 'bludgeoning',
-    properties: parseWeaponProperties(item),
-  };
-  
-  const magicMatch = item.name.match(/\+(\d+)/);
-  if (magicMatch) {
-    weaponData.magicBonus = parseInt(magicMatch[1]);
-  }
-  
-  return weaponData;
-}
 
 function parseWeaponProperties(item: any): WeaponProperties {
   const props: WeaponProperties = {};
   
+  // ✅ Parsear propiedades directamente de lo que trae la API
   const properties = item.properties || [];
   
   if (Array.isArray(properties)) {
@@ -512,9 +496,10 @@ function parseWeaponProperties(item: any): WeaponProperties {
     });
   }
   
+  // ✅ Parsear rango si existe
   if (item.weapon_range || item.range) {
-    const rangeStr = item.weapon_range || item.range;
-    const rangeMatch = String(rangeStr).match(/(\d+)(?:\/(\d+))?/);
+    const rangeStr = String(item.weapon_range || item.range);
+    const rangeMatch = rangeStr.match(/(\d+)(?:\/(\d+))?/);
     if (rangeMatch) {
       props.range = {
         normal: parseInt(rangeMatch[1]),
@@ -526,80 +511,54 @@ function parseWeaponProperties(item: any): WeaponProperties {
   return props;
 }
 
-/**
- * ✅ MEJORADO: Parser de armadura más robusto
- */
-function parseArmorDataRobust(item: any): ArmorData {
-  const armor: ArmorData = {
-    armorType: detectArmorType(item.name),
-    baseAC: 10,
-    dexModifier: 'full',
-  };
-  
-  // ✅ MEJORADO: Parsear AC desde múltiples fuentes
-  let acValue = 10;
-  
-  if (typeof item.armor_class === 'number') {
-    acValue = item.armor_class;
-  } else if (typeof item.armor_class === 'object' && item.armor_class?.base) {
-    acValue = item.armor_class.base;
-  } else if (typeof item.armor_class === 'string') {
-    const acMatch = item.armor_class.match(/(\d+)/);
-    if (acMatch) acValue = parseInt(acMatch[1]);
-  } else if (item.ac_string) {
-    const acMatch = String(item.ac_string).match(/(\d+)/);
-    if (acMatch) acValue = parseInt(acMatch[1]);
-  }
-  
-  // ✅ Para shields, valor por defecto es +2 si no se especifica
-  if (detectArmorType(item.name) === 'shield' && acValue === 10) {
-    acValue = 2;
-  }
-  
-  armor.baseAC = acValue;
-  
-  // Detectar modificador de DEX
-  const acStr = String(item.armor_class || item.ac_string || '').toLowerCase();
-  if (acStr.includes('dex modifier')) {
-    armor.dexModifier = 'full';
-  } else if (acStr.includes('max 2') || acStr.includes('maximum of 2')) {
-    armor.dexModifier = 'max2';
-  } else if (!acStr.includes('dex') && armor.armorType !== 'light') {
-    armor.dexModifier = 'none';
-  }
-  
-  if (item.strength_requirement) {
-    armor.strengthRequirement = item.strength_requirement;
-  }
-  
-  if (item.stealth_disadvantage) {
-    armor.stealthDisadvantage = true;
-  }
-  
-  const magicMatch = item.name.match(/\+(\d+)/);
-  if (magicMatch) {
-    armor.magicBonus = parseInt(magicMatch[1]);
-  }
-  
-  return armor;
+function extractMagicBonus(name: string): number {
+  const magicMatch = name.match(/\+(\d+)/);
+  return magicMatch ? parseInt(magicMatch[1], 10) : 0;
 }
 
-function detectArmorType(name: string): string {
-  const nameLower = name.toLowerCase();
-  
-  if (nameLower.includes('shield')) return 'shield';
-  
-  if (nameLower.match(/leather|padded|studded/)) {
-    return 'light';
+/**
+ * Parsea AC base de múltiples formatos
+ */
+function parseBaseAC(item: any): number {
+  if (typeof item.armor_class === 'number') {
+    return item.armor_class;
   }
   
-  if (nameLower.match(/plate|chain mail|splint|ring mail/)) {
-    return 'heavy';
+  if (typeof item.armor_class === 'object' && item.armor_class?.base) {
+    return item.armor_class.base;
   }
   
-  if (nameLower.match(/chain|scale|breastplate|half plate/)) {
-    return 'medium';
+  if (typeof item.armor_class === 'string') {
+    const acMatch = item.armor_class.match(/(\d+)/);
+    if (acMatch) return parseInt(acMatch[1]);
   }
   
-  return 'light';
+  if (item.ac_string) {
+    const acMatch = String(item.ac_string).match(/(\d+)/);
+    if (acMatch) return parseInt(acMatch[1]);
+  }
+  
+  // Para shields, valor por defecto +2
+  const name = String(item.name || '').toLowerCase();
+  if (name.includes('shield')) return 2;
+  
+  return 10;
+}
+
+/**
+ * Parsea modificador de DEX de la descripción
+ */
+function parseDexModifier(item: any): string {
+  const acStr = String(item.armor_class || item.ac_string || '').toLowerCase();
+  
+  if (acStr.includes('dex modifier')) return 'full';
+  if (acStr.includes('max 2') || acStr.includes('maximum of 2')) return 'max2';
+  
+  // Si no menciona DEX y es armadura pesada, no suma DEX
+  const category = String(item.category || item.type || '').toLowerCase();
+  if (category.includes('heavy')) return 'none';
+  if (category.includes('light')) return 'full';
+  if (category.includes('medium')) return 'max2';
+  
+  return 'full'; // Default
 }
