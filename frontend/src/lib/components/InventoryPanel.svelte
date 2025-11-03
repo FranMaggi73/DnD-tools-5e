@@ -1,5 +1,4 @@
 <!-- frontend/src/lib/components/InventoryPanel.svelte -->
-<!-- ✅ MEJORADO: Mejor visualización de items de Open5e con iconos y badges -->
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
   import { inventoryApi, type InventoryItem, type InventoryResponse } from '$lib/api/inventory';
@@ -10,8 +9,6 @@
 
   export let characterId: string;
   export let isOwner: boolean = false;
-
-  const dispatch = createEventDispatcher();
 
   let inventory: InventoryResponse | null = null;
   let loading = true;
@@ -584,11 +581,6 @@
                                 AC {item.armorData.baseAC}{item.armorData.magicBonus ? `+${item.armorData.magicBonus}` : ''}
                               {/if}
                             </span>
-                          {/if}
-
-                          <!-- ✅ NUEVO: Badge de Open5e -->
-                          {#if item.open5eSlug}
-                            <span class="badge badge-xs badge-accent" title="Item de Open5e">📖</span>
                           {/if}
                         </div>
                       </div>

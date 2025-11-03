@@ -318,37 +318,32 @@ export const open5eInventoryApi = {
    */
 // REEMPLAZAR CON:
 convertToInventoryItem: (open5eItem: any): Partial<InventoryItem> => {
-  const getSafe = (obj: any, ...keys: string[]): any => {
-    for (const key of keys) {
-      const val = obj?.[key];
-      if (val !== undefined && val !== null && val !== '') return val;
-    }
-    return undefined;
-  };
-
-  const descriptionRaw = getSafe(open5eItem, 'desc', 'description', 'long_description', 'text');
-  const description = cleanDescription(descriptionRaw || '', 1000);
-  const costRaw = getSafe(open5eItem, 'cost', 'price', 'cost_string', 'value', 'cost_text');
-  const value = parseCostRobust(costRaw);
-
-  const sourceField = String(getSafe(open5eItem, 'source', 'category', 'type', 'document__slug') || '').toLowerCase();
-  const name = String(open5eItem.name || open5eItem.title || '').trim();
-  const nameLower = name.toLowerCase();
-
-  // ✅ SOLO inferir el tipo básico
+  // ✅ Usar campos directos sin matcheos
+  const name = open5eItem.name || '';
+  const description = cleanDescription(open5eItem.desc || '', 1000);
+  const value = parseCostRobust(open5eItem.cost);
+  
+  // ✅ Inferir tipo SOLO basado en campos estructurados de Open5e
   let inferredType: InventoryItem['type'] = 'other';
-  if (sourceField.includes('weapon') || open5eItem.damage || open5eItem.damage_type) {
+  
+  // Weapon: tiene damage o damage_type
+  if (open5eItem.damage || open5eItem.damage_type) {
     inferredType = 'weapon';
-  } else if (sourceField.includes('armor') || open5eItem.armor_class || open5eItem.ac_string) {
-    if (nameLower.includes('shield') || sourceField.includes('shield')) {
-      inferredType = 'shield';
-    } else {
-      inferredType = 'armor';
-    }
-  } else if (nameLower.match(/potion|elixir|scroll|oil/) || 
-             (open5eItem.subtype && open5eItem.subtype.toLowerCase().includes('consumable'))) {
+  }
+  // Armor: tiene armor_class o ac_string
+  else if (open5eItem.armor_class || open5eItem.ac_string) {
+    inferredType = 'armor'; // Shield se detecta por category
+  }
+  // ✅ CONSUMABLES: solo por keywords necesarios (no hay campo directo)
+  else if (detectConsumable(name, description)) {
     inferredType = 'consumable';
-  } else if (open5eItem.rarity && !['common', 'none'].includes(String(open5eItem.rarity).toLowerCase())) {
+  }
+  // Tool: basado en category
+  else if (open5eItem.category && open5eItem.category.toLowerCase().includes('tool')) {
+    inferredType = 'tool';
+  }
+  // Treasure: items raros sin stats de combate
+  else if (open5eItem.rarity && !['common', 'none'].includes(open5eItem.rarity.toLowerCase())) {
     inferredType = 'treasure';
   }
 
@@ -356,29 +351,28 @@ convertToInventoryItem: (open5eItem: any): Partial<InventoryItem> => {
     name,
     description,
     quantity: 1,
-    open5eSlug: getSafe(open5eItem, 'slug', 'document__slug', 'id'),
+    open5eSlug: open5eItem.slug,
     value,
     type: inferredType,
     rarity: open5eItem.rarity || 'common',
   };
 
-  // ✅ Guardar datos de arma TAL CUAL vienen de la API
-  if (inferredType === 'weapon' && open5eItem.damage) {
+  // ✅ Weapon data: usar campos directos
+  if (inferredType === 'weapon') {
     item.weaponData = {
-      weaponType: open5eItem.category || open5eItem.type || 'unknown',
+      weaponType: open5eItem.category || 'simple',
       damageDice: open5eItem.damage,
       damageType: open5eItem.damage_type || 'bludgeoning',
-      properties: parseWeaponProperties(open5eItem),
+      properties: parseWeaponProperties(open5eItem.properties, open5eItem.desc),
       magicBonus: extractMagicBonus(name)
     };
   }
 
-  // ✅ Guardar datos de armadura TAL CUAL vienen de la API
-  if ((inferredType === 'armor' || inferredType === 'shield') && 
-      (open5eItem.armor_class || open5eItem.ac_string)) {
+  // ✅ Armor data: usar campos directos
+  if (inferredType === 'armor') {
     item.armorData = {
-      armorType: open5eItem.category || open5eItem.type || 'unknown',
-      baseAC: parseBaseAC(open5eItem),
+      armorType: open5eItem.category || 'light',
+      baseAC: parseBaseAC(open5eItem.armor_class || open5eItem.ac_string),
       dexModifier: parseDexModifier(open5eItem),
       strengthRequirement: open5eItem.strength_requirement,
       stealthDisadvantage: open5eItem.stealth_disadvantage || false,
@@ -397,6 +391,21 @@ convertToInventoryItem: (open5eItem: any): Partial<InventoryItem> => {
 // ===========================
 // HELPER FUNCTIONS - MEJORADOS
 // ===========================
+
+// ✅ SOLO para consumibles (no hay campo directo en Open5e)
+function detectConsumable(name: string, description: string): boolean {
+  const nameLower = name.toLowerCase();
+  const descLower = description.toLowerCase();
+  
+  const consumableKeywords = [
+    'potion', 'elixir', 'oil', 'scroll', 
+    'poison', 'antidote', 'philter'
+  ];
+  
+  return consumableKeywords.some(keyword => 
+    nameLower.includes(keyword) || descLower.includes(keyword)
+  );
+}
 
 function cleanDescription(html: string, maxLength: number = 200): string {
   if (!html) return '';
@@ -418,94 +427,81 @@ function cleanDescription(html: string, maxLength: number = 200): string {
  * ✅ MEJORADO: Parser de costo robusto
  */
 function parseCostRobust(cost: any): number {
-  if (typeof cost === 'number') return Math.max(0, cost);
+  // ✅ Open5e puede devolver: "50 gp", {quantity: 50, unit: "gp"}, o 50
+  
+  if (typeof cost === 'number') {
+    return cost;
+  }
+  
   if (!cost) return 0;
   
-  // ✅ Si es objeto {amount: 50, currency: "gp"}
-  if (typeof cost === 'object' && cost.amount !== undefined) {
-    const amount = parseFloat(cost.amount);
-    const currency = (cost.currency || 'gp').toLowerCase();
-    return convertToGold(amount, currency);
+  // Formato objeto (algunos items)
+  if (typeof cost === 'object') {
+    const amount = parseFloat(cost.quantity || cost.amount || 0);
+    const unit = (cost.unit || cost.currency || 'gp').toLowerCase();
+    return convertToGold(amount, unit);
   }
   
-  const costStr = String(cost).toLowerCase();
+  // Formato string: "50 gp"
+  const costStr = String(cost).trim();
+  const match = costStr.match(/^(\d+(?:\.\d+)?)\s*([a-z]+)?$/i);
   
-  // ✅ Buscar patrón: número + moneda
-  const match = costStr.match(/(\d+(?:[.,]\d+)?)\s*(?:pieces?\s+of\s+)?(cp|sp|gp|pp|copper|silver|gold|platinum)/);
   if (match) {
-    const amount = parseFloat(match[1].replace(',', '.'));
-    let currency = match[2];
-    
-    // Normalizar nombres largos
-    if (currency === 'copper') currency = 'cp';
-    if (currency === 'silver') currency = 'sp';
-    if (currency === 'gold') currency = 'gp';
-    if (currency === 'platinum') currency = 'pp';
-    
+    const amount = parseFloat(match[1]);
+    const currency = (match[2] || 'gp').toLowerCase();
     return convertToGold(amount, currency);
-  }
-  
-  // ✅ Si solo hay número, asumir GP
-  const numMatch = costStr.match(/(\d+(?:[.,]\d+)?)/);
-  if (numMatch) {
-    return parseFloat(numMatch[1].replace(',', '.'));
   }
   
   return 0;
 }
 
 function convertToGold(amount: number, currency: string): number {
-  const conversions: Record<string, number> = {
+  const rates: Record<string, number> = {
     cp: 0.01,
     sp: 0.1,
     ep: 0.5,
     gp: 1,
     pp: 10
   };
-  
-  return amount * (conversions[currency] || 1);
+  return amount * (rates[currency] || 1);
 }
 
 /**
  * ✅ MEJORADO: Parser de datos de arma más robusto
  */
 
-function parseWeaponProperties(item: any): WeaponProperties {
+function parseWeaponProperties(
+  properties: any, 
+  description?: string
+): WeaponProperties {
   const props: WeaponProperties = {};
   
-  // ✅ Parsear propiedades directamente de lo que trae la API
-  const properties = item.properties || [];
+  if (!properties) return props;
   
-  if (Array.isArray(properties)) {
-    properties.forEach((prop: any) => {
-      const p = (typeof prop === 'string' ? prop : prop.name || '').toLowerCase();
-      
-      if (p.includes('light')) props.light = true;
-      if (p.includes('finesse')) props.finesse = true;
-      if (p.includes('thrown')) props.thrown = true;
-      if (p.includes('two-handed') || p.includes('two handed')) props.twoHanded = true;
-      if (p.includes('reach')) props.reach = true;
-      if (p.includes('loading')) props.loading = true;
-      if (p.includes('heavy')) props.heavy = true;
-      if (p.includes('ammunition')) props.ammunition = true;
-      
-      const versatileMatch = p.match(/versatile\s*\(([^)]+)\)/);
-      if (versatileMatch) {
-        props.versatile = versatileMatch[1];
-      }
-    });
-  }
+  // ✅ Open5e devuelve array de objetos: [{name: "Light"}, {name: "Finesse"}]
+  const propNames = Array.isArray(properties) 
+    ? properties.map(p => typeof p === 'string' ? p : p.name)
+    : [];
   
-  // ✅ Parsear rango si existe
-  if (item.weapon_range || item.range) {
-    const rangeStr = String(item.weapon_range || item.range);
-    const rangeMatch = rangeStr.match(/(\d+)(?:\/(\d+))?/);
-    if (rangeMatch) {
-      props.range = {
-        normal: parseInt(rangeMatch[1]),
-        max: rangeMatch[2] ? parseInt(rangeMatch[2]) : parseInt(rangeMatch[1]) * 3
-      };
-    }
+  // ✅ Map directo sin includes
+  const propSet = new Set(propNames.map(p => p.toLowerCase()));
+  
+  props.light = propSet.has('light');
+  props.finesse = propSet.has('finesse');
+  props.thrown = propSet.has('thrown');
+  props.twoHanded = propSet.has('two-handed');
+  props.reach = propSet.has('reach');
+  props.loading = propSet.has('loading');
+  props.heavy = propSet.has('heavy');
+  props.ammunition = propSet.has('ammunition');
+  
+  // ✅ VERSATILE: necesita parseo porque viene como "Versatile (1d10)"
+  const versatileProp = propNames.find(p => 
+    p.toLowerCase().startsWith('versatile')
+  );
+  if (versatileProp) {
+    const match = versatileProp.match(/\(([0-9]+d[0-9]+)\)/);
+    if (match) props.versatile = match[1];
   }
   
   return props;
@@ -519,46 +515,39 @@ function extractMagicBonus(name: string): number {
 /**
  * Parsea AC base de múltiples formatos
  */
-function parseBaseAC(item: any): number {
-  if (typeof item.armor_class === 'number') {
-    return item.armor_class;
+function parseBaseAC(armorClass: any): number {
+  // ✅ Open5e devuelve número directo o objeto {base: X}
+  
+  if (typeof armorClass === 'number') {
+    return armorClass;
   }
   
-  if (typeof item.armor_class === 'object' && item.armor_class?.base) {
-    return item.armor_class.base;
+  if (typeof armorClass === 'object' && armorClass?.base) {
+    return armorClass.base;
   }
   
-  if (typeof item.armor_class === 'string') {
-    const acMatch = item.armor_class.match(/(\d+)/);
-    if (acMatch) return parseInt(acMatch[1]);
+  // Solo como fallback si viene string
+  if (typeof armorClass === 'string') {
+    const num = parseInt(armorClass);
+    if (!isNaN(num)) return num;
   }
   
-  if (item.ac_string) {
-    const acMatch = String(item.ac_string).match(/(\d+)/);
-    if (acMatch) return parseInt(acMatch[1]);
-  }
-  
-  // Para shields, valor por defecto +2
-  const name = String(item.name || '').toLowerCase();
-  if (name.includes('shield')) return 2;
-  
-  return 10;
+  return 10; // Default
 }
 
 /**
  * Parsea modificador de DEX de la descripción
  */
 function parseDexModifier(item: any): string {
-  const acStr = String(item.armor_class || item.ac_string || '').toLowerCase();
+  // ✅ Open5e tiene campo 'category' que define esto directamente
+  const category = (item.category || '').toLowerCase();
+  console.log('Category:', category);
+  // Map directo sin includes
+  const modifiers: Record<string, string> = {
+    'Heavy Armor': 'none',
+    'Medium Armor': 'max2',
+    'Light Armor': 'full'
+  };
   
-  if (acStr.includes('dex modifier')) return 'full';
-  if (acStr.includes('max 2') || acStr.includes('maximum of 2')) return 'max2';
-  
-  // Si no menciona DEX y es armadura pesada, no suma DEX
-  const category = String(item.category || item.type || '').toLowerCase();
-  if (category.includes('heavy')) return 'none';
-  if (category.includes('light')) return 'full';
-  if (category.includes('medium')) return 'max2';
-  
-  return 'full'; // Default
+  return modifiers[category] || 'full';
 }

@@ -1,5 +1,4 @@
 <!-- frontend/src/lib/components/AddItemModal.svelte -->
-<!-- ✅ CORREGIDO: Búsqueda optimizada, cancelación de requests, validación mejorada -->
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import debounce from 'lodash/debounce';

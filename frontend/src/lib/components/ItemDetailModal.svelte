@@ -205,8 +205,8 @@
               <div class="bg-info/10 p-3 rounded-lg border border-info/30">
                 <p class="text-xs font-medieval text-neutral/60 mb-1">CLASE DE ARMADURA</p>
                 <p class="text-2xl font-bold text-neutral">
-                  {#if item.type === 'shield'}
-                    +{item.armorData.baseAC}
+                  {#if item.armorData.armorType === 'Shield'}
+                    +{2}             
                   {:else}
                     {item.armorData.baseAC}
                   {/if}
@@ -215,20 +215,22 @@
                   {/if}
                 </p>
               </div>
-
               <!-- Modificador DEX -->
-              {#if item.armorData.dexModifier}
+              {#if item.armorData}
                 <div class="bg-success/10 p-3 rounded-lg border border-success/30">
                   <p class="text-xs font-medieval text-neutral/60 mb-1">MODIFICADOR DES</p>
                   <p class="text-lg font-bold text-neutral">
-                    {#if item.armorData.dexModifier === 'full'}
+                    {#if item.armorData.armorType === 'Light Armor'}
                       Completo
-                    {:else if item.armorData.dexModifier === 'max2'}
+                    {/if}
+                    {#if item.armorData.armorType === 'Medium Armor'}
                       Máximo +2
-                    {:else if item.armorData.dexModifier === 'none'}
+                    {/if}
+                    {#if item.armorData.armorType === 'Heavy Armor'}
                       Sin modificador
-                    {:else}
-                      {item.armorData.dexModifier}
+                    {/if}
+                    {#if item.armorData.armorType === 'Shield'}
+                      Sin modificador
                     {/if}
                   </p>
                 </div>
@@ -268,19 +270,6 @@
             <p class="text-2xl font-bold text-neutral">{formatValue(item.value * item.quantity)} gp</p>
           </div>
         </div>
-
-        {#if item.open5eSlug}
-          <div class="mt-4 text-center">
-            <a 
-              href="https://open5e.com/equipment/{item.open5eSlug}"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="text-sm text-primary hover:text-secondary underline"
-            >
-              📖 Ver en Open5e
-            </a>
-          </div>
-        {/if}
       </div>
 
       <!-- Footer -->
