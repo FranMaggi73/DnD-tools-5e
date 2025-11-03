@@ -1,4 +1,5 @@
 <!-- frontend/src/lib/components/InventoryPanel.svelte -->
+<!-- ✅ MEJORADO: Mejor visualización de items de Open5e con iconos y badges -->
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
   import { inventoryApi, type InventoryItem, type InventoryResponse } from '$lib/api/inventory';
@@ -18,9 +19,9 @@
   let processingItem: string | null = null;
   let searchLocalQuery = '';
 
-  // ✅ NUEVO: Cache simple para evitar recargas innecesarias
+  // Cache simple
   let lastLoadTime = 0;
-  const CACHE_DURATION = 5000; // 5 segundos
+  const CACHE_DURATION = 5000;
 
   let showAddItemModal = false;
   let showCurrencyModal = false;
@@ -35,7 +36,6 @@
     platinum: 0,
   };
 
-  // ✅ NUEVO: Validación en tiempo real para currency
   let currencyErrors = {
     copper: '',
     silver: '',
@@ -50,19 +50,19 @@
     platinum: false
   };
 
-  // ✅ NUEVO: Paginación
+  // Paginación
   const ITEMS_PER_PAGE = 20;
   let currentPage: Record<string, number> = (() => {
-  if (typeof window === 'undefined') return {};
+    if (typeof window === 'undefined') return {};
     const saved = sessionStorage.getItem(`inventory-pages-${characterId}`);
     return saved ? JSON.parse(saved) : {};
-    })();
+  })();
 
-    $: if (typeof window !== 'undefined') {
+  $: if (typeof window !== 'undefined') {
     sessionStorage.setItem(`inventory-pages-${characterId}`, JSON.stringify(currentPage));
-    }
+  }
 
-  // ✅ NUEVO: Mostrar calculadora
+  // Calculadora de conversión
   let showConverter = false;
   let converterAmount = 0;
   let converterFrom: 'cp' | 'sp' | 'gp' | 'pp' = 'gp';
@@ -88,7 +88,6 @@
   $: isCurrencyValid = !currencyErrors.copper && !currencyErrors.silver && 
                        !currencyErrors.gold && !currencyErrors.platinum;
 
-  // ✅ NUEVO: Conversión de monedas
   $: convertedValues = calculateConversion(converterAmount, converterFrom);
 
   onMount(async () => {
@@ -96,7 +95,6 @@
   });
 
   async function loadInventory(force = false) {
-    // ✅ Cache simple: no recargar si fue hace menos de 5 segundos
     const now = Date.now();
     if (!force && inventory && now - lastLoadTime < CACHE_DURATION) {
       console.log('📦 Using cached inventory data');
@@ -124,7 +122,7 @@
     try {
       error = '';
       await inventoryApi.createItem(characterId, event.detail);
-      await loadInventory(true); // ✅ Force reload
+      await loadInventory(true);
       showAddItemModal = false;
     } catch (err: any) {
       error = err.message || 'Error agregando item';
@@ -141,7 +139,7 @@
       
       const updates = event.detail;
       await inventoryApi.updateItem(selectedItem.id, updates);
-      await loadInventory(true); // ✅ Force reload
+      await loadInventory(true);
       
       showEditModal = false;
       selectedItem = null;
@@ -160,7 +158,7 @@
       processingItem = item.id;
       error = '';
       await inventoryApi.deleteItem(item.id);
-      await loadInventory(true); // ✅ Force reload
+      await loadInventory(true);
     } catch (err: any) {
       error = err.message || 'Error eliminando item';
       console.error('Error deleting item:', err);
@@ -170,7 +168,6 @@
   }
 
   async function handleUpdateCurrency() {
-    // Validar todo antes de enviar
     Object.keys(currencyTouched).forEach(key => {
       currencyTouched[key as keyof typeof currencyTouched] = true;
     });
@@ -180,7 +177,7 @@
     try {
       error = '';
       await inventoryApi.updateCurrency(characterId, currencyForm);
-      await loadInventory(true); // ✅ Force reload
+      await loadInventory(true);
       showCurrencyModal = false;
       resetCurrencyValidation();
     } catch (err: any) {
@@ -238,79 +235,92 @@
     return labels[type] || 'Items';
   }
 
-  // ✅ MEJORADO: Agrupar items por tipo con paginación
+  // ✅ NUEVO: Función para obtener color de rareza
+  function getRarityColor(rarity?: string): string {
+    if (!rarity) return 'badge-ghost';
+    const colors: Record<string, string> = {
+      common: 'badge-ghost',
+      uncommon: 'badge-success',
+      rare: 'badge-primary',
+      'very rare': 'badge-secondary',
+      legendary: 'badge-warning',
+      artifact: 'badge-error',
+    };
+    return colors[rarity.toLowerCase()] || 'badge-ghost';
+  }
+
+  // ✅ NUEVO: Función para capitalizar rareza
+  function formatRarity(rarity?: string): string {
+    if (!rarity) return 'Común';
+    return rarity.charAt(0).toUpperCase() + rarity.slice(1);
+  }
+
   $: itemsByType = inventory?.items.reduce((acc, item) => {
     if (!acc[item.type]) acc[item.type] = [];
     acc[item.type].push(item);
     return acc;
   }, {} as Record<string, InventoryItem[]>) || {};
 
-
-    // ✅ NUEVO: Filtrado adicional por búsqueda local
-    $: itemsByTypeFiltered = (() => {
+  $: itemsByTypeFiltered = (() => {
     if (!searchLocalQuery.trim()) return itemsByType;
     
     const search = searchLocalQuery.toLowerCase();
     const filtered: Record<string, InventoryItem[]> = {};
     
     Object.keys(itemsByType).forEach(type => {
-        const items = itemsByType[type].filter(item => 
+      const items = itemsByType[type].filter(item => 
         item.name.toLowerCase().includes(search) ||
         (item.description && item.description.toLowerCase().includes(search)) ||
         (item.weaponData?.weaponType.toLowerCase().includes(search)) ||
-        (item.armorData?.armorType.toLowerCase().includes(search))
-        );
-        
-        if (items.length > 0) {
+        (item.armorData?.armorType.toLowerCase().includes(search)) ||
+        (item.rarity && item.rarity.toLowerCase().includes(search))
+      );
+      
+      if (items.length > 0) {
         filtered[type] = items;
-        }
+      }
     });
     
     return filtered;
-    })();
+  })();
 
-    $: itemTypes = Object.keys(itemsByTypeFiltered).sort();
-
+  $: itemTypes = Object.keys(itemsByTypeFiltered).sort();
   $: totalItems = inventory?.items.reduce((sum, item) => sum + item.quantity, 0) || 0;
 
-  // ✅ NUEVO: Items paginados por tipo
- function getPaginatedItems(type: string): InventoryItem[] {
-  const items = itemsByTypeFiltered[type] || [];
-  const page = currentPage[type] || 0;
-  const start = page * ITEMS_PER_PAGE;
-  const end = start + ITEMS_PER_PAGE;
-  return items.slice(start, end);
-    }
+  function getPaginatedItems(type: string): InventoryItem[] {
+    const items = itemsByTypeFiltered[type] || [];
+    const page = currentPage[type] || 0;
+    const start = page * ITEMS_PER_PAGE;
+    const end = start + ITEMS_PER_PAGE;
+    return items.slice(start, end);
+  }
 
-    function getTotalPages(type: string): number {
+  function getTotalPages(type: string): number {
     const items = itemsByTypeFiltered[type] || [];
     return Math.ceil(items.length / ITEMS_PER_PAGE);
-    }
+  }
 
   function changePage(type: string, direction: number) {
-  const totalPages = getTotalPages(type);
-  const currentPageNum = currentPage[type] || 0;
-  const newPage = currentPageNum + direction;
-  
-  if (newPage >= 0 && newPage < totalPages) {
-    currentPage = { ...currentPage, [type]: newPage }; // ✅ FIX: Trigger reactivity
+    const totalPages = getTotalPages(type);
+    const currentPageNum = currentPage[type] || 0;
+    const newPage = currentPageNum + direction;
+    
+    if (newPage >= 0 && newPage < totalPages) {
+      currentPage = { ...currentPage, [type]: newPage };
+    }
   }
-}
 
-// ✅ NUEVO: Reset páginas al buscar
-$: if (searchLocalQuery) {
-  Object.keys(currentPage).forEach(type => {
-    currentPage[type] = 0;
-  });
-}
+  $: if (searchLocalQuery) {
+    Object.keys(currentPage).forEach(type => {
+      currentPage[type] = 0;
+    });
+  }
 
-  // ✅ NUEVO: Calculadora de conversión de monedas
   function calculateConversion(amount: number, from: 'cp' | 'sp' | 'gp' | 'pp') {
     if (!amount || amount <= 0) {
       return { cp: 0, sp: 0, gp: 0, pp: 0 };
     }
 
-    // Convertir todo a copper primero
     let copper = 0;
     switch (from) {
       case 'cp': copper = amount; break;
@@ -345,7 +355,6 @@ $: if (searchLocalQuery) {
   {/if}
 
   {#if loading}
-    <!-- ✅ NUEVO: Skeleton loader en lugar de spinner -->
     <div class="space-y-4">
       <div class="skeleton h-32 w-full"></div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -365,38 +374,37 @@ $: if (searchLocalQuery) {
     </div>
   {:else}
 
-    <!-- ✅ NUEVO: Búsqueda local de items -->
     {#if inventory.items.length > 0}
-    <div class="mb-4">
+      <div class="mb-4">
         <div class="form-control">
-        <div class="relative">
+          <div class="relative">
             <input 
-            type="text" 
-            bind:value={searchLocalQuery}
-            placeholder="🔍 Buscar en tu inventario..."
-            class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full pr-10"
+              type="text" 
+              bind:value={searchLocalQuery}
+              placeholder="🔍 Buscar en tu inventario..."
+              class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full pr-10"
             />
             {#if searchLocalQuery}
-            <button 
+              <button 
                 class="btn btn-ghost btn-sm btn-circle absolute right-2 top-1/2 -translate-y-1/2"
                 on:click={() => searchLocalQuery = ''}
-            >
+              >
                 ✕
-            </button>
+              </button>
             {/if}
-        </div>
-        {#if searchLocalQuery}
+          </div>
+          {#if searchLocalQuery}
             <label class="label">
-            <span class="label-text-alt text-success">
+              <span class="label-text-alt text-success">
                 ✓ {inventory.items.filter(item => 
-                item.name.toLowerCase().includes(searchLocalQuery.toLowerCase()) ||
-                (item.description && item.description.toLowerCase().includes(searchLocalQuery.toLowerCase()))
+                  item.name.toLowerCase().includes(searchLocalQuery.toLowerCase()) ||
+                  (item.description && item.description.toLowerCase().includes(searchLocalQuery.toLowerCase()))
                 ).length} items encontrados
-            </span>
+              </span>
             </label>
-        {/if}
+          {/if}
         </div>
-    </div>
+      </div>
     {/if}
         
     <!-- Header con stats -->
@@ -506,7 +514,6 @@ $: if (searchLocalQuery) {
                   </span>
                 </div>
 
-                <!-- ✅ NUEVO: Paginación -->
                 {#if totalPages > 1}
                   <div class="flex items-center gap-2">
                     <button 
@@ -530,7 +537,7 @@ $: if (searchLocalQuery) {
                 {/if}
               </div>
 
-              <!-- Grid de items paginados -->
+              <!-- Grid de items -->
               <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {#each paginatedItems as item}
                   <div 
@@ -553,8 +560,20 @@ $: if (searchLocalQuery) {
                             <span class="badge badge-ghost badge-xs">💰 {formatValue(item.value * item.quantity)} gp</span>
                           {/if}
                           
+                          <!-- ✅ NUEVO: Badge de rareza -->
+                          {#if item.rarity}
+                            <span class="badge badge-xs {getRarityColor(item.rarity)}">
+                              {formatRarity(item.rarity)}
+                            </span>
+                          {/if}
+                          
                           {#if item.weaponData}
-                            <span class="badge badge-error badge-xs">{item.weaponData.damageDice} {item.weaponData.damageType}</span>
+                            <span class="badge badge-error badge-xs">
+                              {item.weaponData.damageDice} {item.weaponData.damageType}
+                              {#if item.weaponData.magicBonus}
+                                +{item.weaponData.magicBonus}
+                              {/if}
+                            </span>
                           {/if}
                           
                           {#if item.armorData}
@@ -565,6 +584,11 @@ $: if (searchLocalQuery) {
                                 AC {item.armorData.baseAC}{item.armorData.magicBonus ? `+${item.armorData.magicBonus}` : ''}
                               {/if}
                             </span>
+                          {/if}
+
+                          <!-- ✅ NUEVO: Badge de Open5e -->
+                          {#if item.open5eSlug}
+                            <span class="badge badge-xs badge-accent" title="Item de Open5e">📖</span>
                           {/if}
                         </div>
                       </div>
@@ -636,7 +660,7 @@ $: if (searchLocalQuery) {
   on:close={() => { showEditModal = false; selectedItem = null; }}
 />
 
-<!-- ✅ MEJORADO: Currency Modal con validación y calculadora -->
+<!-- Currency Modal (sin cambios mayores) -->
 {#if showCurrencyModal && inventory}
   <div class="modal modal-open z-50" on:click={() => { showCurrencyModal = false; resetCurrencyValidation(); }}>
     <div class="card-parchment border-4 border-secondary w-11/12 max-w-2xl relative" on:click|stopPropagation>
@@ -650,7 +674,6 @@ $: if (searchLocalQuery) {
           💰 Gestionar Monedas
         </h3>
 
-        <!-- ✅ NUEVO: Calculadora de conversión -->
         <div class="mb-4">
           <button 
             class="btn btn-sm btn-outline w-full"
@@ -773,7 +796,6 @@ $: if (searchLocalQuery) {
           </div>
         </div>
 
-        <!-- ✅ NUEVO: Resumen de valor total -->
         <div class="bg-success/10 p-3 rounded-lg border border-success/30 mt-3">
           <p class="text-xs font-medieval mb-1">Valor Total en Oro (gp):</p>
           <p class="text-lg font-bold text-success">
