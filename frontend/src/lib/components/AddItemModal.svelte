@@ -210,10 +210,6 @@
     { value: 'other', label: '📦 Otro', icon: '📦' },
   ];
 
-  function getItemTypeIcon(type: string): string {
-    return itemTypes.find(t => t.value === type)?.icon || '📦';
-  }
-
   function getRarityColor(rarity: string): string {
     const colors: Record<string, string> = {
       common: 'badge-ghost',
@@ -225,37 +221,6 @@
     };
     return colors[rarity?.toLowerCase()] || 'badge-ghost';
   }
-
-  // ✅ Formatear información del item
-  function getItemSummary(item: any): string {
-    const parts = [];
-    
-    if (item.source === 'weapon') parts.push('⚔️ Arma');
-    else if (item.source === 'armor') parts.push('🛡️ Armadura');
-    else if (item.source === 'magic') parts.push('✨ Mágico');
-    
-    if (item.damage) {
-      parts.push(`${item.damage} ${item.damage_type || ''}`);
-    }
-    
-    if (item.armor_class) {
-      if (typeof item.armor_class === 'object') {
-        parts.push(`AC ${item.armor_class.base || '?'}`);
-      } else if (typeof item.armor_class === 'string') {
-        const acMatch = item.armor_class.match(/(\d+)/);
-        if (acMatch) parts.push(`AC ${acMatch[1]}`);
-      } else if (typeof item.armor_class === 'number') {
-        parts.push(`AC ${item.armor_class}`);
-      }
-    }
-    if (item.ac_string) {
-      const acMatch = item.ac_string.match(/(\d+)/);
-      if (acMatch) parts.push(`AC ${acMatch[1]}`);
-    }
-    
-    return parts.join(' • ');
-  }
-
   // ✅ Formatear costo
   function formatCost(item: any): string {
     if (!item.cost) return '';
@@ -350,8 +315,6 @@
                 </div>
               </div>
             {/if}
-
-            <!-- Suggestions - ✅ MEJORADO: Con skeleton loading -->
             {#if suggestions.length > 0}
               <div class="space-y-2">
                 <p class="text-xs font-medieval text-neutral/70">
@@ -369,9 +332,6 @@
                       <div class="flex justify-between items-start w-full mb-2">
                         <div class="flex-1">
                           <span class="font-bold text-neutral text-lg block">{item.name}</span>
-                          <span class="text-xs text-neutral/70 block mt-1">
-                            {getItemSummary(item)}
-                          </span>
                         </div>
                         {#if item.rarity}
                           <span class="badge badge-sm {getRarityColor(item.rarity)} ml-2 flex-shrink-0">
@@ -379,7 +339,6 @@
                           </span>
                         {/if}
                       </div>
-                      
                       <div class="flex flex-wrap gap-2 mb-2 w-full">
                         {#if formatCost(item)}
                           <span class="badge badge-xs badge-info">{formatCost(item)}</span>

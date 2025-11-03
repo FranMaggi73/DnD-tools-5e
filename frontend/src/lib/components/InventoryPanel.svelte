@@ -563,10 +563,9 @@
                             </span>
                           {/if}
                           
-                          <!-- ✅ WEAPON DATA -->
                           {#if item.weaponData}
                             <span class="badge badge-error badge-xs">
-                              ⚔️ {item.weaponData.damageDice}
+                              ⚔️ {item.weaponData.damageDice}/{#if item.weaponData.properties.versatile}/{item.weaponData.properties.versatile}{/if}
                               {#if item.weaponData.damageType}
                                 {item.weaponData.damageType}
                               {/if}
@@ -578,7 +577,7 @@
                           
                           {#if item.armorData}
                             <span class="badge badge-info badge-xs">
-                              {#if item.type === 'shield'}
+                              {#if item.armorData.armorType === 'Shield'}
                                 +{item.armorData.baseAC || 2}{item.armorData.magicBonus ? `+${item.armorData.magicBonus}` : ''} AC
                               {:else}
                                 AC {item.armorData.baseAC}{item.armorData.magicBonus ? `+${item.armorData.magicBonus}` : ''}
