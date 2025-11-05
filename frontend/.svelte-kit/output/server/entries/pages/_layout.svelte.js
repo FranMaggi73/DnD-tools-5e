@@ -9,7 +9,6 @@ import "../../chunks/utils.js";
 import "@sveltejs/kit/internal/server";
 import "../../chunks/state.svelte.js";
 import { p as page } from "../../chunks/stores.js";
-import "../../chunks/api.js";
 const Sidebar = create_ssr_component(($$result, $$props, $$bindings, slots) => {
   let currentPath;
   let isCombatPage;

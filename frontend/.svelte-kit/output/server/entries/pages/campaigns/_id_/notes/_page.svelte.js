@@ -1,7 +1,6 @@
 import { c as create_ssr_component, b as subscribe, o as onDestroy, f as escape } from "../../../../../chunks/ssr.js";
 import { p as page } from "../../../../../chunks/stores.js";
 import { u as userStore } from "../../../../../chunks/authStore.js";
-import "../../../../../chunks/api.js";
 import { h as headerTitle } from "../../../../../chunks/uiStore.js";
 import { getFirestore } from "firebase/firestore";
 import { a as app } from "../../../../../chunks/firebase.js";
