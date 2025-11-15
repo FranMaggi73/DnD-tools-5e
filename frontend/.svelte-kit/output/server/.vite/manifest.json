@@ -168,7 +168,8 @@
       "_exports.js",
       "_utils.js",
       "_state.svelte.js",
-      "_authStore.js"
+      "_authStore.js",
+      "_firebase.js"
     ]
   },
   "src/routes/campaigns/[id]/characters/+page.svelte": {
@@ -180,8 +181,8 @@
       "_ssr.js",
       "_stores.js",
       "_authStore.js",
-      "_uiStore.js",
-      "_firebase.js"
+      "_firebase.js",
+      "_uiStore.js"
     ],
     "css": [
       "_app/immutable/assets/_page.ChDC8VD2.css"
@@ -196,8 +197,8 @@
       "_ssr.js",
       "_stores.js",
       "_authStore.js",
-      "_uiStore.js",
-      "_firebase.js"
+      "_firebase.js",
+      "_uiStore.js"
     ]
   },
   "src/routes/campaigns/[id]/notes/+page.svelte": {
@@ -209,8 +210,8 @@
       "_ssr.js",
       "_stores.js",
       "_authStore.js",
-      "_uiStore.js",
-      "_firebase.js"
+      "_firebase.js",
+      "_uiStore.js"
     ],
     "css": [
       "_app/immutable/assets/_page.yRud7cwk.css"
@@ -223,6 +224,8 @@
     "isEntry": true,
     "imports": [
       "_ssr.js",
+      "_authStore.js",
+      "_firebase.js",
       "_exports.js",
       "_utils.js",
       "_state.svelte.js",

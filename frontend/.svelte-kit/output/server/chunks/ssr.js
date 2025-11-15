@@ -9,6 +9,9 @@ function blank_object() {
 function run_all(fns) {
   fns.forEach(run);
 }
+function is_function(thing) {
+  return typeof thing === "function";
+}
 function safe_not_equal(a, b) {
   return a != a ? b == b : a !== b || a && typeof a === "object" || typeof a === "function";
 }
@@ -157,10 +160,12 @@ export {
   createEventDispatcher as g,
   getContext as h,
   safe_not_equal as i,
-  onMount as j,
+  is_function as j,
+  onMount as k,
   missing_component as m,
   noop as n,
   onDestroy as o,
+  run_all as r,
   setContext as s,
   validate_component as v
 };

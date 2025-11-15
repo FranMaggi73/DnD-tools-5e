@@ -186,7 +186,58 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && 
                       resource.data.authorId == request.auth.uid;
     }
-    
+
+    // ===========================
+    // INVENTORY ITEMS COLLECTION
+    // ===========================
+
+    match /inventory_items/{itemId} {
+      // Leer: owner del personaje o DM de la campaña
+      allow read: if isAuthenticated() && (
+        resource.data.characterId in get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.userId == request.auth.uid ||
+        exists(/databases/$(database)/documents/characters/$(resource.data.characterId)) &&
+        isCampaignDM(get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.campaignId)
+      );
+      
+      // Crear: solo si eres owner del personaje o DM
+      allow create: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/characters/$(request.resource.data.characterId)) && (
+          get(/databases/$(database)/documents/characters/$(request.resource.data.characterId)).data.userId == request.auth.uid ||
+          isCampaignDM(get(/databases/$(database)/documents/characters/$(request.resource.data.characterId)).data.campaignId)
+        );
+      
+      // Actualizar: solo owner o DM
+      allow update: if isAuthenticated() && (
+        get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.userId == request.auth.uid ||
+        isCampaignDM(get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.campaignId)
+      );
+      
+      // Eliminar: solo owner o DM
+      allow delete: if isAuthenticated() && (
+        get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.userId == request.auth.uid ||
+        isCampaignDM(get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.campaignId)
+      );
+    }
+
+    // ===========================
+    // CURRENCIES COLLECTION
+    // ===========================
+
+    match /currencies/{characterId} {
+      // El characterId es el mismo que el document ID
+      // Leer: owner del personaje o DM
+      allow read: if isAuthenticated() && (
+        get(/databases/$(database)/documents/characters/$(characterId)).data.userId == request.auth.uid ||
+        isCampaignDM(get(/databases/$(database)/documents/characters/$(characterId)).data.campaignId)
+      );
+      
+      // Crear/Actualizar: solo owner o DM
+      allow write: if isAuthenticated() && (
+        get(/databases/$(database)/documents/characters/$(characterId)).data.userId == request.auth.uid ||
+        isCampaignDM(get(/databases/$(database)/documents/characters/$(characterId)).data.campaignId)
+      );
+    }
+        
     // ===========================
     // DENY ALL OTHER COLLECTIONS
     // ===========================

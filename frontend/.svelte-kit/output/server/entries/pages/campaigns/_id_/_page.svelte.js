@@ -1,4 +1,4 @@
-import { c as create_ssr_component, b as subscribe } from "../../../../chunks/ssr.js";
+import { c as create_ssr_component, b as subscribe, o as onDestroy } from "../../../../chunks/ssr.js";
 import { p as page } from "../../../../chunks/stores.js";
 import "@sveltejs/kit/internal";
 import "../../../../chunks/exports.js";
@@ -6,11 +6,16 @@ import "../../../../chunks/utils.js";
 import "@sveltejs/kit/internal/server";
 import "../../../../chunks/state.svelte.js";
 import { u as userStore } from "../../../../chunks/authStore.js";
+import { a as app } from "../../../../chunks/firebase.js";
+import { getFirestore } from "firebase/firestore";
 const Page = create_ssr_component(($$result, $$props, $$bindings, slots) => {
   let $$unsubscribe_userStore;
   let $page, $$unsubscribe_page;
   $$unsubscribe_userStore = subscribe(userStore, (value) => value);
   $$unsubscribe_page = subscribe(page, (value) => $page = value);
+  getFirestore(app);
+  onDestroy(() => {
+  });
   $page.params.id || "";
   $$unsubscribe_userStore();
   $$unsubscribe_page();

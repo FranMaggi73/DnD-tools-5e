@@ -1,4 +1,4 @@
-import { j as onMount } from "./ssr.js";
+import { k as onMount } from "./ssr.js";
 import "@sveltejs/kit/internal/server";
 const is_legacy = onMount.toString().includes("$$") || /function \w+\(\) \{\}/.test(onMount.toString());
 if (is_legacy) {
