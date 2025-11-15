@@ -95,41 +95,69 @@
     </div>
 
     <!-- HP - DIFERENTE PARA DM Y JUGADORES -->
-    <div class="mt-2 sm:mt-3">
-      {#if isDM}
-        <!-- Vista DM: HP exacto con barra -->
-        <div class="flex justify-between items-center mb-1">
-          <span class="text-xs font-medieval text-neutral/70">Puntos de Vida</span>
-          <span class="font-bold text-neutral text-sm sm:text-base">{combatant.currentHp}/{combatant.maxHp}</span>
+<!-- HP - DIFERENTE PARA DM Y JUGADORES -->
+<div class="mt-2 sm:mt-3">
+  {#if isDM}
+    <!-- Vista DM: HP exacto con barra -->
+    <div class="flex justify-between items-center mb-1">
+      <span class="text-xs font-medieval text-neutral/70">Puntos de Vida</span>
+      <div class="flex items-center gap-1">
+        <!-- HP Temporal badge -->
+        {#if combatant.temporaryHp > 0}
+          <span class="badge badge-xs badge-info">🛡️ +{combatant.temporaryHp}</span>
+        {/if}
+        <span class="font-bold text-neutral text-sm sm:text-base">{combatant.currentHp}/{combatant.maxHp}</span>
+      </div>
+    </div>
+    <progress 
+      class="progress progress-{hpColor} w-full h-2 sm:h-3" 
+      value={combatant.currentHp} 
+      max={combatant.maxHp}
+    ></progress>
+    
+    <!-- Barra de HP Temporal (si existe) -->
+    {#if combatant.temporaryHp > 0}
+      <div class="mt-1">
+        <div class="w-full bg-info/20 rounded-full h-1.5">
+          <div 
+            class="bg-info h-full rounded-full"
+            style="width: {Math.min(100, (combatant.temporaryHp / combatant.maxHp) * 100)}%"
+          ></div>
         </div>
-        <progress 
-          class="progress progress-{hpColor} w-full h-2 sm:h-3" 
-          value={combatant.currentHp} 
-          max={combatant.maxHp}
-        ></progress>
-      {:else}
-        <!-- Vista Jugador: Estado descriptivo -->
-        <div class="bg-{hpColor}/10 p-2 rounded-lg border border-{hpColor}/30">
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-xs font-medieval text-neutral/70">Estado</span>
-            <div class="flex items-center gap-1">
-              <span class="text-lg sm:text-xl">{healthStatus.icon}</span>
-              <span class="font-medieval text-xs sm:text-sm {healthStatus.color} font-bold">
-                {healthStatus.label}
-              </span>
-            </div>
-          </div>
-          <!-- Barra visual aproximada (sin números) -->
-          <div class="w-full bg-neutral/20 rounded-full h-1.5 sm:h-2 mt-1">
-            <div 
-              class="bg-{hpColor} h-full rounded-full transition-all duration-300"
-              style="width: {hpPercentage}%"
-            ></div>
-          </div>
+      </div>
+    {/if}
+  {:else}
+    <!-- Vista Jugador: Estado descriptivo -->
+    <div class="bg-{hpColor}/10 p-2 rounded-lg border border-{hpColor}/30">
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-xs font-medieval text-neutral/70">Estado</span>
+        <div class="flex items-center gap-1">
+          <span class="text-lg sm:text-xl">{healthStatus.icon}</span>
+          <span class="font-medieval text-xs sm:text-sm {healthStatus.color} font-bold">
+            {healthStatus.label}
+          </span>
+          <!-- Badge de HP temporal para jugadores -->
+          {#if combatant.temporaryHp > 0}
+            <span class="badge badge-xs badge-info ml-1">+{combatant.temporaryHp} 🛡️</span>
+          {/if}
+        </div>
+      </div>
+      <!-- Barra visual aproximada (sin números) -->
+      <div class="w-full bg-neutral/20 rounded-full h-1.5 sm:h-2 mt-1">
+        <div 
+          class="bg-{hpColor} h-full rounded-full transition-all duration-300"
+          style="width: {hpPercentage}%"
+        ></div>
+      </div>
+      <!-- Mini barra de HP temporal para jugadores -->
+      {#if combatant.temporaryHp > 0}
+        <div class="w-full bg-info/20 rounded-full h-1 mt-1">
+          <div class="bg-info h-full rounded-full w-1/3"></div>
         </div>
       {/if}
     </div>
-
+  {/if}
+</div>
     <!-- Condiciones - VISIBLE PARA TODOS -->
     {#if combatant.conditions && combatant.conditions.length > 0}
       <div class="mt-2">

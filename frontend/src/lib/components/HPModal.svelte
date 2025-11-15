@@ -33,6 +33,35 @@
     lastOpenState = false;
   }
 
+    // ✅ NUEVO: Calcular HP después de aplicar daño considerando HP temporal
+  $: if (combatant && hpChangeValue !== 0) {
+    if (hpChangeValue < 0) {
+      // Es daño
+      const damage = Math.abs(hpChangeValue);
+      const tempHp = combatant.temporaryHp || 0;
+      
+      if (tempHp > 0) {
+        // Primero quitar de HP temporal
+        if (damage <= tempHp) {
+          // Todo el daño lo absorbe el HP temporal
+          newHP = combatant.currentHp;
+        } else {
+          // El daño excede el HP temporal, afecta HP normal
+          const remainingDamage = damage - tempHp;
+          newHP = Math.max(0, combatant.currentHp - remainingDamage);
+        }
+      } else {
+        // No hay HP temporal, daño directo
+        newHP = Math.max(0, combatant.currentHp + hpChangeValue);
+      }
+    } else {
+      // Es curación
+      newHP = Math.max(0, Math.min(combatant.maxHp, combatant.currentHp + hpChangeValue));
+    }
+  } else if (combatant) {
+    newHP = combatant.currentHp;
+  }
+
   $: hpPercentage = combatant ? (combatant.currentHp / combatant.maxHp) * 100 : 0;
   $: hpColor = hpPercentage > 50 ? 'success' : hpPercentage > 25 ? 'warning' : 'error';
   $: newHP = combatant ? Math.max(0, Math.min(combatant.maxHp, combatant.currentHp + hpChangeValue)) : 0;
@@ -43,10 +72,32 @@
   $: isStabilized = localDeathSaves.successes >= 3;
   $: isPermaKilled = localDeathSaves.failures >= 3;
 
-  function setCustomDamage() {
+   function setCustomDamage() {
     if (combatant && customValue > 0) {
-      const change = -Math.abs(customValue);
-      dispatch('apply', change);
+      const damage = Math.abs(customValue);
+      const tempHp = combatant.temporaryHp || 0;
+      
+      if (tempHp > 0) {
+        // Aplicar daño a HP temporal primero
+        if (damage <= tempHp) {
+          // Todo el daño lo absorbe el HP temporal
+          const newTempHp = tempHp - damage;
+          dispatch('updateTemp', newTempHp);
+          // No hay cambio en HP normal
+          dispatch('apply', 0);
+        } else {
+          // El daño excede el HP temporal
+          const remainingDamage = damage - tempHp;
+          // Eliminar HP temporal
+          dispatch('updateTemp', 0);
+          // Aplicar daño restante a HP normal
+          dispatch('apply', -remainingDamage);
+        }
+      } else {
+        // No hay HP temporal, daño directo
+        dispatch('apply', -damage);
+      }
+      
       customValue = 0;
     }
   }
@@ -248,6 +299,17 @@
                 </div>
               </div>
             </div>
+            {#if combatant.temporaryHp > 0}
+              <div class="bg-info/10 p-3 rounded-lg border border-info/30 mt-4">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-medieval text-neutral/70">HP TEMPORAL ACTIVO</span>
+                  <span class="badge badge-info">🛡️ {combatant.temporaryHp}</span>
+                </div>
+                <p class="text-xs text-neutral/60 italic">
+                  💡 El daño reducirá primero los HP temporales
+                </p>
+              </div>
+            {/if}
           </div>
 
         {:else if activeTab === 'temp'}
