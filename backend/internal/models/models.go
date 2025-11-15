@@ -179,20 +179,22 @@ type CreateEncounterRequest struct {
 // ===========================
 
 type Combatant struct {
-	ID             string    `firestore:"id" json:"id"`
-	EncounterID    string    `firestore:"encounterId" json:"encounterId"`
-	Type           string    `firestore:"type" json:"type"` // "character" o "creature"
-	CharacterID    string    `firestore:"characterId,omitempty" json:"characterId,omitempty"`
-	Name           string    `firestore:"name" json:"name"`
-	Initiative     int       `firestore:"initiative" json:"initiative"`
-	MaxHP          int       `firestore:"maxHp" json:"maxHp"`
-	CurrentHP      int       `firestore:"currentHp" json:"currentHp"`
-	ArmorClass     int       `firestore:"armorClass" json:"armorClass"`
-	Conditions     []string  `firestore:"conditions" json:"conditions"`
-	ImageURL       string    `firestore:"imageUrl" json:"imageUrl"`
-	IsNPC          bool      `firestore:"isNpc" json:"isNpc"`
-	CreatureSource string    `firestore:"creatureSource,omitempty" json:"creatureSource,omitempty"`
-	CreatedAt      time.Time `firestore:"createdAt" json:"createdAt"`
+	ID             string     `firestore:"id" json:"id"`
+	EncounterID    string     `firestore:"encounterId" json:"encounterId"`
+	Type           string     `firestore:"type" json:"type"` // "character" o "creature"
+	CharacterID    string     `firestore:"characterId,omitempty" json:"characterId,omitempty"`
+	Name           string     `firestore:"name" json:"name"`
+	Initiative     int        `firestore:"initiative" json:"initiative"`
+	MaxHP          int        `firestore:"maxHp" json:"maxHp"`
+	CurrentHP      int        `firestore:"currentHp" json:"currentHp"`
+	ArmorClass     int        `firestore:"armorClass" json:"armorClass"`
+	Conditions     []string   `firestore:"conditions" json:"conditions"`
+	ImageURL       string     `firestore:"imageUrl" json:"imageUrl"`
+	IsNPC          bool       `firestore:"isNpc" json:"isNpc"`
+	CreatureSource string     `firestore:"creatureSource,omitempty" json:"creatureSource,omitempty"`
+	TemporaryHP    int        `firestore:"temporaryHp" json:"temporaryHp"` // ✅ NUEVO
+	DeathSaves     DeathSaves `firestore:"deathSaves" json:"deathSaves"`
+	CreatedAt      time.Time  `firestore:"createdAt" json:"createdAt"`
 }
 
 type AddCombatantRequest struct {
@@ -208,9 +210,11 @@ type AddCombatantRequest struct {
 }
 
 type UpdateCombatantRequest struct {
-	CurrentHP  *int     `json:"currentHp,omitempty"`
-	Conditions []string `json:"conditions,omitempty"`
-	Initiative *int     `json:"initiative,omitempty"`
+	CurrentHP   *int        `json:"currentHp,omitempty"`
+	Conditions  []string    `json:"conditions,omitempty"`
+	Initiative  *int        `json:"initiative,omitempty"`
+	TemporaryHP *int        `json:"temporaryHp,omitempty"` // ✅ NUEVO
+	DeathSaves  *DeathSaves `json:"deathSaves,omitempty"`  // ✅ NUEVO
 }
 
 // ===========================

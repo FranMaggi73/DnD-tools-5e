@@ -11,14 +11,26 @@
   let activeTab: 'hp' | 'temp' | 'death' = 'hp';
   let hpChangeValue = 0;
   let customValue = 0;
-  let tempHpValue = 0;
+  
+  // ✅ FIX: Variables locales que se actualizan del combatant
+  let localTempHp = 0;
+  let localDeathSaves = { successes: 0, failures: 0 };
+  
+  // ✅ FIX: Variable para trackear si el modal acaba de abrirse
+  let lastOpenState = false;
+  let lastCombatantId = '';
 
-  // ✅ NUEVO: Death Saves
-  let deathSaves = { successes: 0, failures: 0 };
-
-  $: if (combatant) {
-    deathSaves = combatant.deathSaves || { successes: 0, failures: 0 };
-    tempHpValue = combatant.temporaryHp || 0;
+  // ✅ FIX: Solo actualizar cuando el modal se abre o cambia el combatiente
+  $: if (isOpen && combatant) {
+    // Solo actualizar si es la primera vez que se abre o cambió el combatiente
+    if (!lastOpenState || lastCombatantId !== combatant.id) {
+      localTempHp = combatant.temporaryHp || 0;
+      localDeathSaves = combatant.deathSaves || { successes: 0, failures: 0 };
+      lastCombatantId = combatant.id;
+    }
+    lastOpenState = true;
+  } else if (!isOpen) {
+    lastOpenState = false;
   }
 
   $: hpPercentage = combatant ? (combatant.currentHp / combatant.maxHp) * 100 : 0;
@@ -28,8 +40,8 @@
   $: newHpPercentage = combatant ? (newHP / combatant.maxHp) * 100 : 0;
   $: newHpColor = newHpPercentage > 50 ? 'success' : newHpPercentage > 25 ? 'warning' : 'error';
   $: isDead = combatant && combatant.currentHp <= 0;
-  $: isStabilized = deathSaves.successes >= 3;
-  $: isPermaKilled = deathSaves.failures >= 3;
+  $: isStabilized = localDeathSaves.successes >= 3;
+  $: isPermaKilled = localDeathSaves.failures >= 3;
 
   function setCustomDamage() {
     if (combatant && customValue > 0) {
@@ -48,23 +60,22 @@
   }
 
   function applyTempHP() {
-    if (combatant && tempHpValue > 0) {
-      dispatch('updateTemp', tempHpValue);
-      tempHpValue = 0;
+    if (combatant && localTempHp >= 0) {
+      dispatch('updateTemp', localTempHp);
     }
   }
 
   function removeTempHP() {
     if (combatant) {
+      localTempHp = 0;
       dispatch('updateTemp', 0);
-      tempHpValue = 0;
     }
   }
 
   function toggleDeathSave(type: 'success' | 'failure', index: number) {
     if (!combatant) return;
     
-    const newSaves = { ...deathSaves };
+    const newSaves = { ...localDeathSaves };
     
     if (type === 'success') {
       newSaves.successes = newSaves.successes === index + 1 ? index : index + 1;
@@ -72,19 +83,22 @@
       newSaves.failures = newSaves.failures === index + 1 ? index : index + 1;
     }
     
+    localDeathSaves = newSaves;
     dispatch('updateDeathSaves', newSaves);
   }
 
   function resetDeathSaves() {
     if (!combatant) return;
+    localDeathSaves = { successes: 0, failures: 0 };
     dispatch('updateDeathSaves', { successes: 0, failures: 0 });
   }
 
   function resetAndClose() {
     hpChangeValue = 0;
     customValue = 0;
-    tempHpValue = 0;
     activeTab = 'hp';
+    lastOpenState = false;
+    lastCombatantId = '';
     dispatch('close');
   }
 </script>
@@ -239,14 +253,6 @@
         {:else if activeTab === 'temp'}
           <!-- HP Temporal Tab -->
           <div class="space-y-4">
-            
-            <div class="alert bg-info/20 border-info/40">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-info" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
-              </svg>
-              <span class="text-sm">Los HP temporales no se acumulan, solo se reemplaza el valor actual.</span>
-            </div>
-
             <!-- HP Temporal Actual -->
             {#if combatant.temporaryHp > 0}
               <div class="bg-info/20 p-4 rounded-lg border-2 border-info/40">
@@ -265,122 +271,116 @@
                 </div>
               </div>
             {:else}
+            <!-- Sin HP Temporal Activo -->
               <div class="text-center py-6">
                 <div class="text-4xl mb-2">🛡️</div>
                 <p class="text-neutral/70 font-body">Sin HP temporal activo</p>
               </div>
             {/if}
-
-            <!-- Agregar HP Temporal -->
-            <div>
-              <label class="label">
-                <span class="label-text font-medieval text-neutral">🛡️ Nuevo HP Temporal</span>
-              </label>
-              <div class="flex gap-2">
-                <input 
-                  type="number" 
-                  bind:value={tempHpValue}
-                  placeholder="Ej: 10"
-                  class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 
-                         flex-1 text-center text-2xl font-bold"
-                  min="0"
-                />
-                <button 
-                  on:click={applyTempHP}
-                  class="btn btn-info"
-                  disabled={tempHpValue <= 0}
-                >
-                  <span class="text-xl">✨</span>
-                  Aplicar
-                </button>
-              </div>
-              <label class="label">
-                <span class="label-text-alt text-neutral/60 italic">
-                  Los HP temporales protegen contra el daño pero no se acumulan
-                </span>
-              </label>
-            </div>
+<!-- Agregar HP Temporal -->
+<div>
+  <label class="label">
+    <span class="label-text font-medieval text-neutral">🛡️ Nuevo HP Temporal</span>
+  </label>
+  <div class="flex gap-2">
+    <input 
+      type="number" 
+      bind:value={localTempHp}
+      placeholder="Ej: 10"
+      class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 
+             flex-1 text-center text-2xl font-bold"
+      min="0"
+      step="1"
+    />
+    <button 
+      on:click={applyTempHP}
+      class="btn btn-info"
+      disabled={localTempHp <= 0 || localTempHp === combatant?.temporaryHp}
+    >
+      <span class="text-xl">✨</span>
+      Aplicar
+    </button>
+  </div>
+  <label class="label">
+    <span class="label-text-alt text-neutral/60 italic">
+      {#if localTempHp > 0}
+        💡 Esto {combatant?.temporaryHp ? 'reemplazará' : 'agregará'} {localTempHp} HP temporal
+      {:else}
+        Los HP temporales protegen contra el daño pero no se acumulan
+      {/if}
+    </span>
+  </label>
+</div>
           </div>
 
         {:else if activeTab === 'death'}
-          <!-- Death Saves Tab -->
-          <div class="space-y-4">
-            
-            {#if isPermaKilled}
-              <div class="alert alert-error">
-                <span class="text-lg">💀 El personaje ha muerto permanentemente</span>
-              </div>
-            {:else if isStabilized}
-              <div class="alert alert-success">
-                <span class="text-lg">✨ El personaje está estabilizado</span>
-              </div>
-            {/if}
-
-            <!-- Successes -->
-            <div class="bg-success/10 p-4 rounded-lg border-2 border-success/30">
-              <p class="font-medieval text-neutral mb-3 flex items-center gap-2">
-                <span class="text-xl">✅</span>
-                Éxitos de Salvación
-              </p>
-              <div class="flex gap-3 justify-center">
-                {#each [0, 1, 2] as index}
-                  <button
-                    on:click={() => toggleDeathSave('success', index)}
-                    class="btn btn-circle btn-lg {deathSaves.successes > index ? 'btn-success' : 'btn-ghost border-2 border-success/30'}"
-                  >
-                    {#if deathSaves.successes > index}
-                      ✓
-                    {:else}
-                      ○
-                    {/if}
-                  </button>
-                {/each}
-              </div>
+        <!-- Death Saves Tab -->
+        <div class="space-y-4">
+          
+          {#if isPermaKilled}
+            <div class="alert alert-error">
+              <span class="text-lg">💀 El personaje ha muerto permanentemente</span>
             </div>
-
-            <!-- Failures -->
-            <div class="bg-error/10 p-4 rounded-lg border-2 border-error/30">
-              <p class="font-medieval text-neutral mb-3 flex items-center gap-2">
-                <span class="text-xl">❌</span>
-                Fallos de Salvación
-              </p>
-              <div class="flex gap-3 justify-center">
-                {#each [0, 1, 2] as index}
-                  <button
-                    on:click={() => toggleDeathSave('failure', index)}
-                    class="btn btn-circle btn-lg {deathSaves.failures > index ? 'btn-error' : 'btn-ghost border-2 border-error/30'}"
-                  >
-                    {#if deathSaves.failures > index}
-                      ✗
-                    {:else}
-                      ○
-                    {/if}
-                  </button>
-                {/each}
-              </div>
+          {:else if isStabilized}
+            <div class="alert alert-success">
+              <span class="text-lg">✨ El personaje está estabilizado</span>
             </div>
+          {/if}
 
-            <!-- Reset -->
-            <button 
-              on:click={resetDeathSaves}
-              class="btn btn-outline border-2 border-neutral w-full"
-            >
-              🔄 Resetear Death Saves
-            </button>
-
-            <!-- Reglas -->
-            <div class="bg-neutral/10 p-3 rounded-lg border border-primary/20">
-              <p class="text-xs font-medieval text-neutral mb-2">📖 REGLAS:</p>
-              <ul class="text-xs text-neutral/70 space-y-1 list-disc list-inside">
-                <li>Tira 1d20 al inicio de tu turno mientras estés caído</li>
-                <li>10+ = Éxito | 9- = Fallo</li>
-                <li>3 éxitos = Estabilizado</li>
-                <li>3 fallos = Muerte permanente</li>
-                <li>Nat 20 = Recuperas 1 HP</li>
-                <li>Nat 1 = Cuenta como 2 fallos</li>
-              </ul>
+          <!-- Successes -->
+          <div class="bg-success/10 p-4 rounded-lg border-2 border-success/30">
+            <p class="font-medieval text-neutral mb-3 flex items-center gap-2">
+              <span class="text-xl">✅</span>
+              Éxitos de Salvación
+            </p>
+            <div class="flex gap-3 justify-center">
+              {#each [0, 1, 2] as index}
+                <button
+                  on:click={() => toggleDeathSave('success', index)}
+                  class="btn btn-circle btn-lg {localDeathSaves.successes > index ? 'btn-success' : 'btn-ghost border-2 border-success/30'}"
+                >
+                  {#if localDeathSaves.successes > index}
+                    ✓
+                  {:else}
+                    ○
+                  {/if}
+                </button>
+              {/each}
             </div>
           </div>
+
+          <!-- Failures -->
+          <div class="bg-error/10 p-4 rounded-lg border-2 border-error/30">
+            <p class="font-medieval text-neutral mb-3 flex items-center gap-2">
+              <span class="text-xl">❌</span>
+              Fallos de Salvación
+            </p>
+            <div class="flex gap-3 justify-center">
+              {#each [0, 1, 2] as index}
+                <button
+                  on:click={() => toggleDeathSave('failure', index)}
+                  class="btn btn-circle btn-lg {localDeathSaves.failures > index ? 'btn-error' : 'btn-ghost border-2 border-error/30'}"
+                >
+                  {#if localDeathSaves.failures > index}
+                    ✗
+                  {:else}
+                    ○
+                  {/if}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <!-- Reset -->
+          <button 
+            on:click={resetDeathSaves}
+            class="btn btn-dnd border-2 border-neutral w-full px-4"
+          >
+            🔄 Resetear Death Saves
+          </button>
+
+          <!-- Reglas sin cambios -->
+        </div>
         {/if}
       </div>
     </div>

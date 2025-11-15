@@ -440,16 +440,29 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 
 		combatantUpdates := []firestore.Update{}
 
+		// ✅ Current HP
 		if req.CurrentHP != nil {
 			combatantUpdates = append(combatantUpdates, firestore.Update{Path: "currentHp", Value: *req.CurrentHP})
 		}
 
+		// ✅ Conditions
 		if req.Conditions != nil {
 			combatantUpdates = append(combatantUpdates, firestore.Update{Path: "conditions", Value: req.Conditions})
 		}
 
+		// ✅ Initiative
 		if req.Initiative != nil {
 			combatantUpdates = append(combatantUpdates, firestore.Update{Path: "initiative", Value: *req.Initiative})
+		}
+
+		// ✅ NUEVO: Temporary HP
+		if req.TemporaryHP != nil {
+			combatantUpdates = append(combatantUpdates, firestore.Update{Path: "temporaryHp", Value: *req.TemporaryHP})
+		}
+
+		// ✅ NUEVO: Death Saves
+		if req.DeathSaves != nil {
+			combatantUpdates = append(combatantUpdates, firestore.Update{Path: "deathSaves", Value: req.DeathSaves})
 		}
 
 		if len(combatantUpdates) == 0 {
@@ -460,6 +473,7 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 			return err
 		}
 
+		// Sincronizar con Character si aplica
 		if combatant.CharacterID != "" && (combatant.Type == "character" || combatant.Type == "player") {
 			characterRef := h.db.Collection("characters").Doc(combatant.CharacterID)
 			characterUpdates := []firestore.Update{
@@ -472,6 +486,16 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 
 			if req.Conditions != nil {
 				characterUpdates = append(characterUpdates, firestore.Update{Path: "conditions", Value: req.Conditions})
+			}
+
+			// ✅ NUEVO: Sincronizar Temporary HP
+			if req.TemporaryHP != nil {
+				characterUpdates = append(characterUpdates, firestore.Update{Path: "temporaryHp", Value: *req.TemporaryHP})
+			}
+
+			// ✅ NUEVO: Sincronizar Death Saves
+			if req.DeathSaves != nil {
+				characterUpdates = append(characterUpdates, firestore.Update{Path: "deathSaves", Value: req.DeathSaves})
 			}
 
 			if err := tx.Update(characterRef, characterUpdates); err != nil {
@@ -491,7 +515,7 @@ func (h *Handler) UpdateCombatant(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error actualizando combatiente"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error actualizando combatante"})
 		return
 	}
 
