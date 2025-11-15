@@ -119,31 +119,57 @@ const HPModal = create_ssr_component(($$result, $$props, $$bindings, slots) => {
   let hpChange;
   let newHpPercentage;
   let newHpColor;
+  let isDead;
   let { isOpen = false } = $$props;
   let { combatant = null } = $$props;
   let { isDM = false } = $$props;
   createEventDispatcher();
   let hpChangeValue = 0;
   let customValue = 0;
+  let localDeathSaves = { successes: 0, failures: 0 };
+  let lastOpenState = false;
+  let lastCombatantId = "";
   if ($$props.isOpen === void 0 && $$bindings.isOpen && isOpen !== void 0) $$bindings.isOpen(isOpen);
   if ($$props.combatant === void 0 && $$bindings.combatant && combatant !== void 0) $$bindings.combatant(combatant);
   if ($$props.isDM === void 0 && $$bindings.isDM && isDM !== void 0) $$bindings.isDM(isDM);
+  {
+    if (isOpen && combatant) {
+      if (!lastOpenState || lastCombatantId !== combatant.id) {
+        combatant.temporaryHp || 0;
+        localDeathSaves = combatant.deathSaves || { successes: 0, failures: 0 };
+        lastCombatantId = combatant.id;
+      }
+      lastOpenState = true;
+    } else if (!isOpen) {
+      lastOpenState = false;
+    }
+  }
+  {
+    if (combatant) {
+      newHP = combatant.currentHp;
+    }
+  }
   hpPercentage = combatant ? combatant.currentHp / combatant.maxHp * 100 : 0;
   hpColor = hpPercentage > 50 ? "success" : hpPercentage > 25 ? "warning" : "error";
   newHP = combatant ? Math.max(0, Math.min(combatant.maxHp, combatant.currentHp + hpChangeValue)) : 0;
   hpChange = combatant ? newHP - combatant.currentHp : 0;
   newHpPercentage = combatant ? newHP / combatant.maxHp * 100 : 0;
   newHpColor = newHpPercentage > 50 ? "success" : newHpPercentage > 25 ? "warning" : "error";
-  return `${isOpen && combatant && isDM ? `<div class="modal modal-open z-50" role="dialog" aria-modal="true" aria-labelledby="hp-modal-title"><div class="card-parchment border-2 sm:border-4 border-secondary mx-2 sm:mx-4 relative w-[95vw] sm:w-[90vw] md:w-3/4 lg:w-1/2 max-h-[90vh] flex flex-col"><button class="btn btn-xs sm:btn-sm btn-circle btn-ghost absolute right-2 sm:right-3 top-2 sm:top-3 z-10 hover:bg-error/20" aria-label="Cerrar modal" data-svelte-h="svelte-1h1x9md">✕</button> <div class="p-3 sm:p-4 flex-shrink-0 bg-gradient-to-b from-[#f4e4c1] to-transparent border-b-2 border-secondary"><h3 id="hp-modal-title" class="font-bold text-xl sm:text-2xl font-medieval text-neutral text-center mb-2 sm:mb-3" data-svelte-h="svelte-15n0he0">💚 Gestión de HP</h3>  <div class="bg-gradient-to-r from-primary/10 to-accent/10 p-2 sm:p-3 rounded-lg border border-primary/30 flex items-center gap-2 sm:gap-3"><div class="avatar flex-shrink-0"><div class="w-10 h-10 sm:w-12 sm:h-12 rounded-full ring-2 ring-secondary"><div class="bg-primary/20 flex items-center justify-center"><span class="text-lg sm:text-xl">${escape(combatant.isNpc ? "👹" : "🧙‍♂️")}</span></div></div></div> <div class="flex-1 min-w-0"><h4 class="text-base sm:text-lg font-medieval text-neutral font-bold truncate">${escape(combatant.name)}</h4> <div class="flex gap-2 mt-1">${combatant.isNpc ? `<div class="badge badge-xs badge-error" data-svelte-h="svelte-31ycly">NPC</div>` : ``}</div></div></div></div>  <div class="flex-1 p-3 sm:p-4 overflow-y-auto"> <div class="grid grid-cols-2 gap-2 sm:gap-3 mb-3 sm:mb-4"> <div class="bg-neutral/10 flex flex-col gap-1 p-2 sm:p-3 rounded-lg border-2 border-primary/30"><p class="text-xs font-medieval text-neutral/60 text-center" data-svelte-h="svelte-15e8cb6">HP ACTUAL</p> <div class="text-center"><p class="text-xl sm:text-2xl font-bold text-neutral">${escape(combatant.currentHp)}</p> <p class="text-xs sm:text-sm text-neutral/60">de ${escape(combatant.maxHp)}</p></div> <progress class="${"progress progress-" + escape(hpColor, true) + " w-full h-2 sm:h-3"}"${add_attribute("value", combatant.currentHp, 0)}${add_attribute("max", combatant.maxHp, 0)}></progress> <p class="text-xs text-center text-neutral/60">${escape(hpPercentage.toFixed(0))}%</p></div>  <div class="${"bg-" + escape(
+  isDead = combatant && combatant.currentHp <= 0;
+  localDeathSaves.successes >= 3;
+  localDeathSaves.failures >= 3;
+  return `${isOpen && combatant && isDM ? `<div class="modal modal-open z-50" role="dialog" aria-modal="true"><div class="card-parchment border-4 border-secondary w-11/12 max-w-2xl relative max-h-[90vh] flex flex-col"><button class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3 z-10 hover:bg-error/20" aria-label="Cerrar modal" data-svelte-h="svelte-kahe5o">✕</button>  <div class="p-4 flex-shrink-0 border-b-2 border-secondary"><h3 class="font-bold text-2xl font-medieval text-neutral text-center mb-3" data-svelte-h="svelte-f3fslb">💚 Gestión de Vida</h3>  <div class="bg-gradient-to-r from-primary/10 to-accent/10 p-3 rounded-lg border border-primary/30 flex items-center gap-3"><div class="avatar"><div class="w-12 h-12 rounded-full ring-2 ring-secondary"><div class="bg-primary/20 flex items-center justify-center"><span class="text-xl">${escape(combatant.isNpc ? "👹" : "🧙‍♂️")}</span></div></div></div> <div class="flex-1"><h4 class="text-lg font-medieval text-neutral font-bold">${escape(combatant.name)}</h4> <div class="flex gap-2 mt-1">${isDead ? `<div class="badge badge-xs badge-error" data-svelte-h="svelte-1i75sp6">💀 Caído</div>` : `${combatant.temporaryHp > 0 ? `<div class="badge badge-xs badge-info">🛡️ +${escape(combatant.temporaryHp)} temp</div>` : ``}`}</div></div></div></div>  <div class="tabs tabs-boxed bg-neutral/20 p-2 flex-shrink-0"><button class="${"tab flex-1 " + escape("tab-active", true)}">💚 HP Normal</button> <button class="${"tab flex-1 " + escape("", true)}">🛡️ HP Temporal</button> <button class="${"tab flex-1 " + escape("", true)}" ${!isDead ? "disabled" : ""}>💀 Death Saves</button></div>  <div class="flex-1 overflow-y-auto p-4">${` <div class="space-y-4"> <div class="grid grid-cols-2 gap-3"><div class="bg-neutral/10 p-3 rounded-lg border-2 border-primary/30"><p class="text-xs font-medieval text-neutral/60 text-center" data-svelte-h="svelte-15e8cb6">HP ACTUAL</p> <div class="text-center"><p class="text-2xl font-bold text-neutral">${escape(combatant.currentHp)}</p> <p class="text-sm text-neutral/60">de ${escape(combatant.maxHp)}</p></div> <progress class="${"progress progress-" + escape(hpColor, true) + " w-full h-3"}"${add_attribute("value", combatant.currentHp, 0)}${add_attribute("max", combatant.maxHp, 0)}></progress></div> <div class="${"bg-" + escape(
     hpChange !== 0 ? hpChange > 0 ? "success" : "error" : "neutral",
     true
-  ) + "/10 p-2 sm:p-3 rounded-lg gap-1 flex flex-col justify-center items-center border-2 border-" + escape(
+  ) + "/10 p-3 rounded-lg border-2 border-" + escape(
     hpChange !== 0 ? hpChange > 0 ? "success" : "error" : "primary",
     true
-  ) + "/30"}"><p class="text-xs font-medieval text-neutral/60 text-center" data-svelte-h="svelte-ukgy9p">HP NUEVO</p> <div class="text-center"><p class="${"text-xl sm:text-2xl font-bold text-" + escape(
+  ) + "/30"}"><p class="text-xs font-medieval text-neutral/60 text-center" data-svelte-h="svelte-ukgy9p">HP NUEVO</p> <div class="text-center"><p class="${"text-2xl font-bold text-" + escape(
     hpChange !== 0 ? hpChange > 0 ? "success" : "error" : "neutral",
     true
-  )}">${escape(newHP)}</p> ${hpChange !== 0 ? `<p class="${"text-base sm:text-lg font-bold text-" + escape(hpChange > 0 ? "success" : "error", true)}">${escape(hpChange > 0 ? "+" : "")}${escape(hpChange)}</p>` : `<p class="text-xs sm:text-sm text-neutral/60" data-svelte-h="svelte-rbv1yy">Sin cambios</p>`}</div> <progress class="${"progress progress-" + escape(hpChange !== 0 ? newHpColor : hpColor, true) + " w-full h-2 sm:h-3"}"${add_attribute("value", newHP, 0)}${add_attribute("max", combatant.maxHp, 0)}></progress> <p class="text-xs text-center text-neutral/60">${escape(newHpPercentage.toFixed(0))}%</p></div></div>  <div><label class="label" data-svelte-h="svelte-640liv"><span class="label-text font-medieval text-neutral text-sm sm:text-base">🎲 Cantidad de HP</span></label> <div class="flex flex-col sm:flex-row gap-2"><input type="number" placeholder="Ej: 15" class="input input-sm sm:input-md input-bordered bg-[#2d241c] text-base-content border-primary/50 flex-1 text-center text-lg sm:text-2xl font-bold focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/50" min="0"${add_attribute("value", customValue, 0)}> <div class="grid grid-cols-2 sm:flex gap-2 flex-1"><button class="btn btn-error btn-sm sm:btn-md flex-1" ${"disabled"}><span class="text-base sm:text-xl" data-svelte-h="svelte-orvybg">💥</span> <span class="font-medieval text-xs sm:text-sm" data-svelte-h="svelte-117bemg">Daño</span></button> <button class="btn btn-success btn-sm sm:btn-md flex-1" ${"disabled"}><span class="text-base sm:text-xl" data-svelte-h="svelte-rpoyvz">💚</span> <span class="font-medieval text-xs sm:text-sm" data-svelte-h="svelte-v46veg">Curar</span></button></div></div></div></div></div></div>` : `${isOpen && combatant && !isDM ? ` <div class="modal modal-open z-50"><div class="card-parchment border-4 border-error w-11/12 max-w-md text-center p-8"><div class="text-6xl mb-4" data-svelte-h="svelte-13ghcez">🚫</div> <h3 class="text-2xl font-medieval text-neutral mb-3" data-svelte-h="svelte-13fk1x3">Acceso Denegado</h3> <p class="text-neutral/70 font-body mb-6" data-svelte-h="svelte-1myopqh">Solo el Dungeon Master puede gestionar los puntos de vida.</p> <button class="btn btn-dnd" data-svelte-h="svelte-1bzkva0">Entendido</button></div></div>` : ``}`}`;
+  )}">${escape(newHP)}</p> ${hpChange !== 0 ? `<p class="${"text-lg font-bold text-" + escape(hpChange > 0 ? "success" : "error", true)}">${escape(hpChange > 0 ? "+" : "")}${escape(hpChange)}</p>` : `<p class="text-sm text-neutral/60" data-svelte-h="svelte-yn2w7t">Sin cambios</p>`}</div> <progress class="${"progress progress-" + escape(hpChange !== 0 ? newHpColor : hpColor, true) + " w-full h-3"}"${add_attribute("value", newHP, 0)}${add_attribute("max", combatant.maxHp, 0)}></progress></div></div>  <div><label class="label" data-svelte-h="svelte-1b89huq"><span class="label-text font-medieval text-neutral">🎲 Cantidad de HP</span></label> <div class="flex gap-2"><input type="number" placeholder="Ej: 15" class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 flex-1 text-center text-2xl font-bold" min="0"${add_attribute("value", customValue, 0)}> <div class="flex gap-2"><button class="btn btn-error" ${"disabled"}><span class="text-xl" data-svelte-h="svelte-qwnz9x">💥</span>
+                    Daño</button> <button class="btn btn-success" ${"disabled"}><span class="text-xl" data-svelte-h="svelte-cy0xo0">💚</span>
+                    Curar</button></div></div></div> ${combatant.temporaryHp > 0 ? `<div class="bg-info/10 p-3 rounded-lg border border-info/30 mt-4"><div class="flex items-center justify-between mb-2"><span class="text-xs font-medieval text-neutral/70" data-svelte-h="svelte-tzs62y">HP TEMPORAL ACTIVO</span> <span class="badge badge-info">🛡️ ${escape(combatant.temporaryHp)}</span></div> <p class="text-xs text-neutral/60 italic" data-svelte-h="svelte-1a6d5wt">💡 El daño reducirá primero los HP temporales</p></div>` : ``}</div>`}</div></div></div>` : `${isOpen && combatant && !isDM ? ` <div class="modal modal-open z-50"><div class="card-parchment border-4 border-error w-11/12 max-w-md text-center p-8"><div class="text-6xl mb-4" data-svelte-h="svelte-13ghcez">🚫</div> <h3 class="text-2xl font-medieval text-neutral mb-3" data-svelte-h="svelte-13fk1x3">Acceso Denegado</h3> <p class="text-neutral/70 font-body mb-6" data-svelte-h="svelte-1myopqh">Solo el Dungeon Master puede gestionar los puntos de vida.</p> <button class="btn btn-dnd" data-svelte-h="svelte-1bzkva0">Entendido</button></div></div>` : ``}`}`;
 });
 const ConditionModal = create_ssr_component(($$result, $$props, $$bindings, slots) => {
   let { isOpen = false } = $$props;
