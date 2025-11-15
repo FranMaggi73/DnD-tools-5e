@@ -90,6 +90,8 @@ export interface Character {
   initiative: number;
   speed: number;        // ✅ NUEVO
   conditions: string[];
+  deathSaves: DeathSaves;   // ✅ NUEVO
+  temporaryHp: number;      // ✅ NUEVO
   
   // ✅ NUEVO: Ability Scores
   abilityScores: AbilityScores;
@@ -159,6 +161,8 @@ export interface Combatant {
   isNpc: boolean;
   creatureSource?: string;
   createdAt: string;
+  deathSaves: DeathSaves;
+  temporaryHp: number;
 }
 
 // ===========================
@@ -365,4 +369,10 @@ export function characterToForm(character: Character): CharacterForm {
     savingThrows: { ...character.savingThrows },
     skills: character.skills.map(s => ({ ...s }))
   };
+}
+
+// ===== DEATH SAVES =====
+export interface DeathSaves {
+  successes: number; // 0-3
+  failures: number;  // 0-3
 }

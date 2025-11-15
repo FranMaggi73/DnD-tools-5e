@@ -250,6 +250,26 @@
     }
   }
 
+  async function handleUpdateTemp(event: CustomEvent) {
+  if (!selectedCombatant) return;
+  try {
+    const tempHp = event.detail as number;
+    await api.updateCombatant(selectedCombatant.id, { temporaryHp: tempHp });
+  } catch (err: any) {
+    error = err.message;
+  }
+}
+
+async function handleUpdateDeathSaves(event: CustomEvent) {
+  if (!selectedCombatant) return;
+  try {
+    const deathSaves = event.detail;
+    await api.updateCombatant(selectedCombatant.id, { deathSaves });
+  } catch (err: any) {
+    error = err.message;
+  }
+}
+
   async function handleAddCondition(event: CustomEvent) {
     if (!selectedCombatant) return;
     try {
@@ -479,6 +499,8 @@
   combatant={selectedCombatant}
   isDM={!!isDM}  
   on:apply={handleApplyHP}
+  on:updateTemp={handleUpdateTemp}
+  on:updateDeathSaves={handleUpdateDeathSaves}
   on:close={() => { showHPModal = false; selectedCombatant = null; }}
 />
 

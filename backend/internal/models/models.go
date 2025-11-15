@@ -68,6 +68,11 @@ type Invitation struct {
 // PERSONAJES - ✅ NIVEL 1 COMPLETO
 // ===========================
 
+type DeathSaves struct {
+	Successes int `firestore:"successes" json:"successes"` // 0-3
+	Failures  int `firestore:"failures" json:"failures"`   // 0-3
+}
+
 // AbilityScores representa las 6 habilidades principales
 type AbilityScores struct {
 	Strength     int `firestore:"strength" json:"strength"`         // STR
@@ -106,12 +111,14 @@ type Character struct {
 	Level      int    `firestore:"level" json:"level"`
 
 	// ===== COMBAT STATS =====
-	MaxHP      int      `firestore:"maxHp" json:"maxHp"`
-	CurrentHP  int      `firestore:"currentHp" json:"currentHp"`
-	ArmorClass int      `firestore:"armorClass" json:"armorClass"`
-	Initiative int      `firestore:"initiative" json:"initiative"` // Bonus de iniciativa
-	Speed      int      `firestore:"speed" json:"speed"`           // ✅ NUEVO: Walking speed (en pies)
-	Conditions []string `firestore:"conditions" json:"conditions"`
+	MaxHP       int        `firestore:"maxHp" json:"maxHp"`
+	CurrentHP   int        `firestore:"currentHp" json:"currentHp"`
+	ArmorClass  int        `firestore:"armorClass" json:"armorClass"`
+	Initiative  int        `firestore:"initiative" json:"initiative"` // Bonus de iniciativa
+	Speed       int        `firestore:"speed" json:"speed"`           // ✅ NUEVO: Walking speed (en pies)
+	Conditions  []string   `firestore:"conditions" json:"conditions"`
+	TemporaryHP int        `firestore:"temporaryHp" json:"temporaryHp"` // ✅ NUEVO
+	DeathSaves  DeathSaves `firestore:"deathSaves" json:"deathSaves"`
 
 	// ===== NIVEL 1: ABILITY SCORES =====
 	AbilityScores AbilityScores `firestore:"abilityScores" json:"abilityScores"` // ✅ NUEVO

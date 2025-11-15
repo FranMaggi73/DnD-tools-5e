@@ -541,7 +541,6 @@
 
         {#if currentStep === 4}
           <div class="space-y-6">
-            
             <div>
               <h4 class="font-medieval text-xl text-neutral mb-3 flex items-center gap-2">
                 🛡️ Tiradas de Salvación
@@ -569,9 +568,7 @@
                 {/each}
               </div>
             </div>
-
             <div class="divider text-neutral/50">⚔️</div>
-
             <div>
               <h4 class="font-medieval text-xl text-neutral mb-3 flex items-center gap-2">
                 🎯 Habilidades

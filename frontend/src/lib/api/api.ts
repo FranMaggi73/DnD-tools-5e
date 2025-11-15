@@ -11,7 +11,8 @@ import type {
   MonsterSearchResult,
   ConditionSearchResult,
   Condition,
-  Note,  // 👈 AGREGAR ESTO
+  Note,
+  DeathSaves,  // 👈 AGREGAR ESTO
 } from '$lib/types';
 
 // ✅ DETECCIÓN AUTOMÁTICA: usa localhost en desarrollo, producción en build
@@ -162,6 +163,8 @@ export const api = {
     currentHp?: number;
     conditions?: string[];
     initiative?: number;
+    deathSaves?: DeathSaves;
+    temporaryHp?: number;
   }) =>
     fetchWithAuth<Combatant>(`/combatants/${combatantId}`, {
       method: 'PUT',
