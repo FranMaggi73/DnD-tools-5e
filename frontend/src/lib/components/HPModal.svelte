@@ -228,7 +228,7 @@
           <div class="space-y-4">
             
             <!-- HP Actual y Nuevo -->
-            <div class="grid grid-cols-2 gap-3">
+            <div class="gap-3">
               <div class="bg-neutral/10 p-3 rounded-lg border-2 border-primary/30">
                 <p class="text-xs font-medieval text-neutral/60 text-center">HP ACTUAL</p>
                 <div class="text-center">
@@ -238,28 +238,6 @@
                 <progress 
                   class="progress progress-{hpColor} w-full h-3" 
                   value={combatant.currentHp} 
-                  max={combatant.maxHp}
-                ></progress>
-              </div>
-
-              <div class="bg-{hpChange !== 0 ? (hpChange > 0 ? 'success' : 'error') : 'neutral'}/10 
-                          p-3 rounded-lg border-2 border-{hpChange !== 0 ? (hpChange > 0 ? 'success' : 'error') : 'primary'}/30">
-                <p class="text-xs font-medieval text-neutral/60 text-center">HP NUEVO</p>
-                <div class="text-center">
-                  <p class="text-2xl font-bold text-{hpChange !== 0 ? (hpChange > 0 ? 'success' : 'error') : 'neutral'}">
-                    {newHP}
-                  </p>
-                  {#if hpChange !== 0}
-                    <p class="text-lg font-bold text-{hpChange > 0 ? 'success' : 'error'}">
-                      {hpChange > 0 ? '+' : ''}{hpChange}
-                    </p>
-                  {:else}
-                    <p class="text-sm text-neutral/60">Sin cambios</p>
-                  {/if}
-                </div>
-                <progress 
-                  class="progress progress-{hpChange !== 0 ? newHpColor : hpColor} w-full h-3" 
-                  value={newHP} 
                   max={combatant.maxHp}
                 ></progress>
               </div>

@@ -1,11 +1,21 @@
-<!-- frontend/src/lib/components/InventoryPanel.svelte -->
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { inventoryApi, type InventoryItem, type InventoryResponse } from '$lib/api/inventory';
   import AddItemModal from './AddItemModal.svelte';
   import ItemDetailModal from './ItemDetailModal.svelte';
   import EditItemModal from './EditItemModal.svelte';
   import { validateCurrency } from '$lib/utils/validation';
+  
+  // ===== NUEVO: Importar Firestore =====
+  import { 
+    getFirestore, 
+    collection, 
+    query, 
+    where, 
+    onSnapshot,
+    doc
+  } from 'firebase/firestore';
+  import { app } from '$lib/firebase';
 
   export let characterId: string;
   export let isOwner: boolean = false;
@@ -15,10 +25,6 @@
   let error = '';
   let processingItem: string | null = null;
   let searchLocalQuery = '';
-
-  // Cache simple
-  let lastLoadTime = 0;
-  const CACHE_DURATION = 5000;
 
   let showAddItemModal = false;
   let showCurrencyModal = false;
@@ -46,6 +52,11 @@
     gold: false,
     platinum: false
   };
+
+  // ===== NUEVO: Listeners =====
+  let itemsUnsubscribe: (() => void) | null = null;
+  let currencyUnsubscribe: (() => void) | null = null;
+  const db = getFirestore(app);
 
   // Paginación
   const ITEMS_PER_PAGE = 20;
@@ -88,28 +99,106 @@
   $: convertedValues = calculateConversion(converterAmount, converterFrom);
 
   onMount(async () => {
-    await loadInventory();
+    setupRealtimeListeners();
   });
 
-  async function loadInventory(force = false) {
-    const now = Date.now();
-    if (!force && inventory && now - lastLoadTime < CACHE_DURATION) {
-      return;
-    }
+  onDestroy(() => {
+    if (itemsUnsubscribe) itemsUnsubscribe();
+    if (currencyUnsubscribe) currencyUnsubscribe();
+  });
 
+  function setupRealtimeListeners() {
     try {
       loading = true;
-      error = '';
-      inventory = await inventoryApi.getInventory(characterId);
-      lastLoadTime = now;
-      
-      if (inventory) {
-        currencyForm = { ...inventory.currency };
-      }
+
+      // ===== LISTENER: Items =====
+      const itemsRef = collection(db, 'inventory_items');
+      const itemsQuery = query(
+        itemsRef,
+        where('characterId', '==', characterId)
+      );
+
+      itemsUnsubscribe = onSnapshot(
+        itemsQuery,
+        (snapshot) => {
+          const items = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+            updatedAt: doc.data().updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+          })) as InventoryItem[];
+
+          // Calcular valor total
+          const totalValue = items.reduce((sum, item) => 
+            sum + (item.value * item.quantity), 0
+          );
+
+          // Actualizar inventory
+          if (!inventory) {
+            inventory = {
+              items,
+              currency: { copper: 0, silver: 0, gold: 0, platinum: 0 },
+              totalValue
+            };
+          } else {
+            inventory.items = items;
+            inventory.totalValue = totalValue + (
+              (inventory.currency.copper * 0.01) +
+              (inventory.currency.silver * 0.1) +
+              inventory.currency.gold +
+              (inventory.currency.platinum * 10)
+            );
+          }
+
+          loading = false;
+        },
+        (err) => {
+          console.error('Error en listener de items:', err);
+          error = err.message;
+          loading = false;
+        }
+      );
+
+      // ===== LISTENER: Currency =====
+      const currencyRef = doc(db, 'currencies', characterId);
+
+      currencyUnsubscribe = onSnapshot(
+        currencyRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const currency = snapshot.data() as typeof currencyForm;
+            
+            if (!inventory) {
+              inventory = {
+                items: [],
+                currency,
+                totalValue: (currency.copper * 0.01) +
+                            (currency.silver * 0.1) +
+                            currency.gold +
+                            (currency.platinum * 10)
+              };
+            } else {
+              inventory.currency = currency;
+              inventory.totalValue = inventory.items.reduce((sum, item) => 
+                sum + (item.value * item.quantity), 0
+              ) + (
+                (currency.copper * 0.01) +
+                (currency.silver * 0.1) +
+                currency.gold +
+                (currency.platinum * 10)
+              );
+            }
+
+            currencyForm = { ...currency };
+          }
+        },
+        (err) => {
+          console.error('Error en listener de currency:', err);
+        }
+      );
+
     } catch (err: any) {
-      error = err.message || 'Error cargando inventario';
-      console.error('Error loading inventory:', err);
-    } finally {
+      error = err.message;
       loading = false;
     }
   }
@@ -118,8 +207,8 @@
     try {
       error = '';
       await inventoryApi.createItem(characterId, event.detail);
-      await loadInventory(true);
       showAddItemModal = false;
+      // ✅ El listener actualizará automáticamente
     } catch (err: any) {
       error = err.message || 'Error agregando item';
       console.error('Error adding item:', err);
@@ -135,7 +224,7 @@
       
       const updates = event.detail;
       await inventoryApi.updateItem(selectedItem.id, updates);
-      await loadInventory(true);
+      // ✅ El listener actualizará automáticamente
       
       showEditModal = false;
       selectedItem = null;
@@ -154,7 +243,7 @@
       processingItem = item.id;
       error = '';
       await inventoryApi.deleteItem(item.id);
-      await loadInventory(true);
+      // ✅ El listener actualizará automáticamente
     } catch (err: any) {
       error = err.message || 'Error eliminando item';
       console.error('Error deleting item:', err);
@@ -173,9 +262,9 @@
     try {
       error = '';
       await inventoryApi.updateCurrency(characterId, currencyForm);
-      await loadInventory(true);
       showCurrencyModal = false;
       resetCurrencyValidation();
+      // ✅ El listener actualizará automáticamente
     } catch (err: any) {
       error = err.message || 'Error actualizando monedas';
       console.error('Error updating currency:', err);
@@ -231,7 +320,6 @@
     return labels[type] || 'Items';
   }
 
-  // ✅ NUEVO: Función para obtener color de rareza
   function getRarityColor(rarity?: string): string {
     if (!rarity) return 'badge-ghost';
     const colors: Record<string, string> = {
@@ -245,7 +333,6 @@
     return colors[rarity.toLowerCase()] || 'badge-ghost';
   }
 
-  // ✅ NUEVO: Función para capitalizar rareza
   function formatRarity(rarity?: string): string {
     if (!rarity) return 'Común';
     return rarity.charAt(0).toUpperCase() + rarity.slice(1);
@@ -364,12 +451,14 @@
       <div class="text-4xl mb-4">⚠️</div>
       <h3 class="text-xl font-medieval text-neutral mb-2">Error al Cargar</h3>
       <p class="text-neutral/70 mb-4">No se pudo cargar el inventario</p>
-      <button class="btn btn-primary btn-sm" on:click={() => loadInventory(true)}>
+      <button
+        class="btn btn-primary btn-sm"
+        on:click={() => { error = ''; loading = true; setupRealtimeListeners(); }}
+      >
         🔄 Reintentar
       </button>
     </div>
   {:else}
-
     {#if inventory.items.length > 0}
       <div class="mb-4">
         <div class="form-control">

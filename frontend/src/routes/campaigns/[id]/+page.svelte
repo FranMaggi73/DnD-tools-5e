@@ -1,11 +1,15 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { userStore } from '$lib/stores/authStore';
   import { api } from '$lib/api/api';
   import { headerTitle } from '$lib/stores/uiStore';
-  import type { Campaign, CampaignMembers } from '$lib/types';
+  import type { Campaign, CampaignMembers, CampaignMember } from '$lib/types';
+  
+  // ===== NUEVO: Importar Firestore =====
+  import { getFirestore, doc, onSnapshot, collection, query, where } from 'firebase/firestore';
+  import { app } from '$lib/firebase';
 
   $: campaignId = $page.params.id || '';
 
@@ -13,37 +17,92 @@
   let members: CampaignMembers | null = null;
   let loading = true;
   let error = '';
+  
   // Modales
   let showInviteModal = false;
   let showDeleteModal = false;
   let inviteEmail = '';
   let inviting = false;
 
+  // ===== NUEVO: Listeners =====
+  let campaignUnsubscribe: (() => void) | null = null;
+  let membersUnsubscribe: (() => void) | null = null;
+  const db = getFirestore(app);
+
   $: isDM = campaign && $userStore && campaign.dmId === $userStore.uid;
 
   onMount(async () => {
-    await loadCampaign();
-    await loadMembers();
+    setupRealtimeListeners();
   });
 
-  async function loadCampaign() {
-    try {
-      campaign = await api.getCampaign(campaignId);
-      if (campaign?.name) {
-        headerTitle.set(campaign.name); // 👈 actualiza el título del header global
-      }
-    } catch (err: any) {
-      error = err.message;
-    }
-  }
+  onDestroy(() => {
+    if (campaignUnsubscribe) campaignUnsubscribe();
+    if (membersUnsubscribe) membersUnsubscribe();
+  });
 
-  async function loadMembers() {
+  function setupRealtimeListeners() {
     try {
       loading = true;
-      members = await api.getCampaignMembers(campaignId);
+
+      // ===== LISTENER: Campaña =====
+      const campaignRef = doc(db, 'events', campaignId);
+      
+      campaignUnsubscribe = onSnapshot(
+        campaignRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            campaign = { id: snapshot.id, ...snapshot.data() } as Campaign;
+            if (campaign?.name) {
+              headerTitle.set(campaign.name);
+            }
+          } else {
+            error = 'Campaña no encontrada';
+            campaign = null;
+          }
+          loading = false;
+        },
+        (err) => {
+          console.error('Error en listener de campaña:', err);
+          error = err.message;
+          loading = false;
+        }
+      );
+
+      // ===== LISTENER: Miembros =====
+      const membersRef = collection(db, 'event_members');
+      const membersQuery = query(
+        membersRef,
+        where('campaignId', '==', campaignId)
+      );
+
+      membersUnsubscribe = onSnapshot(
+        membersQuery,
+        (snapshot) => {
+          const membersList = snapshot.docs.map(doc => ({
+            ...doc.data()
+          })) as CampaignMember[];
+
+          let dm: CampaignMember | null = null;
+          let players: CampaignMember[] = [];
+
+          membersList.forEach(member => {
+            if (member.role === 'dm') {
+              dm = member;
+            } else {
+              players.push(member);
+            }
+          });
+
+          members = { dm, players };
+        },
+        (err) => {
+          console.error('Error en listener de miembros:', err);
+          error = err.message;
+        }
+      );
+
     } catch (err: any) {
       error = err.message;
-    } finally {
       loading = false;
     }
   }
@@ -58,7 +117,7 @@
       showInviteModal = false;
       inviteEmail = '';
       alert('¡Invitación enviada con éxito!');
-      await loadMembers();
+      // ✅ No necesitamos recargar, el listener lo hace automáticamente
     } catch (err: any) {
       error = err.message;
     } finally {
@@ -71,7 +130,7 @@
     
     try {
       await api.removePlayer(campaignId, userId);
-      await loadMembers();
+      // ✅ El listener actualizará automáticamente
     } catch (err: any) {
       error = err.message;
     }

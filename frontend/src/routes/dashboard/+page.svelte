@@ -1,10 +1,23 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { api } from '$lib/api/api';
   import { goto } from '$app/navigation';
-  import type { Campaign, CampaignMembers } from '$lib/types';
+  import { userStore } from '$lib/stores/authStore';
+  import type { Campaign, CampaignMembers, CampaignMember } from '$lib/types';
   import { headerTitle } from '$lib/stores/uiStore';
   import { validateCampaignName } from '$lib/utils/validation';
+  
+  // ===== NUEVO: Importar Firestore =====
+  import { 
+    getFirestore, 
+    collection, 
+    query, 
+    where, 
+    onSnapshot,
+    doc,
+    getDocs
+  } from 'firebase/firestore';
+  import { app } from '$lib/firebase';
 
   headerTitle.set('🎲 Grimorio de Aventuras');
 
@@ -19,7 +32,10 @@
   let validationError = '';
   let touched = false;
 
-  // Validación reactiva
+  // ===== NUEVO: Listeners =====
+  let campaignsUnsubscribe: (() => void) | null = null;
+  const db = getFirestore(app);
+
   $: if (touched && newCampaign.name) {
     const result = validateCampaignName(newCampaign.name);
     validationError = result.valid ? '' : result.error || '';
@@ -28,38 +44,105 @@
   $: isValid = !validationError && newCampaign.name.trim();
 
   onMount(async () => {
-    await loadCampaigns();
+    if (!$userStore) return;
+    setupRealtimeListeners();
   });
 
-  async function loadCampaigns() {
+  onDestroy(() => {
+    if (campaignsUnsubscribe) campaignsUnsubscribe();
+  });
+
+  async function setupRealtimeListeners() {
+    if (!$userStore) return;
+
     try {
       loading = true;
       error = '';
 
-      const fetchedCampaigns = await api.getCampaigns();
-      campaigns = Array.isArray(fetchedCampaigns) ? fetchedCampaigns : [];
-
-      const campaignsData = await Promise.all(
-        campaigns.map(async (campaign) => {
-          try {
-            const rawMembers = await api.getCampaignMembers(campaign.id);
-            const members: CampaignMembers = {
-              dm: rawMembers?.dm ?? null,
-              players: Array.isArray(rawMembers?.players) ? rawMembers!.players : [],
-            };
-            return { campaign, members };
-          } catch (err) {
-            return { campaign, members: { dm: null, players: [] } };
-          }
-        })
+      // ===== PASO 1: Obtener IDs de campañas del usuario =====
+      const membersRef = collection(db, 'event_members');
+      const membersQuery = query(
+        membersRef,
+        where('userId', '==', $userStore.uid)
       );
 
-      campaignsWithMembers = campaignsData;
+      campaignsUnsubscribe = onSnapshot(
+        membersQuery,
+        async (snapshot) => {
+          const campaignIds = snapshot.docs.map(doc => doc.data().campaignId);
+
+          if (campaignIds.length === 0) {
+            campaigns = [];
+            campaignsWithMembers = [];
+            loading = false;
+            return;
+          }
+
+          // ===== PASO 2: Obtener datos de cada campaña =====
+          const campaignsData = await Promise.all(
+            campaignIds.map(async (id) => {
+              try {
+                // Obtener campaña
+                const campaignDoc = await getDocs(
+                  query(collection(db, 'events'), where('__name__', '==', id))
+                );
+
+                if (campaignDoc.empty) return null;
+
+                const campaign = {
+                  id: campaignDoc.docs[0].id,
+                  ...campaignDoc.docs[0].data()
+                } as Campaign;
+
+                // Obtener miembros
+                const membersSnapshot = await getDocs(
+                  query(
+                    collection(db, 'event_members'),
+                    where('campaignId', '==', id)
+                  )
+                );
+
+                const membersList = membersSnapshot.docs.map(doc => doc.data()) as CampaignMember[];
+
+                let dm: CampaignMember | null = null;
+                let players: CampaignMember[] = [];
+
+                membersList.forEach(member => {
+                  if (member.role === 'dm') {
+                    dm = member;
+                  } else {
+                    players.push(member);
+                  }
+                });
+
+                return {
+                  campaign,
+                  members: { dm, players }
+                };
+
+              } catch (err) {
+                console.error(`Error cargando campaña ${id}:`, err);
+                return null;
+              }
+            })
+          );
+
+          campaignsWithMembers = campaignsData.filter(Boolean) as Array<{
+            campaign: Campaign;
+            members: CampaignMembers;
+          }>;
+
+          loading = false;
+        },
+        (err) => {
+          console.error('Error en listener de campañas:', err);
+          error = err.message;
+          loading = false;
+        }
+      );
+
     } catch (err: any) {
       error = err?.message ?? String(err);
-      campaigns = [];
-      campaignsWithMembers = [];
-    } finally {
       loading = false;
     }
   }
@@ -84,7 +167,7 @@
       newCampaign = { name: '' };
       touched = false;
       validationError = '';
-      await loadCampaigns();
+      // ✅ El listener actualizará automáticamente
     } catch (err: any) {
       error = err?.message ?? String(err);
     }

@@ -14,17 +14,16 @@ import (
 
 // ✅ NUEVO: TTLs optimizados por tipo de dato
 const (
-	CampaignTTL    = 5 * time.Minute  // ✅ Aumentado de 10s a 5min
-	MembersTTL     = 3 * time.Minute  // ✅ Aumentado de 30s a 3min
-	CharactersTTL  = 2 * time.Minute  // ✅ Aumentado de 30s a 2min
-	EncounterTTL   = 10 * time.Second // Crítico, mantener bajo
-	CombatantsTTL  = 5 * time.Second  // Crítico, mantener bajo
-	InventoryTTL   = 1 * time.Minute  // ✅ Nuevo
-	UserTTL        = 10 * time.Minute // ✅ Nuevo
-	PermissionsTTL = 5 * time.Minute  // ✅ Nuevo
+	CampaignTTL    = 5 * time.Minute
+	MembersTTL     = 3 * time.Minute
+	CharactersTTL  = 2 * time.Minute
+	EncounterTTL   = 5 * time.Minute
+	CombatantsTTL  = 5 * time.Minute
+	InventoryTTL   = 1 * time.Minute
+	UserTTL        = 10 * time.Minute
+	PermissionsTTL = 5 * time.Minute
 )
 
-// CacheItem representa un elemento cacheado con metadata
 // CacheItem representa un elemento cacheado con metadata
 type CacheItem struct {
 	Data      interface{}
