@@ -118,23 +118,39 @@ func (h *Handler) ClearCache(c *gin.Context) {
 // GetCacheStats devuelve estadísticas del caché
 func (h *Handler) GetCacheStats(c *gin.Context) {
 	stats := h.cache.Stats()
-	stats["distributed"] = h.invalidator != nil
 
+	// Crear response con los stats del cache
+	response := map[string]interface{}{
+		"total_items":   stats.TotalItems,
+		"expired_items": stats.ExpiredItems,
+		"active_items":  stats.ActiveItems,
+		"total_hits":    stats.TotalHits,
+		"hit_rate":      stats.HitRate,
+		"by_type":       stats.ByType,
+		"distributed":   h.invalidator != nil,
+	}
+
+	// Agregar campos opcionales si existen
+	if stats.OldestEntry != "" {
+		response["oldest_entry_age"] = stats.OldestEntry
+		response["newest_entry_age"] = stats.NewestEntry
+	}
+
+	// Verificar salud de Redis/PubSub si está habilitado
 	if h.invalidator != nil {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 		defer cancel()
 
 		if err := h.invalidator.Health(ctx); err != nil {
-			stats["redis_pubsub_status"] = "unhealthy"
-			stats["redis_pubsub_error"] = err.Error()
+			response["redis_pubsub_status"] = "unhealthy"
+			response["redis_pubsub_error"] = err.Error()
 		} else {
-			stats["redis_pubsub_status"] = "healthy"
+			response["redis_pubsub_status"] = "healthy"
 		}
 	}
 
-	c.JSON(http.StatusOK, stats)
+	c.JSON(http.StatusOK, response)
 }
-
 func (h *Handler) invalidateCharacterCache(ctx context.Context, characterID string) {
 	if h.invalidator != nil {
 		if err := h.invalidator.InvalidatePattern(ctx, "character:"+characterID); err != nil {

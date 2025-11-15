@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
 import { tokenStore } from '$lib/stores/authStore';
+import { ensureValidToken } from '$lib/utils/tokenManager'; // ✅ NUEVO
 import type { 
   Campaign, 
   CampaignMembers, 
@@ -12,30 +13,60 @@ import type {
   ConditionSearchResult,
   Condition,
   Note,
-  DeathSaves,  // 👈 AGREGAR ESTO
+  DeathSaves,
 } from '$lib/types';
 
-// ✅ DETECCIÓN AUTOMÁTICA: usa localhost en desarrollo, producción en build
 const API_BASE_URL = import.meta.env.MODE === 'development'
   ? 'http://localhost:8080/api'
   : (import.meta.env.VITE_API_URL || 'https://dm-events-backend-858373640437.us-central1.run.app/api');
 
+// ✅ MEJORADO: Verificar y renovar token antes de cada request
 async function fetchWithAuth<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const token = get(tokenStore);
+  // ✅ Asegurar que el token sea válido
+  const token = await ensureValidToken();
+  
+  if (!token) {
+    throw new Error('No se pudo obtener un token válido');
+  }
   
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...options.headers as Record<string, string>,
   };
 
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
+  headers.Authorization = `Bearer ${token}`;
 
   const response = await fetch(`${API_BASE_URL}${url}`, {
     ...options,
     headers,
   });
+
+  // ✅ NUEVO: Manejar token expirado (401)
+  if (response.status === 401) {
+    console.warn('⚠️ Token expirado, intentando renovar...');
+    
+    // Intentar renovar token una vez
+    const newToken = await ensureValidToken();
+    
+    if (newToken) {
+      headers.Authorization = `Bearer ${newToken}`;
+      
+      // Reintentar request con nuevo token
+      const retryResponse = await fetch(`${API_BASE_URL}${url}`, {
+        ...options,
+        headers,
+      });
+      
+      if (!retryResponse.ok) {
+        const error = await retryResponse.json().catch(() => ({ error: 'Error en la petición' }));
+        throw new Error(error.error || 'Error en la petición');
+      }
+      
+      return retryResponse.json();
+    }
+    
+    throw new Error('Token expirado y no se pudo renovar');
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Error en la petición' }));

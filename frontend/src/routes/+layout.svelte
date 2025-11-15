@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { onAuthStateChanged, signOut } from 'firebase/auth';
   import { auth } from '$lib/firebase';
   import { userStore, loadingStore, tokenStore } from '$lib/stores/authStore';
@@ -8,26 +8,39 @@
   import { page } from '$app/stores';
   import Sidebar from '$lib/components/Sidebar.svelte';
   import InvitationsButton from '$lib/components/InvitationsButton.svelte';
+  
+  // ✅ NUEVO: Importar sistema de tokens
+  import { 
+    startTokenRefreshSystem, 
+    stopTokenRefreshSystem,
+    refreshToken 
+  } from '$lib/utils/tokenManager';
+  
   import '../app.css';
 
   let sidebarOpen = false;
 
-  // Detectar rutas
   $: campaignId = $page.params.id;
   $: isCampaign = $page.url.pathname.startsWith('/campaigns/');
   $: isLoginPage = $page.url.pathname === '/login';
   $: isRootPage = $page.url.pathname === '/';
 
-  // Auth state
   onMount(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       userStore.set(user);
 
       if (user) {
+        // ✅ Obtener token inicial
         const token = await user.getIdToken();
         tokenStore.set(token);
+        
+        // ✅ Iniciar sistema de renovación automática
+        startTokenRefreshSystem();
       } else {
         tokenStore.set(null);
+        
+        // ✅ Detener renovación si no hay usuario
+        stopTokenRefreshSystem();
       }
 
       loadingStore.set(false);
@@ -37,10 +50,25 @@
       }
     });
 
-    return () => unsubscribe();
+    // ✅ NUEVO: Renovar token al enfocar la ventana (si estuvo inactiva)
+    const handleVisibilityChange = async () => {
+      if (!document.hidden && auth.currentUser) {
+        console.log('🔄 Ventana enfocada, verificando token...');
+        await refreshToken();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      unsubscribe();
+      stopTokenRefreshSystem();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   });
 
   function handleLogout() {
+    stopTokenRefreshSystem(); // ✅ Detener renovación antes de logout
     signOut(auth).then(() => goto('/login'));
   }
 
