@@ -19,33 +19,23 @@
       ]
     },
     {
-  "collectionGroup": "invitation_links",
-  "queryScope": "COLLECTION",
-  "fields": [
-    {
-      "fieldPath": "code",
-      "order": "ASCENDING"
-    }
-  ]
-},
-{
-  "collectionGroup": "invitation_links",
-  "queryScope": "COLLECTION",
-  "fields": [
-    {
-      "fieldPath": "campaignId",
-      "order": "ASCENDING"
+      "collectionGroup": "invitation_links",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "campaignId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "isActive",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
     },
-    {
-      "fieldPath": "isActive",
-      "order": "ASCENDING"
-    },
-    {
-      "fieldPath": "createdAt",
-      "order": "DESCENDING"
-    }
-  ]
-},
     {
       "collectionGroup": "combatants",
       "queryScope": "COLLECTION",
