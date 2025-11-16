@@ -45,6 +45,14 @@
 
   onMount(async () => {
     if (!$userStore) return;
+
+  // ✅ NUEVO: Detectar si viene el parámetro action=create
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('action') === 'create') {
+    showCreateModal = true;
+    // Limpiar el parámetro de la URL
+    window.history.replaceState({}, '', '/dashboard');
+  }
     setupRealtimeListeners();
   });
 
@@ -190,7 +198,15 @@
       "Las aventuras aguardan a quienes se atreven a explorar..."
     </p>
   </div>
-
+      <button 
+      on:click={() => showCreateModal = true}
+      class="btn btn-circle btn-primary btn-lg fixed bottom-6 right-6 shadow-xl z-40"
+      title="Crear nueva campaña"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+      </svg>
+    </button>
   {#if error}
     <div class="alert bg-error/20 border-2 border-error mb-6">
       <svg xmlns="http://www.w3.org/2000/svg" class="stroke-error shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">

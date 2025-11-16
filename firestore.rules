@@ -96,7 +96,28 @@ service cloud.firestore {
         (resource.data.toUserId == request.auth.uid || 
          resource.data.fromUserId == request.auth.uid);
     }
-    
+
+    // ===========================
+    // INVITATION LINKS COLLECTION
+    // ===========================
+
+    match /invitation_links/{linkId} {
+      // Leer: DM de la campaña
+      allow read: if isAuthenticated() && 
+        resource.data.createdBy == request.auth.uid;
+      
+      // Crear: DM de la campaña
+      allow create: if isAuthenticated() && 
+        isCampaignDM(request.resource.data.campaignId);
+      
+      // Actualizar: solo el creador
+      allow update: if isAuthenticated() && 
+        resource.data.createdBy == request.auth.uid;
+      
+      // Eliminar: solo el creador
+      allow delete: if isAuthenticated() && 
+        resource.data.createdBy == request.auth.uid;
+    }
     // ===========================
     // CHARACTERS COLLECTION
     // ===========================

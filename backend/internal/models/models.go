@@ -64,6 +64,23 @@ type Invitation struct {
 	RespondedAt  time.Time `firestore:"respondedAt,omitempty" json:"respondedAt,omitempty"`
 }
 
+type InvitationLink struct {
+	ID         string    `firestore:"id" json:"id"`
+	Code       string    `firestore:"code" json:"code"`
+	CampaignID string    `firestore:"campaignId" json:"campaignId"`
+	CreatedBy  string    `firestore:"createdBy" json:"createdBy"`
+	CreatedAt  time.Time `firestore:"createdAt" json:"createdAt"`
+	ExpiresAt  time.Time `firestore:"expiresAt" json:"expiresAt"`
+	MaxUses    int       `firestore:"maxUses" json:"maxUses"` // -1 = ilimitado
+	UsedCount  int       `firestore:"usedCount" json:"usedCount"`
+	IsActive   bool      `firestore:"isActive" json:"isActive"`
+}
+
+type CreateInvitationLinkRequest struct {
+	MaxUses   int `json:"maxUses" binding:"required,min=-1,max=100"`
+	ExpiresIn int `json:"expiresIn" binding:"required,min=1,max=30"` // Días
+}
+
 // ===========================
 // PERSONAJES - ✅ NIVEL 1 COMPLETO
 // ===========================

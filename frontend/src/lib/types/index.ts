@@ -45,6 +45,18 @@ export interface Invitation {
   respondedAt?: string;
 }
 
+export interface InvitationLink {
+  id: string;
+  code: string;
+  campaignId: string;
+  createdBy: string;
+  createdAt: string;
+  expiresAt: string;
+  maxUses: number;
+  usedCount: number;
+  isActive: boolean;
+}
+
 // ===========================
 // PERSONAJES - ✅ NIVEL 1 COMPLETO
 // ===========================
@@ -376,3 +388,4 @@ export interface DeathSaves {
   successes: number; // 0-3
   failures: number;  // 0-3
 }
+

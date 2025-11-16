@@ -214,7 +214,6 @@ export const api = {
     }),
 
   // Notas
-  // Notas
   createNote: (campaignId: string, data: {
     title: string;
     content: string;
@@ -249,7 +248,49 @@ export const api = {
     fetchWithAuth<{ message: string }>(`/notes/${noteId}`, {
       method: 'DELETE',
     }),
+  // Links de invitación
+invitationLinks: {
+  generate: (campaignId: string, data: { maxUses: number; expiresIn: number }) =>
+    fetchWithAuth<{
+      id: string;
+      code: string;
+      campaignId: string;
+      createdBy: string;
+      createdAt: string;
+      expiresAt: string;
+      maxUses: number;
+      usedCount: number;
+      isActive: boolean;
+    }>(`/campaigns/${campaignId}/invite-link`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  list: (campaignId: string) =>
+    fetchWithAuth<Array<{
+      id: string;
+      code: string;
+      campaignId: string;
+      createdBy: string;
+      createdAt: string;
+      expiresAt: string;
+      maxUses: number;
+      usedCount: number;
+      isActive: boolean;
+    }>>(`/campaigns/${campaignId}/invite-links`),
+
+  deactivate: (code: string) =>
+    fetchWithAuth<{ message: string }>(`/invite-links/${code}`, {
+      method: 'DELETE',
+    }),
+
+  join: (code: string) =>
+    fetchWithAuth<{ message: string; campaign: Campaign }>(`/join/${code}`, {
+      method: 'POST',
+    }),
+},
 };
+
 
 // API de Open5e
 export const open5eApi = {

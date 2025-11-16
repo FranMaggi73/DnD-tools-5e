@@ -5,7 +5,7 @@
   import { userStore } from '$lib/stores/authStore';
   import { api } from '$lib/api/api';
   import { headerTitle } from '$lib/stores/uiStore';
-  import type { Campaign, CampaignMembers, CampaignMember } from '$lib/types';
+  import type { Campaign, CampaignMembers, CampaignMember, InvitationLink } from '$lib/types';
   
   // ===== NUEVO: Importar Firestore =====
   import { getFirestore, doc, onSnapshot, collection, query, where } from 'firebase/firestore';
@@ -23,6 +23,12 @@
   let showDeleteModal = false;
   let inviteEmail = '';
   let inviting = false;
+  let activeInviteTab: 'email' | 'link' = 'email';
+  let linkConfig = { maxUses: 10, expiresIn: 7 };
+  let generatedLink: InvitationLink | null = null;
+  let generatingLink = false;
+  let activeLinks: InvitationLink[] = [];
+  let copiedLink = false;
 
   // ===== NUEVO: Listeners =====
   let campaignUnsubscribe: (() => void) | null = null;
@@ -30,6 +36,10 @@
   const db = getFirestore(app);
 
   $: isDM = campaign && $userStore && campaign.dmId === $userStore.uid;
+    // Cargar links activos cuando se abre el modal
+  $: if (showInviteModal && activeInviteTab === 'link') {
+    loadActiveLinks();
+  }
 
   onMount(async () => {
     setupRealtimeListeners();
@@ -39,6 +49,57 @@
     if (campaignUnsubscribe) campaignUnsubscribe();
     if (membersUnsubscribe) membersUnsubscribe();
   });
+
+    async function loadActiveLinks() {
+    try {
+      activeLinks = await api.invitationLinks.list(campaignId);
+    } catch (err: any) {
+      console.error('Error loading links:', err);
+    }
+  }
+
+  async function handleGenerateLink() {
+    try {
+      generatingLink = true;
+      error = '';
+      generatedLink = await api.invitationLinks.generate(campaignId, linkConfig);
+      await loadActiveLinks();
+    } catch (err: any) {
+      error = err.message;
+    } finally {
+      generatingLink = false;
+    }
+  }
+
+  async function handleDeactivateLink(code: string) {
+    if (!confirm('¿Desactivar este link de invitación?')) return;
+    
+    try {
+      await api.invitationLinks.deactivate(code);
+      await loadActiveLinks();
+      if (generatedLink?.code === code) {
+        generatedLink = null;
+      }
+    } catch (err: any) {
+      error = err.message;
+    }
+  }
+
+function getInviteURL(code: string | null | undefined): string {
+  if (!code) return '';
+  return `${window.location.origin}/join/${code}`;
+}
+
+
+  async function copyToClipboard(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copiedLink = true;
+      setTimeout(() => copiedLink = false, 2000);
+    } catch (err) {
+      console.error('Error copying to clipboard:', err);
+    }
+  }
 
   function setupRealtimeListeners() {
     try {
@@ -53,7 +114,7 @@
           if (snapshot.exists()) {
             campaign = { id: snapshot.id, ...snapshot.data() } as Campaign;
             if (campaign?.name) {
-              headerTitle.set(campaign.name);
+              headerTitle.set("🎲 Campaña");
             }
           } else {
             error = 'Campaña no encontrada';
@@ -301,67 +362,206 @@
 
 <!-- Modal Invitar Jugador -->
 {#if showInviteModal}
-  <!-- Overlay -->
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <!-- Modal Box -->
-    <div class="modal-box card-parchment border-4 border-secondary corner-ornament relative w-full max-w-md overflow-hidden">
+    <div class="modal-box card-parchment border-4 border-secondary corner-ornament relative w-full max-w-2xl overflow-hidden">
       
-      <!-- Botón Cerrar -->
       <button 
         class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" 
-        on:click={() => { showInviteModal = false; inviteEmail = ''; }}
+        on:click={() => { showInviteModal = false; inviteEmail = ''; activeInviteTab = 'email'; generatedLink = null; }}
       >
         ✕
       </button>
       
-      <!-- Título -->
       <h3 class="font-bold text-2xl font-medieval text-neutral mb-4 text-center">
         ✉️ Invitar Jugador
       </h3>
 
-      <!-- Formulario -->
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text font-medieval text-neutral text-lg">Email del Jugador</span>
-        </label>
-        <input 
-          type="email" 
-          bind:value={inviteEmail}
-          placeholder="ejemplo@email.com"
-          class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
-        />
-        <label class="label">
-          <span class="label-text-alt text-neutral/60 italic">
-            El jugador recibirá una invitación para unirse a la campaña
-          </span>
-        </label>
+      <!-- Tabs -->
+      <div class="tabs tabs-boxed bg-neutral/20 mb-4">
+        <button 
+          class="tab flex-1 {activeInviteTab === 'email' ? 'tab-active' : ''}"
+          on:click={() => activeInviteTab = 'email'}
+        >
+          📧 Por Email
+        </button>
+        <button 
+          class="tab flex-1 {activeInviteTab === 'link' ? 'tab-active' : ''}"
+          on:click={() => activeInviteTab = 'link'}
+        >
+          🔗 Por Link
+        </button>
       </div>
 
-      <!-- Acciones -->
-      <div class="modal-action justify-center gap-4">
-        <button 
-          on:click={() => { showInviteModal = false; inviteEmail = ''; }}
-          class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval"
-        >
-          Cancelar
-        </button>
-        <button 
-          on:click={handleInvite}
-          class="btn btn-success"
-          disabled={!inviteEmail.trim() || inviting}
-        >
-          {#if inviting}
-            <span class="loading loading-spinner loading-sm"></span>
+      {#if activeInviteTab === 'email'}
+        <!-- Invitar por email -->
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medieval text-neutral text-lg">Email del Jugador</span>
+          </label>
+          <input 
+            type="email" 
+            bind:value={inviteEmail}
+            placeholder="ejemplo@email.com"
+            class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
+          />
+          <label class="label">
+            <span class="label-text-alt text-neutral/60 italic">
+              El jugador recibirá una invitación para unirse a la campaña
+            </span>
+          </label>
+        </div>
+
+        <div class="modal-action justify-center gap-4">
+          <button 
+            on:click={() => { showInviteModal = false; inviteEmail = ''; }}
+            class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval"
+          >
+            Cancelar
+          </button>
+          <button 
+            on:click={handleInvite}
+            class="btn btn-success"
+            disabled={!inviteEmail.trim() || inviting}
+          >
+            {#if inviting}
+              <span class="loading loading-spinner loading-sm"></span>
+            {:else}
+              <span class="text-xl">📨</span>
+            {/if}
+            Enviar Invitación
+          </button>
+        </div>
+
+      {:else}
+        <!-- Generar link de invitación -->
+        <div class="space-y-4">
+          
+          {#if !generatedLink}
+            <div class="grid grid-cols-2 gap-4">
+              <div class="form-control">
+                <label class="label">
+                  <span class="label-text font-medieval text-neutral">Máximo de usos</span>
+                </label>
+                <select 
+                  bind:value={linkConfig.maxUses}
+                  class="select select-bordered bg-[#2d241c] text-base-content border-primary/50"
+                >
+                  <option value={-1}>Ilimitado</option>
+                  <option value={1}>1 uso</option>
+                  <option value={5}>5 usos</option>
+                  <option value={10}>10 usos</option>
+                  <option value={25}>25 usos</option>
+                </select>
+              </div>
+
+              <div class="form-control">
+                <label class="label">
+                  <span class="label-text font-medieval text-neutral">Expira en</span>
+                </label>
+                <select 
+                  bind:value={linkConfig.expiresIn}
+                  class="select select-bordered bg-[#2d241c] text-base-content border-primary/50"
+                >
+                  <option value={1}>1 día</option>
+                  <option value={7}>7 días</option>
+                  <option value={14}>14 días</option>
+                  <option value={30}>30 días</option>
+                </select>
+              </div>
+            </div>
+
+            <button 
+              on:click={handleGenerateLink}
+              class="btn btn-dnd w-full"
+              disabled={generatingLink}
+            >
+              {#if generatingLink}
+                <span class="loading loading-spinner loading-sm"></span>
+              {:else}
+                <span class="text-xl">✨</span>
+              {/if}
+              Generar Link de Invitación
+            </button>
+
           {:else}
-            <span class="text-xl">📨</span>
+            <!-- Link generado -->
+            <div class="bg-success/10 p-4 rounded-lg border-2 border-success/40">
+              <p class="font-medieval text-neutral mb-2">✅ Link generado exitosamente</p>
+              
+              <div class="flex gap-2 mb-3">
+                <input 
+                  type="text" 
+                  value={getInviteURL(generatedLink?.code)}
+                  readonly
+                  class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 flex-1 text-sm"
+                />
+                <button 
+                on:click={() => copyToClipboard(getInviteURL(generatedLink?.code))}
+                  class="btn btn-primary"
+                >
+                  {copiedLink ? '✓' : '📋'}
+                </button>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2 text-xs text-neutral/70">
+                <div>
+                  <span class="font-bold">Código:</span> {generatedLink.code}
+                </div>
+                <div>
+                  <span class="font-bold">Usos:</span> {generatedLink.usedCount}/{generatedLink.maxUses === -1 ? '∞' : generatedLink.maxUses}
+                </div>
+                <div>
+                  <span class="font-bold">Expira:</span> {new Date(generatedLink.expiresAt).toLocaleDateString()}
+                </div>
+              </div>
+            </div>
+
+            <button 
+              on:click={() => generatedLink = null}
+              class="btn btn-outline w-full"
+            >
+              Generar Otro Link
+            </button>
           {/if}
-          Enviar Invitación
-        </button>
-      </div>
+
+          <!-- Links activos -->
+          {#if activeLinks.length > 0}
+            <div class="divider text-neutral/50">Links Activos</div>
+            <div class="space-y-2 max-h-60 overflow-y-auto">
+              {#each activeLinks as link}
+                <div class="bg-neutral/10 p-3 rounded-lg border border-primary/20 flex items-center justify-between">
+                  <div class="flex-1">
+                    <p class="text-sm font-mono font-bold">{link.code}</p>
+                    <p class="text-xs text-neutral/60">
+                      Usos: {link.usedCount}/{link.maxUses === -1 ? '∞' : link.maxUses} • 
+                      Expira: {new Date(link.expiresAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div class="flex gap-2">
+                    <button 
+                      on:click={() => copyToClipboard(getInviteURL(link.code))}
+                      class="btn btn-xs btn-primary"
+                      title="Copiar link"
+                    >
+                      📋
+                    </button>
+                    <button 
+                      on:click={() => handleDeactivateLink(link.code)}
+                      class="btn btn-xs btn-error"
+                      title="Desactivar"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
     </div>
   </div>
 {/if}
-
 
 <!-- Modal Confirmar Eliminación -->
 {#if showDeleteModal}

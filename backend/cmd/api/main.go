@@ -173,6 +173,10 @@ func main() {
 		// Invitaciones
 		protected.GET("/invitations", h.GetMyInvitations)
 		protected.POST("/invitations/:id/respond", h.RespondToInvitation)
+		protected.POST("/campaigns/:id/invite-link", pm.RequireCampaignDM(), middleware.RateLimitMiddleware(rateLimiter), h.GenerateInvitationLink)
+		protected.GET("/campaigns/:id/invite-links", pm.RequireCampaignDM(), h.GetCampaignInvitationLinks)
+		protected.DELETE("/invite-links/:code", h.DeactivateInvitationLink)
+		protected.POST("/join/:code", h.JoinCampaignWithCode)
 
 		// Personajes
 		protected.POST("/campaigns/:id/characters", pm.RequireCampaignMember(), middleware.RateLimitMiddleware(rateLimiter), h.CreateCharacter)
