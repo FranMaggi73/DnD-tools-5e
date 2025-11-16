@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { CharacterForm, AbilityScores, SavingThrows, Skill, AbilityKey } from '$lib/types';
+  import type { CharacterForm, Skill, AbilityKey } from '$lib/types';
   import { 
     getAbilityModifier, 
     formatModifier, 
@@ -13,6 +13,7 @@
     validateArmorClass,
     validateLevel 
   } from '$lib/utils/validation';
+  import debounce from 'lodash/debounce';
 
   export let isOpen = false;
   export let isEdit = false;
@@ -91,6 +92,22 @@
     } else {
       errors.speed = '';
     }
+  }
+
+    const validateAbilityScoresDebounced = debounce(() => {
+    // Validación pesada de ability scores
+    const allScoresValid = Object.values(form.abilityScores).every(
+      score => score >= 1 && score <= 30
+    );
+    
+    if (!allScoresValid) {
+      console.warn('Algunas puntuaciones son inválidas');
+    }
+  }, 300);
+  
+  // Aplicar validación debounced en cambios de ability scores
+  $: if (form.abilityScores && currentStep === 3) {
+    validateAbilityScoresDebounced();
   }
 
   // ✅ FIX: Simplificar validación de pasos

@@ -15,7 +15,10 @@
     where, 
     onSnapshot,
     doc,
-    getDocs
+    getDocs,
+    DocumentReference,
+    DocumentSnapshot,
+    documentId
   } from 'firebase/firestore';
   import { app } from '$lib/firebase';
 
@@ -60,14 +63,13 @@
     if (campaignsUnsubscribe) campaignsUnsubscribe();
   });
 
-  async function setupRealtimeListeners() {
+    async function setupRealtimeListeners() {
     if (!$userStore) return;
 
     try {
       loading = true;
       error = '';
 
-      // ===== PASO 1: Obtener IDs de campañas del usuario =====
       const membersRef = collection(db, 'event_members');
       const membersQuery = query(
         membersRef,
@@ -86,59 +88,59 @@
             return;
           }
 
-          // ===== PASO 2: Obtener datos de cada campaña =====
-          const campaignsData = await Promise.all(
-            campaignIds.map(async (id) => {
-              try {
-                // Obtener campaña
-                const campaignDoc = await getDocs(
-                  query(collection(db, 'events'), where('__name__', '==', id))
-                );
-
-                if (campaignDoc.empty) return null;
-
-                const campaign = {
-                  id: campaignDoc.docs[0].id,
-                  ...campaignDoc.docs[0].data()
-                } as Campaign;
-
-                // Obtener miembros
-                const membersSnapshot = await getDocs(
-                  query(
-                    collection(db, 'event_members'),
-                    where('campaignId', '==', id)
-                  )
-                );
-
-                const membersList = membersSnapshot.docs.map(doc => doc.data()) as CampaignMember[];
-
-                let dm: CampaignMember | null = null;
-                let players: CampaignMember[] = [];
-
-                membersList.forEach(member => {
-                  if (member.role === 'dm') {
-                    dm = member;
-                  } else {
-                    players.push(member);
-                  }
-                });
-
-                return {
-                  campaign,
-                  members: { dm, players }
-                };
-
-              } catch (err) {
-                console.error(`Error cargando campaña ${id}:`, err);
-                return null;
-              }
-            })
+          // ✅ OPTIMIZACIÓN: Obtener TODAS las campañas en una sola query
+          const campaignsSnapshot = await getDocs(
+            query(
+              collection(db, 'events'),
+              where(documentId(), 'in', campaignIds.slice(0, 10)) // Firestore limita 'in' a 10
+            )
           );
 
-          campaignsWithMembers = campaignsData.filter(Boolean) as Array<{
-            campaign: Campaign;
-            members: CampaignMembers;
-          }>;
+          const campaignsMap = new Map(
+            campaignsSnapshot.docs.map(doc => [doc.id, { id: doc.id, ...doc.data() } as Campaign])
+          );
+
+          // ✅ Obtener miembros en paralelo
+          const membersPromises = campaignIds.map(async (id) => {
+            const membersSnapshot = await getDocs(
+              query(
+                collection(db, 'event_members'),
+                where('campaignId', '==', id)
+              )
+            );
+
+            const membersList = membersSnapshot.docs.map(doc => doc.data()) as CampaignMember[];
+
+            let dm: CampaignMember | null = null;
+            let players: CampaignMember[] = [];
+
+            membersList.forEach(member => {
+              if (member.role === 'dm') {
+                dm = member;
+              } else {
+                players.push(member);
+              }
+            });
+
+            return { campaignId: id, members: { dm, players } };
+          });
+
+          const membersResults = await Promise.all(membersPromises);
+          const membersMap = new Map(
+            membersResults.map(r => [r.campaignId, r.members])
+          );
+
+          // ✅ Combinar resultados
+          campaignsWithMembers = campaignIds
+            .map(id => {
+              const campaign = campaignsMap.get(id);
+              const members = membersMap.get(id);
+              
+              if (!campaign || !members) return null;
+              
+              return { campaign, members };
+            })
+            .filter(Boolean) as Array<{ campaign: Campaign; members: CampaignMembers }>;
 
           loading = false;
         },
@@ -154,6 +156,12 @@
       loading = false;
     }
   }
+
+// ✅ NUEVO: Helper para getAll (necesario porque Firestore no lo exporta directamente)
+async function getAll(...refs: DocumentReference[]): Promise<DocumentSnapshot[]> {
+  const { getFirestore, getDoc } = await import('firebase/firestore');
+  return Promise.all(refs.map(ref => getDoc(ref)));
+}
 
   function handleInputChange() {
     touched = true;

@@ -137,10 +137,20 @@
           ...doc.data()
         })) as Combatant[];
 
-        // Actualizar selectedCombatant si está en un modal
+        // ✅ OPTIMIZACIÓN: Solo actualizar si cambió realmente
         if (selectedCombatant) {
           const updated = combatants.find(c => c.id === selectedCombatant!.id);
-          if (updated) selectedCombatant = updated;
+          
+          // ✅ Comparar valores críticos antes de actualizar
+          if (updated && (
+            updated.currentHp !== selectedCombatant.currentHp ||
+            updated.conditions?.length !== selectedCombatant.conditions?.length ||
+            updated.temporaryHp !== selectedCombatant.temporaryHp ||
+            updated.deathSaves?.successes !== selectedCombatant.deathSaves?.successes ||
+            updated.deathSaves?.failures !== selectedCombatant.deathSaves?.failures
+          )) {
+            selectedCombatant = updated;
+          }
         }
       },
       (err) => {
@@ -148,7 +158,6 @@
       }
     );
   }
-
   async function loadCampaign() {
     try {
       campaign = await api.getCampaign(campaignId);

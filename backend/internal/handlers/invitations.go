@@ -70,7 +70,7 @@ func (h *Handler) RespondToInvitation(c *gin.Context) {
 	ctx := context.Background()
 
 	var req struct {
-		Action string `json:"action" binding:"required"` // "accept" o "reject"
+		Action string `json:"action" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -82,7 +82,6 @@ func (h *Handler) RespondToInvitation(c *gin.Context) {
 		return
 	}
 
-	// Obtener invitación
 	invRef := h.db.Collection("invitations").Doc(invitationID)
 	invDoc, err := invRef.Get(ctx)
 	if err != nil {
@@ -96,55 +95,61 @@ func (h *Handler) RespondToInvitation(c *gin.Context) {
 		return
 	}
 
-	// Verificar que la invitación es para este usuario
 	if invitation.ToUserID != uid {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Esta invitación no es para ti"})
 		return
 	}
 
-	// Verificar que está pendiente
 	if invitation.Status != "pending" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Esta invitación ya fue respondida"})
 		return
 	}
 
-	// ===== MEJORA: Eliminar invitación directamente en lugar de actualizar status =====
 	message := "Invitación rechazada"
 
 	if req.Action == "accept" {
-		// Transacción para agregar miembro y eliminar invitación
-		err = h.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-			// Obtener datos del usuario
-			userDoc, err := h.db.Collection("users").Doc(uid).Get(ctx)
-			var user models.User
+		// ✅ OPTIMIZACIÓN: Crear/obtener usuario ANTES de la transacción
+		var user models.User
+		userDoc, err := h.db.Collection("users").Doc(uid).Get(ctx)
 
-			if err != nil {
-				if status.Code(err) == codes.NotFound {
-					// Crear usuario desde Auth
-					fbUser, authErr := h.auth.GetUser(ctx, uid)
-					if authErr != nil {
-						return authErr
-					}
-					user = models.User{
-						UID:           uid,
-						Email:         fbUser.Email,
-						DisplayName:   fbUser.DisplayName,
-						PhotoURL:      fbUser.PhotoURL,
-						CreatedAt:     time.Now(),
-						CampaignCount: 0,
-					}
-					if _, err := h.db.Collection("users").Doc(uid).Set(ctx, user); err != nil {
-						return err
-					}
-				} else {
-					return err
+		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				// Usuario no existe, crearlo AHORA (fuera de transacción)
+				fbUser, authErr := h.auth.GetUser(ctx, uid)
+				if authErr != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Error obteniendo usuario de Auth"})
+					return
 				}
+
+				user = models.User{
+					UID:           uid,
+					Email:         fbUser.Email,
+					DisplayName:   fbUser.DisplayName,
+					PhotoURL:      fbUser.PhotoURL,
+					CreatedAt:     time.Now(),
+					CampaignCount: 0,
+				}
+
+				// ✅ Crear usuario ANTES de la transacción
+				if _, err := h.db.Collection("users").Doc(uid).Set(ctx, user); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creando usuario"})
+					return
+				}
+
+				log.Printf("✅ Usuario creado fuera de transacción: %s", uid)
 			} else {
-				if err := userDoc.DataTo(&user); err != nil {
-					return err
-				}
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error obteniendo usuario"})
+				return
 			}
+		} else {
+			if err := userDoc.DataTo(&user); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parseando usuario"})
+				return
+			}
+		}
 
+		// ✅ Ahora la transacción es MÁS RÁPIDA (usuario ya existe)
+		err = h.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 			// Crear miembro del evento
 			memberRef := h.db.Collection("event_members").NewDoc()
 			member := models.CampaignMember{
@@ -167,7 +172,7 @@ func (h *Handler) RespondToInvitation(c *gin.Context) {
 				return err
 			}
 
-			// ===== ELIMINAR invitación en lugar de actualizar =====
+			// Eliminar invitación
 			return tx.Delete(invRef)
 		})
 
@@ -180,8 +185,7 @@ func (h *Handler) RespondToInvitation(c *gin.Context) {
 		message = "Te has unido al evento exitosamente"
 		log.Printf("✅ Invitación aceptada y eliminada: %s", invitationID)
 
-		// ✅ INVALIDACIÓN DISTRIBUIDA - Los miembros de la campaña cambiaron
-		h.invalidatePattern(ctx, "members:"+invitation.CampaignID)
+		h.invalidateCampaignCache(ctx, invitation.CampaignID)
 
 	} else {
 		// Rechazar: simplemente eliminar la invitación
@@ -192,8 +196,7 @@ func (h *Handler) RespondToInvitation(c *gin.Context) {
 		}
 		log.Printf("🗑️ Invitación rechazada y eliminada: %s", invitationID)
 
-		// ✅ INVALIDACIÓN DISTRIBUIDA - Por seguridad, invalidar caché de miembros
-		h.invalidatePattern(ctx, "members:"+invitation.CampaignID)
+		h.invalidateCampaignCache(ctx, invitation.CampaignID)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": message})

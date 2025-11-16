@@ -1,5 +1,3 @@
-import { get } from 'svelte/store';
-import { tokenStore } from '$lib/stores/authStore';
 import { ensureValidToken } from '$lib/utils/tokenManager'; // ✅ NUEVO
 import type { 
   Campaign, 

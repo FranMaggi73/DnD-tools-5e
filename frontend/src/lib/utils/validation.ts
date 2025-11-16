@@ -104,12 +104,12 @@ export function validateArmorClass(ac: number): ValidationResult {
 }
 
 export function validateInitiative(initiative: number): ValidationResult {
-  if (initiative < -5) {
-    return { valid: false, error: 'La iniciativa mínima es -5' };
+  if (initiative < -100) {
+    return { valid: false, error: 'La iniciativa mínima es -100' };
   }
   
-  if (initiative > 15) {
-    return { valid: false, error: 'La iniciativa máxima es +15' };
+  if (initiative > 100) {
+    return { valid: false, error: 'La iniciativa máxima es +100' };
   }
   
   return { valid: true };

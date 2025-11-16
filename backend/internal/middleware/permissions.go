@@ -51,11 +51,10 @@ func (pm *PermissionsMiddleware) RequireCampaignDM() gin.HandlerFunc {
 
 		ctx := context.Background()
 
-		// ✅ FIX: Intentar cache primero SIN lock de escritura
 		campaign, _, found := pm.cache.GetCampaign(campaignID)
 
+		// ✅ OPTIMIZACIÓN: Solo hacer query si NO está en cache
 		if !found {
-			// ✅ FIX: Solo UNA query a Firestore si cache miss
 			doc, err := pm.db.Collection("events").Doc(campaignID).Get(ctx)
 			if err != nil {
 				c.JSON(http.StatusNotFound, gin.H{"error": "Campaña no encontrada"})
@@ -71,8 +70,7 @@ func (pm *PermissionsMiddleware) RequireCampaignDM() gin.HandlerFunc {
 			}
 
 			campaign = campaignData
-			// ✅ FIX: Cachear DESPUÉS de verificar que existe
-			pm.cache.SetCampaign(campaign)
+			pm.cache.SetCampaign(campaign) // ✅ Cachear después de obtener
 		}
 
 		if campaign.DmID != uid {

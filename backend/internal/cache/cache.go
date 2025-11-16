@@ -2,6 +2,8 @@
 package cache
 
 import (
+	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,9 +53,10 @@ type CacheTypeStats struct {
 
 // Cache es un caché thread-safe con TTL y timestamps
 type Cache struct {
-	items map[string]*CacheItem
-	mutex sync.RWMutex
-	ttl   time.Duration
+	items       map[string]*CacheItem
+	prefixIndex map[string][]string // ✅ NUEVO: Índice por prefijos
+	mutex       sync.RWMutex
+	ttl         time.Duration
 	// ✅ NUEVO: Contadores para estadísticas
 	totalHits   int64
 	totalMisses int64
@@ -62,13 +65,25 @@ type Cache struct {
 // NewCache crea una nueva instancia de caché
 func NewCache(ttl time.Duration) *Cache {
 	cache := &Cache{
-		items: make(map[string]*CacheItem),
-		ttl:   ttl,
+		items:       make(map[string]*CacheItem),
+		prefixIndex: make(map[string][]string), // ✅ NUEVO
+		ttl:         ttl,
 	}
 
 	go cache.cleanupExpired()
 
 	return cache
+}
+
+// ✅ NUEVO: Extraer prefijo de una key
+func getPrefix(key string) string {
+	// Buscar el primer ":" para determinar el prefijo
+	for i, ch := range key {
+		if ch == ':' {
+			return key[:i+1] // Incluir los dos puntos
+		}
+	}
+	return "" // Sin prefijo
 }
 
 // Get obtiene un item del caché CON su timestamp
@@ -115,17 +130,50 @@ func (c *Cache) SetWithTTL(key string, data interface{}, ttl time.Duration) {
 	c.items[key] = &CacheItem{
 		Data:      data,
 		ExpiresAt: now.Add(ttl),
-		CachedAt:  now, // ← timestamp de creación
+		CachedAt:  now,
 		Hits:      0,
+	}
+
+	// ✅ NUEVO: Actualizar índice de prefijos
+	prefix := getPrefix(key)
+	if prefix != "" {
+		// Verificar si ya existe en el índice
+		found := false
+		for _, existingKey := range c.prefixIndex[prefix] {
+			if existingKey == key {
+				found = true
+				break
+			}
+		}
+		if !found {
+			c.prefixIndex[prefix] = append(c.prefixIndex[prefix], key)
+		}
 	}
 }
 
-// Delete elimina un item del caché
+// Delete MODIFICADO para actualizar índice
 func (c *Cache) Delete(key string) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	delete(c.items, key)
+
+	// ✅ NUEVO: Actualizar índice de prefijos
+	prefix := getPrefix(key)
+	if prefix != "" {
+		keys := c.prefixIndex[prefix]
+		for i, k := range keys {
+			if k == key {
+				// Eliminar del slice
+				c.prefixIndex[prefix] = append(keys[:i], keys[i+1:]...)
+				break
+			}
+		}
+		// Si el prefijo quedó vacío, eliminarlo
+		if len(c.prefixIndex[prefix]) == 0 {
+			delete(c.prefixIndex, prefix)
+		}
+	}
 }
 
 // Clear limpia todo el caché
@@ -141,6 +189,23 @@ func (c *Cache) InvalidatePattern(pattern string) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
+	// ✅ NUEVO: Si el pattern es un prefijo exacto, usar índice
+	prefix := pattern
+	if !strings.HasSuffix(pattern, ":") {
+		prefix = pattern + ":"
+	}
+
+	if keys, exists := c.prefixIndex[prefix]; exists {
+		// Usar índice para eliminar directamente
+		for _, key := range keys {
+			delete(c.items, key)
+		}
+		delete(c.prefixIndex, prefix)
+		log.Printf("✅ Invalidación optimizada: %d keys eliminadas del índice %s", len(keys), prefix)
+		return
+	}
+
+	// Fallback: búsqueda tradicional para patterns más complejos
 	keysToDelete := make([]string, 0)
 	for key := range c.items {
 		if containsPattern(key, pattern) {
@@ -150,10 +215,23 @@ func (c *Cache) InvalidatePattern(pattern string) {
 
 	for _, key := range keysToDelete {
 		delete(c.items, key)
+
+		// Actualizar índice
+		prefix := getPrefix(key)
+		if prefix != "" {
+			keys := c.prefixIndex[prefix]
+			for i, k := range keys {
+				if k == key {
+					c.prefixIndex[prefix] = append(keys[:i], keys[i+1:]...)
+					break
+				}
+			}
+		}
 	}
 }
 
 // ✅ MEJORADO: Stats con más información
+
 func (c *Cache) Stats() CacheStats {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
@@ -167,14 +245,18 @@ func (c *Cache) Stats() CacheStats {
 
 	byType := make(map[string]CacheTypeStats)
 
+	// ✅ OPTIMIZACIÓN: TODO en un solo loop
 	for key, item := range c.items {
+		// Verificar expiración
 		if now.After(item.ExpiresAt) {
 			expiredItems++
-			continue
+			continue // ✅ No procesar items expirados
 		}
 
+		// Acumular hits
 		totalHits += item.Hits
 
+		// Tracking de fechas
 		if oldestItem.IsZero() || item.CachedAt.Before(oldestItem) {
 			oldestItem = item.CachedAt
 		}
@@ -182,7 +264,7 @@ func (c *Cache) Stats() CacheStats {
 			newestItem = item.CachedAt
 		}
 
-		// ✅ Clasificar por tipo
+		// ✅ Clasificar por tipo (optimizado)
 		typePrefix := getTypePrefix(key)
 		stats := byType[typePrefix]
 		stats.Count++

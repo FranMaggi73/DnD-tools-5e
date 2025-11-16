@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -274,229 +275,287 @@ func (h *Handler) DeleteEvent(c *gin.Context) {
 		return
 	}
 
-	log.Printf("🗑️ Iniciando eliminación COMPLETA de campaña: %s", eventID)
+	log.Printf("🗑️ Iniciando eliminación PARALELA de campaña: %s", eventID)
 
-	var totalDeleted int
-
-	// Eliminar notas
-	notesBatch := h.db.Batch()
-	notesCount := 0
-
-	notesIter := h.db.Collection("notes").
-		Where("campaignId", "==", eventID).
-		Documents(ctx)
-
-	for {
-		noteDoc, err := notesIter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err == nil {
-			notesBatch.Delete(noteDoc.Ref)
-			notesCount++
-
-			if notesCount >= 400 {
-				if _, err := notesBatch.Commit(ctx); err != nil {
-					log.Printf("Error en batch commit de notas: %v", err)
-				}
-				totalDeleted += notesCount
-				notesBatch = h.db.Batch()
-				notesCount = 0
-			}
-		}
+	// ✅ NUEVO: Canales para recolectar resultados
+	type DeleteResult struct {
+		Type    string
+		Deleted int
+		Error   error
 	}
 
-	if notesCount > 0 {
-		if _, err := notesBatch.Commit(ctx); err != nil {
-			log.Printf("Error en batch commit final de notas: %v", err)
-		}
-		totalDeleted += notesCount
-	}
+	resultsChan := make(chan DeleteResult, 5)
+	var wg sync.WaitGroup
 
-	// Eliminar encuentros y combatientes
-	encountersIter := h.db.Collection("encounters").
-		Where("campaignId", "==", eventID).
-		Documents(ctx)
+	// ✅ GOROUTINE 1: Eliminar notas
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		count := 0
+		batch := h.db.Batch()
 
-	encounterBatch := h.db.Batch()
-	encounterCount := 0
-
-	for {
-		encounterDoc, err := encountersIter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			log.Printf("Error iterando encuentros: %v", err)
-			continue
-		}
-
-		encounterId := encounterDoc.Ref.ID
-
-		combatantsIter := h.db.Collection("combatants").
-			Where("encounterId", "==", encounterId).
+		notesIter := h.db.Collection("notes").
+			Where("campaignId", "==", eventID).
 			Documents(ctx)
 
 		for {
-			combatantDoc, err := combatantsIter.Next()
+			noteDoc, err := notesIter.Next()
 			if err == iterator.Done {
 				break
 			}
 			if err == nil {
-				var combatant models.Combatant
-				if combatantDoc.DataTo(&combatant) == nil {
-					if combatant.CharacterID != "" &&
-						(combatant.Type == "character" || combatant.Type == "player") {
-						characterRef := h.db.Collection("characters").Doc(combatant.CharacterID)
-						conditions := combatant.Conditions
-						if conditions == nil {
-							conditions = []string{}
+				batch.Delete(noteDoc.Ref)
+				count++
+
+				if count >= 500 {
+					if _, err := batch.Commit(ctx); err != nil {
+						resultsChan <- DeleteResult{"notes", 0, err}
+						return
+					}
+					batch = h.db.Batch()
+				}
+			}
+		}
+
+		if count > 0 {
+			if _, err := batch.Commit(ctx); err != nil {
+				resultsChan <- DeleteResult{"notes", 0, err}
+				return
+			}
+		}
+
+		resultsChan <- DeleteResult{"notes", count, nil}
+	}()
+
+	// ✅ GOROUTINE 2: Eliminar encuentros y combatientes
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		count := 0
+		batch := h.db.Batch()
+
+		encountersIter := h.db.Collection("encounters").
+			Where("campaignId", "==", eventID).
+			Documents(ctx)
+
+		for {
+			encounterDoc, err := encountersIter.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				continue
+			}
+
+			encounterId := encounterDoc.Ref.ID
+			combatantsIter := h.db.Collection("combatants").
+				Where("encounterId", "==", encounterId).
+				Documents(ctx)
+
+			for {
+				combatantDoc, err := combatantsIter.Next()
+				if err == iterator.Done {
+					break
+				}
+				if err == nil {
+					var combatant models.Combatant
+					if combatantDoc.DataTo(&combatant) == nil {
+						if combatant.CharacterID != "" {
+							characterRef := h.db.Collection("characters").Doc(combatant.CharacterID)
+							conditions := combatant.Conditions
+							if conditions == nil {
+								conditions = []string{}
+							}
+							batch.Update(characterRef, []firestore.Update{
+								{Path: "currentHp", Value: combatant.CurrentHP},
+								{Path: "conditions", Value: conditions},
+								{Path: "updatedAt", Value: time.Now()},
+							})
 						}
-						encounterBatch.Update(characterRef, []firestore.Update{
-							{Path: "currentHp", Value: combatant.CurrentHP},
-							{Path: "conditions", Value: conditions},
-							{Path: "updatedAt", Value: time.Now()},
-						})
+					}
+
+					batch.Delete(combatantDoc.Ref)
+					count++
+
+					if count >= 500 {
+						if _, err := batch.Commit(ctx); err != nil {
+							resultsChan <- DeleteResult{"encounters", 0, err}
+							return
+						}
+						batch = h.db.Batch()
 					}
 				}
+			}
 
-				encounterBatch.Delete(combatantDoc.Ref)
-				encounterCount++
+			batch.Delete(encounterDoc.Ref)
+			count++
 
-				if encounterCount >= 400 {
-					if _, err := encounterBatch.Commit(ctx); err != nil {
-						log.Printf("Error en batch commit: %v", err)
+			if count >= 500 {
+				if _, err := batch.Commit(ctx); err != nil {
+					resultsChan <- DeleteResult{"encounters", 0, err}
+					return
+				}
+				batch = h.db.Batch()
+			}
+		}
+
+		if count > 0 {
+			if _, err := batch.Commit(ctx); err != nil {
+				resultsChan <- DeleteResult{"encounters", 0, err}
+				return
+			}
+		}
+
+		resultsChan <- DeleteResult{"encounters", count, nil}
+	}()
+
+	// ✅ GOROUTINE 3: Eliminar personajes
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		count := 0
+		batch := h.db.Batch()
+
+		charactersIter := h.db.Collection("characters").
+			Where("campaignId", "==", eventID).
+			Documents(ctx)
+
+		for {
+			charDoc, err := charactersIter.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err == nil {
+				batch.Delete(charDoc.Ref)
+				count++
+
+				if count >= 500 {
+					if _, err := batch.Commit(ctx); err != nil {
+						resultsChan <- DeleteResult{"characters", 0, err}
+						return
 					}
-					totalDeleted += encounterCount
-					encounterBatch = h.db.Batch()
-					encounterCount = 0
+					batch = h.db.Batch()
 				}
 			}
 		}
 
-		encounterBatch.Delete(encounterDoc.Ref)
-		encounterCount++
-
-		if encounterCount >= 400 {
-			if _, err := encounterBatch.Commit(ctx); err != nil {
-				log.Printf("Error en batch commit: %v", err)
+		if count > 0 {
+			if _, err := batch.Commit(ctx); err != nil {
+				resultsChan <- DeleteResult{"characters", 0, err}
+				return
 			}
-			totalDeleted += encounterCount
-			encounterBatch = h.db.Batch()
-			encounterCount = 0
 		}
-	}
 
-	if encounterCount > 0 {
-		if _, err := encounterBatch.Commit(ctx); err != nil {
-			log.Printf("Error en batch commit final: %v", err)
-		}
-		totalDeleted += encounterCount
-	}
+		resultsChan <- DeleteResult{"characters", count, nil}
+	}()
 
-	// Eliminar personajes
-	charactersBatch := h.db.Batch()
-	charCount := 0
+	// ✅ GOROUTINE 4: Eliminar invitaciones
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		count := 0
+		batch := h.db.Batch()
 
-	charactersIter := h.db.Collection("characters").
-		Where("campaignId", "==", eventID).
-		Documents(ctx)
+		invitationsIter := h.db.Collection("invitations").
+			Where("campaignId", "==", eventID).
+			Documents(ctx)
 
-	for {
-		charDoc, err := charactersIter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err == nil {
-			charactersBatch.Delete(charDoc.Ref)
-			charCount++
+		for {
+			invDoc, err := invitationsIter.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err == nil {
+				batch.Delete(invDoc.Ref)
+				count++
 
-			if charCount >= 400 {
-				if _, err := charactersBatch.Commit(ctx); err != nil {
-					log.Printf("Error en batch commit: %v", err)
+				if count >= 500 {
+					if _, err := batch.Commit(ctx); err != nil {
+						resultsChan <- DeleteResult{"invitations", 0, err}
+						return
+					}
+					batch = h.db.Batch()
 				}
-				totalDeleted += charCount
-				charactersBatch = h.db.Batch()
-				charCount = 0
 			}
 		}
-	}
 
-	if charCount > 0 {
-		if _, err := charactersBatch.Commit(ctx); err != nil {
-			log.Printf("Error en batch commit: %v", err)
+		if count > 0 {
+			if _, err := batch.Commit(ctx); err != nil {
+				resultsChan <- DeleteResult{"invitations", 0, err}
+				return
+			}
 		}
-		totalDeleted += charCount
-	}
 
-	// Eliminar invitaciones
-	invitationsBatch := h.db.Batch()
-	invCount := 0
+		resultsChan <- DeleteResult{"invitations", count, nil}
+	}()
 
-	invitationsIter := h.db.Collection("invitations").
-		Where("campaignId", "==", eventID).
-		Documents(ctx)
+	// ✅ GOROUTINE 5: Eliminar miembros
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		count := 0
+		batch := h.db.Batch()
 
-	for {
-		invDoc, err := invitationsIter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err == nil {
-			invitationsBatch.Delete(invDoc.Ref)
-			invCount++
+		membersIter := h.db.Collection("event_members").
+			Where("campaignId", "==", eventID).
+			Documents(ctx)
 
-			if invCount >= 400 {
-				if _, err := invitationsBatch.Commit(ctx); err != nil {
-					log.Printf("Error en batch commit: %v", err)
+		for {
+			memberDoc, err := membersIter.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err == nil {
+				batch.Delete(memberDoc.Ref)
+				count++
+
+				if count >= 500 {
+					if _, err := batch.Commit(ctx); err != nil {
+						resultsChan <- DeleteResult{"members", 0, err}
+						return
+					}
+					batch = h.db.Batch()
 				}
-				totalDeleted += invCount
-				invitationsBatch = h.db.Batch()
-				invCount = 0
 			}
 		}
-	}
 
-	if invCount > 0 {
-		if _, err := invitationsBatch.Commit(ctx); err != nil {
-			log.Printf("Error en batch commit: %v", err)
-		}
-		totalDeleted += invCount
-	}
-
-	// Eliminar miembros
-	membersBatch := h.db.Batch()
-	memberCount := 0
-
-	membersIter := h.db.Collection("event_members").
-		Where("campaignId", "==", eventID).
-		Documents(ctx)
-
-	for {
-		memberDoc, err := membersIter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err == nil {
-			membersBatch.Delete(memberDoc.Ref)
-			memberCount++
-
-			if memberCount >= 400 {
-				if _, err := membersBatch.Commit(ctx); err != nil {
-					log.Printf("Error en batch commit: %v", err)
-				}
-				totalDeleted += memberCount
-				membersBatch = h.db.Batch()
-				memberCount = 0
+		if count > 0 {
+			if _, err := batch.Commit(ctx); err != nil {
+				resultsChan <- DeleteResult{"members", 0, err}
+				return
 			}
 		}
+
+		resultsChan <- DeleteResult{"members", count, nil}
+	}()
+
+	// Cerrar canal cuando terminen todas las goroutines
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+
+	// Recolectar resultados
+	totalDeleted := 0
+	errors := []error{}
+
+	for result := range resultsChan {
+		if result.Error != nil {
+			log.Printf("❌ Error eliminando %s: %v", result.Type, result.Error)
+			errors = append(errors, result.Error)
+		} else {
+			log.Printf("✅ %s eliminados: %d", result.Type, result.Deleted)
+			totalDeleted += result.Deleted
+		}
 	}
 
-	if memberCount > 0 {
-		if _, err := membersBatch.Commit(ctx); err != nil {
-			log.Printf("Error en batch commit: %v", err)
-		}
-		totalDeleted += memberCount
+	// Verificar si hubo errores
+	if len(errors) > 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":           "Error eliminando algunos recursos",
+			"deleted_partial": totalDeleted,
+		})
+		return
 	}
 
 	// Eliminar campaña
@@ -515,10 +574,9 @@ func (h *Handler) DeleteEvent(c *gin.Context) {
 		log.Printf("Error decrementando campaignCount: %v", err)
 	}
 
-	// ✅ USAR HELPER DISTRIBUIDO
 	h.invalidateCampaignCache(ctx, eventID)
 
-	log.Printf("✅ Eliminación COMPLETA: %d documentos eliminados", totalDeleted)
+	log.Printf("✅ Eliminación PARALELA completada: %d documentos eliminados", totalDeleted)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":          "Campaña eliminada exitosamente",

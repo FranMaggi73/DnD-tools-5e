@@ -224,8 +224,8 @@
     "isEntry": true,
     "imports": [
       "_ssr.js",
-      "_authStore.js",
       "_firebase.js",
+      "_authStore.js",
       "_exports.js",
       "_utils.js",
       "_state.svelte.js",

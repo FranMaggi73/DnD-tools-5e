@@ -1,6 +1,6 @@
 import { c as create_ssr_component, b as subscribe, o as onDestroy } from "../../../chunks/ssr.js";
-import { u as userStore } from "../../../chunks/authStore.js";
 import { a as app } from "../../../chunks/firebase.js";
+import { u as userStore } from "../../../chunks/authStore.js";
 import "@sveltejs/kit/internal";
 import "../../../chunks/exports.js";
 import "../../../chunks/utils.js";

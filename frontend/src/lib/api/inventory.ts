@@ -209,6 +209,24 @@ export const inventoryApi = {
       body: JSON.stringify(currency),
     }),
 };
+function getEndpointsForType(type?: string): string[] {
+  if (!type || type === 'other') {
+    // Si no hay tipo, buscar en todos
+    return ['magicitems', 'weapons', 'armor', 'gear'];
+  }
+  
+  // Mapeo de tipos a endpoints
+  const typeMap: Record<string, string[]> = {
+    weapon: ['weapons', 'magicitems'], // Armas pueden ser mágicas
+    armor: ['armor', 'magicitems'],
+    shield: ['armor'],
+    consumable: ['magicitems', 'gear'],
+    tool: ['gear'],
+    treasure: ['magicitems', 'gear'],
+  };
+  
+  return typeMap[type] || ['magicitems', 'weapons', 'armor', 'gear'];
+}
 
 // ===========================
 // OPEN5E API - MEJORADO
@@ -219,48 +237,45 @@ let currentSearchController: AbortController | null = null;
 
 export const open5eInventoryApi = {
   /**
-   * ✅ MEJORADO: Búsqueda con cache y cancelación
+   * ✅ OPTIMIZADO: Búsqueda selectiva por tipo
    */
   searchItems: async (query: string, type?: string): Promise<Open5eSearchResult> => {
     const searchQuery = query.trim().toLowerCase();
     
-    // ✅ Verificar cache primero
+    // Verificar cache primero
     const cached = getCachedSearch(searchQuery);
     if (cached) {
       return cached;
     }
 
-    // ✅ Cancelar búsqueda anterior
+    // Cancelar búsqueda anterior
     if (currentSearchController) {
       currentSearchController.abort();
     }
     currentSearchController = new AbortController();
     
     try {
-      const [magicItems, weapons, armor, gear] = await Promise.all([
-        fetch(`https://api.open5e.com/v1/magicitems/?search=${encodeURIComponent(searchQuery)}&limit=20`, {
-          signal: currentSearchController.signal
-        }).then(r => r.json()).catch(() => ({ results: [] })),
-        
-        fetch(`https://api.open5e.com/v1/weapons/?search=${encodeURIComponent(searchQuery)}&limit=20`, {
-          signal: currentSearchController.signal
-        }).then(r => r.json()).catch(() => ({ results: [] })),
-        
-        fetch(`https://api.open5e.com/v1/armor/?search=${encodeURIComponent(searchQuery)}&limit=20`, {
-          signal: currentSearchController.signal
-        }).then(r => r.json()).catch(() => ({ results: [] })),
-        
-        fetch(`https://api.open5e.com/v1/gear/?search=${encodeURIComponent(searchQuery)}&limit=20`, {
-          signal: currentSearchController.signal
-        }).then(r => r.json()).catch(() => ({ results: [] }))
-      ]);
+      // ✅ NUEVO: Determinar qué endpoints buscar según el tipo
+      const endpoints = getEndpointsForType(type);
       
-      const allResults = [
-        ...(magicItems.results || []).map((item: any) => ({ ...item, source: 'magicitems' })),
-        ...(weapons.results || []).map((item: any) => ({ ...item, source: 'weapons' })),
-        ...(armor.results || []).map((item: any) => ({ ...item, source: 'armor' })),
-        ...(gear.results || []).map((item: any) => ({ ...item, source: 'gear' }))
-      ];
+      // Hacer solo los fetches necesarios
+      const promises = endpoints.map((endpoint: any) => 
+        fetch(`https://api.open5e.com/v1/${endpoint}/?search=${encodeURIComponent(searchQuery)}&limit=20`, {
+          signal: currentSearchController?.signal
+        })
+          .then(r => r.json())
+          .then(data => ({ ...data, source: endpoint }))
+          .catch(() => ({ results: [], source: endpoint }))
+      );
+      
+      const results = await Promise.all(promises);
+      
+      const allResults = results.flatMap((result: { results: any; source: any; }) => 
+        (result.results || []).map((item: any) => ({ 
+          ...item, 
+          source: result.source 
+        }))
+      );
       
       const filtered = allResults
         .filter((item: any) => {
@@ -287,7 +302,6 @@ export const open5eInventoryApi = {
         results: filtered
       };
 
-      // ✅ Guardar en cache
       setCachedSearch(searchQuery, result);
       
       return result;
@@ -304,7 +318,7 @@ export const open5eInventoryApi = {
       };
     }
   },
-
+  
   getItem: async (slug: string, category: string = 'magicitems'): Promise<Open5eItem> => {
     const response = await fetch(`https://api.open5e.com/v1/${category}/${slug}/`);
     if (!response.ok) throw new Error('Error obteniendo item');

@@ -27,20 +27,16 @@ const (
 // ENDPOINT OPTIMIZADO CON VALIDACIÓN DE TIMESTAMPS
 // ===========================
 
-// GetCampaignFullData obtiene todos los datos de una campaña en paralelo
-// ✅ MEJORADO: Valida timestamps antes de usar caché
 func (h *Handler) GetCampaignFullData(c *gin.Context) {
 	campaignID := c.Param("id")
 	ctx := context.Background()
 
-	// ===== PASO 1: Verificar caché con timestamps =====
+	// Verificar caché con timestamps
 	cachedCampaign, campaignCachedAt, foundCampaign := h.cache.GetCampaign(campaignID)
 	cachedMembers, membersCachedAt, foundMembers := h.cache.GetMembers(campaignID)
 	cachedCharacters, charsCachedAt, foundCharacters := h.cache.GetCharacters(campaignID)
 
-	// ===== PASO 2: Validar frescura del caché =====
 	now := time.Now()
-	// ✅ FIX: Usar threshold correcto según tipo de dato
 	campaignFresh := foundCampaign && now.Sub(campaignCachedAt) < CampaignDataFreshness
 	membersFresh := foundMembers && now.Sub(membersCachedAt) < CampaignDataFreshness
 	charactersFresh := foundCharacters && now.Sub(charsCachedAt) < CampaignDataFreshness
@@ -52,15 +48,9 @@ func (h *Handler) GetCampaignFullData(c *gin.Context) {
 			"members":    cachedMembers,
 			"characters": cachedCharacters,
 			"cached":     true,
-			"cache_age": map[string]string{
-				"campaign":   now.Sub(campaignCachedAt).String(),
-				"members":    now.Sub(membersCachedAt).String(),
-				"characters": now.Sub(charsCachedAt).String(),
-			},
 		})
 		return
 	}
-
 	// ===== PASO 3: Caché obsoleto o missing, refrescar en paralelo =====
 	var campaign *models.Campaign
 	var members []models.CampaignMember

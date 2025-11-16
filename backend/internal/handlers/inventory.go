@@ -89,8 +89,10 @@ func (h *Handler) CreateItem(c *gin.Context) {
 		return
 	}
 
+	var existingItem *models.InventoryItem
+
 	if req.Open5eSlug != "" {
-		// Buscar por slug de Open5e
+		// Buscar por slug
 		existingIter := h.db.Collection("inventory_items").
 			Where("characterId", "==", characterID).
 			Where("open5eSlug", "==", req.Open5eSlug).
@@ -98,30 +100,13 @@ func (h *Handler) CreateItem(c *gin.Context) {
 			Documents(ctx)
 
 		if existingDoc, err := existingIter.Next(); err != iterator.Done {
-			// Item idéntico encontrado, incrementar quantity
 			var existing models.InventoryItem
 			if err := existingDoc.DataTo(&existing); err == nil {
-				newQuantity := existing.Quantity + req.Quantity
-
-				_, updateErr := h.db.Collection("inventory_items").Doc(existing.ID).Update(ctx, []firestore.Update{
-					{Path: "quantity", Value: newQuantity},
-					{Path: "updatedAt", Value: time.Now()},
-				})
-
-				if updateErr == nil {
-					// Invalidar cache
-					h.invalidateCharacterCache(ctx, characterID)
-
-					// Devolver item actualizado
-					existing.Quantity = newQuantity
-					existing.UpdatedAt = time.Now()
-					c.JSON(http.StatusCreated, existing)
-					return
-				}
+				existingItem = &existing
 			}
 		}
 	} else {
-		// Buscar por nombre exacto (para items manuales)
+		// Buscar por nombre Y tipo en una sola query
 		existingIter := h.db.Collection("inventory_items").
 			Where("characterId", "==", characterID).
 			Where("name", "==", req.Name).
@@ -134,23 +119,27 @@ func (h *Handler) CreateItem(c *gin.Context) {
 			if err := existingDoc.DataTo(&existing); err == nil {
 				// Solo stackear si NO tiene datos de arma/armadura
 				if existing.WeaponData == nil && existing.ArmorData == nil {
-					newQuantity := existing.Quantity + req.Quantity
-
-					_, updateErr := h.db.Collection("inventory_items").Doc(existing.ID).Update(ctx, []firestore.Update{
-						{Path: "quantity", Value: newQuantity},
-						{Path: "updatedAt", Value: time.Now()},
-					})
-
-					if updateErr == nil {
-						h.invalidateCharacterCache(ctx, characterID)
-
-						existing.Quantity = newQuantity
-						existing.UpdatedAt = time.Now()
-						c.JSON(http.StatusCreated, existing)
-						return
-					}
+					existingItem = &existing
 				}
 			}
+		}
+	}
+
+	// ✅ Si encontramos duplicado, actualizar cantidad
+	if existingItem != nil {
+		newQuantity := existingItem.Quantity + req.Quantity
+
+		_, updateErr := h.db.Collection("inventory_items").Doc(existingItem.ID).Update(ctx, []firestore.Update{
+			{Path: "quantity", Value: newQuantity},
+			{Path: "updatedAt", Value: time.Now()},
+		})
+
+		if updateErr == nil {
+			h.invalidateCharacterCache(ctx, characterID)
+			existingItem.Quantity = newQuantity
+			existingItem.UpdatedAt = time.Now()
+			c.JSON(http.StatusCreated, existingItem)
+			return
 		}
 	}
 

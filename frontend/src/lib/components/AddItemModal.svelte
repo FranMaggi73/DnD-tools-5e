@@ -15,6 +15,7 @@
   let selectedItem: Open5eItem | null = null;
   let loading = false;
   let noResults = false;
+  let selectedTypeFilter: string = 'all';
 
   // ✅ NUEVO: Controller para cancelar búsquedas
   let searchController: AbortController | null = null;
@@ -37,7 +38,7 @@
   const DEBOUNCE_TIME = 800; // ✅ CORREGIDO: Aumentado de 500ms a 800ms
 
   // ✅ MEJORADO: Búsqueda con cancelación
-  const handleSearch = debounce(async () => {
+ const handleSearch = debounce(async () => {
     const query = searchQuery.trim();
     if (!query) {
       suggestions = [];
@@ -45,7 +46,6 @@
       return;
     }
     
-    // ✅ Cancelar búsqueda anterior
     if (searchController) {
       searchController.abort();
     }
@@ -55,9 +55,10 @@
     noResults = false;
     
     try {
-      const result = await open5eInventoryApi.searchItems(query);
+      // ✅ NUEVO: Pasar tipo al API
+      const type = selectedTypeFilter === 'all' ? undefined : selectedTypeFilter;
+      const result = await open5eInventoryApi.searchItems(query, type);
       
-      // ✅ Limitar resultados mostrados a 20
       suggestions = (result.results || []).slice(0, 20);
       noResults = suggestions.length === 0;
       
@@ -268,7 +269,24 @@
         {#if !manualMode}
           <!-- Modo búsqueda -->
           <div class="space-y-4">
-            
+            <!-- ✅ NUEVO: Filtro de tipo -->
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medieval text-neutral">Filtrar por tipo</span>
+              </label>
+              <select 
+                bind:value={selectedTypeFilter}
+                on:change={() => { if (searchQuery) handleSearch(); }}
+                class="select select-bordered bg-[#2d241c] text-base-content border-primary/50"
+              >
+                <option value="all">🔍 Buscar en todo</option>
+                <option value="weapon">⚔️ Solo Armas</option>
+                <option value="armor">🛡️ Solo Armaduras</option>
+                <option value="consumable">🧪 Solo Consumibles</option>
+                <option value="tool">🔧 Solo Herramientas</option>
+                <option value="treasure">💎 Solo Tesoros</option>
+              </select>
+            </div>
             <!-- Búsqueda -->
             <div class="form-control">
               <div class="relative">
