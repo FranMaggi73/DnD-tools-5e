@@ -18,15 +18,12 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/events/$(campaignId)).data.dmId == request.auth.uid;
     }
     
-    // ✅ FIX: Query-based membership check
     function isCampaignMember(campaignId) {
       return exists(/databases/$(database)/documents/event_members/$(request.auth.uid + '_' + campaignId)) ||
              existsAfter(/databases/$(database)/documents/event_members/$(request.auth.uid + '_' + campaignId));
     }
     
-    // ✅ NUEVO: Verificar si existe CUALQUIER documento de membresía
     function isCampaignMemberAny(campaignId) {
-      // Fallback: si la función específica falla, intentar con query
       return get(/databases/$(database)/documents/events/$(campaignId)).data.dmId == request.auth.uid ||
              get(/databases/$(database)/documents/events/$(campaignId)).data.playerIds.hasAny([request.auth.uid]);
     }
@@ -102,22 +99,19 @@ service cloud.firestore {
     // ===========================
 
     match /invitation_links/{linkId} {
-      // Leer: DM de la campaña
       allow read: if isAuthenticated() && 
         resource.data.createdBy == request.auth.uid;
       
-      // Crear: DM de la campaña
       allow create: if isAuthenticated() && 
         isCampaignDM(request.resource.data.campaignId);
       
-      // Actualizar: solo el creador
       allow update: if isAuthenticated() && 
         resource.data.createdBy == request.auth.uid;
       
-      // Eliminar: solo el creador
       allow delete: if isAuthenticated() && 
         resource.data.createdBy == request.auth.uid;
     }
+    
     // ===========================
     // CHARACTERS COLLECTION
     // ===========================
@@ -181,44 +175,38 @@ service cloud.firestore {
     }
     
     // ===========================
-    // NOTES COLLECTION - ✅ CORREGIDO
+    // NOTES COLLECTION
     // ===========================
     
     match /notes/{noteId} {
-      // ✅ FIX: Leer notas usando campaignId directamente
       allow read: if isAuthenticated() && (
-        // Autor puede leer siempre
         resource.data.authorId == request.auth.uid || 
-        // Notas compartidas: verificar que sea DM o esté en playerIds
         (resource.data.isShared == true && isCampaignMemberAny(resource.data.campaignId))
       );
       
-      // Crear: debe ser miembro Y ser el autor
       allow create: if isAuthenticated() && 
                       request.resource.data.authorId == request.auth.uid &&
                       isCampaignMemberAny(request.resource.data.campaignId);
       
-      // Actualizar: solo el autor Y seguir siendo miembro
       allow update: if isAuthenticated() && 
                       resource.data.authorId == request.auth.uid &&
                       isCampaignMemberAny(resource.data.campaignId);
       
-      // Eliminar: solo el autor
       allow delete: if isAuthenticated() && 
                       resource.data.authorId == request.auth.uid;
     }
 
     // ===========================
-    // INVENTORY ITEMS COLLECTION
+    // INVENTORY ITEMS COLLECTION - ✅ CORREGIDO
     // ===========================
 
     match /inventory_items/{itemId} {
-      // Leer: owner del personaje o DM de la campaña
-      allow read: if isAuthenticated() && (
-        resource.data.characterId in get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.userId == request.auth.uid ||
-        exists(/databases/$(database)/documents/characters/$(resource.data.characterId)) &&
-        isCampaignDM(get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.campaignId)
-      );
+      // ✅ FIX: Leer inventario
+      allow read: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/characters/$(resource.data.characterId)) && (
+          get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.userId == request.auth.uid ||
+          isCampaignDM(get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.campaignId)
+        );
       
       // Crear: solo si eres owner del personaje o DM
       allow create: if isAuthenticated() && 
@@ -228,16 +216,18 @@ service cloud.firestore {
         );
       
       // Actualizar: solo owner o DM
-      allow update: if isAuthenticated() && (
-        get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.userId == request.auth.uid ||
-        isCampaignDM(get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.campaignId)
-      );
+      allow update: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/characters/$(resource.data.characterId)) && (
+          get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.userId == request.auth.uid ||
+          isCampaignDM(get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.campaignId)
+        );
       
       // Eliminar: solo owner o DM
-      allow delete: if isAuthenticated() && (
-        get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.userId == request.auth.uid ||
-        isCampaignDM(get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.campaignId)
-      );
+      allow delete: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/characters/$(resource.data.characterId)) && (
+          get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.userId == request.auth.uid ||
+          isCampaignDM(get(/databases/$(database)/documents/characters/$(resource.data.characterId)).data.campaignId)
+        );
     }
 
     // ===========================
@@ -245,18 +235,17 @@ service cloud.firestore {
     // ===========================
 
     match /currencies/{characterId} {
-      // El characterId es el mismo que el document ID
-      // Leer: owner del personaje o DM
-      allow read: if isAuthenticated() && (
-        get(/databases/$(database)/documents/characters/$(characterId)).data.userId == request.auth.uid ||
-        isCampaignDM(get(/databases/$(database)/documents/characters/$(characterId)).data.campaignId)
-      );
+      allow read: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/characters/$(characterId)) && (
+          get(/databases/$(database)/documents/characters/$(characterId)).data.userId == request.auth.uid ||
+          isCampaignDM(get(/databases/$(database)/documents/characters/$(characterId)).data.campaignId)
+        );
       
-      // Crear/Actualizar: solo owner o DM
-      allow write: if isAuthenticated() && (
-        get(/databases/$(database)/documents/characters/$(characterId)).data.userId == request.auth.uid ||
-        isCampaignDM(get(/databases/$(database)/documents/characters/$(characterId)).data.campaignId)
-      );
+      allow write: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/characters/$(characterId)) && (
+          get(/databases/$(database)/documents/characters/$(characterId)).data.userId == request.auth.uid ||
+          isCampaignDM(get(/databases/$(database)/documents/characters/$(characterId)).data.campaignId)
+        );
     }
         
     // ===========================
