@@ -4,6 +4,7 @@
   import { goto } from '$app/navigation';
   import { userStore } from '$lib/stores/authStore';
   import { api } from '$lib/api/api';
+  import { fromDoc } from '$lib/api/firestore';
   import { headerTitle } from '$lib/stores/uiStore';
   import type { Campaign, CampaignMembers, CampaignMember, InvitationLink } from '$lib/types';
   
@@ -17,6 +18,11 @@
   let members: CampaignMembers | null = null;
   let loading = true;
   let error = '';
+  function formatDate(value: string | undefined, fallback = 'fecha no disponible') {
+    if (!value) return fallback;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? fallback : date.toLocaleDateString('es-AR');
+  }
   
   // Modales
   let showInviteModal = false;
@@ -111,8 +117,8 @@ function getInviteURL(code: string | null | undefined): string {
       campaignUnsubscribe = onSnapshot(
         campaignRef,
         (snapshot) => {
-          if (snapshot.exists()) {
-            campaign = { id: snapshot.id, ...snapshot.data() } as Campaign;
+          if (snapshot.exists() && !snapshot.data().deleted) {
+            campaign = fromDoc<Campaign>(snapshot);
             if (campaign?.name) {
               headerTitle.set("🎲 Campaña");
             }
@@ -125,6 +131,8 @@ function getInviteURL(code: string | null | undefined): string {
         (err) => {
           console.error('Error en listener de campaña:', err);
           error = err.message;
+          campaign = null;
+          members = null;
           loading = false;
         }
       );
@@ -139,9 +147,7 @@ function getInviteURL(code: string | null | undefined): string {
       membersUnsubscribe = onSnapshot(
         membersQuery,
         (snapshot) => {
-          const membersList = snapshot.docs.map(doc => ({
-            ...doc.data()
-          })) as CampaignMember[];
+          const membersList = snapshot.docs.map(entry => fromDoc<CampaignMember>(entry));
 
           let dm: CampaignMember | null = null;
           let players: CampaignMember[] = [];
@@ -222,7 +228,7 @@ function getInviteURL(code: string | null | undefined): string {
 
   <div class="flex flex-1">
     <!-- Contenido principal -->
-    <div class="flex-1 p-6">
+    <div class="flex-1 p-3 sm:p-6">
       {#if loading}
         <div class="flex justify-center py-20">
           <span class="loading loading-spinner loading-lg text-secondary"></span>
@@ -231,11 +237,11 @@ function getInviteURL(code: string | null | undefined): string {
         <div class="container mx-auto max-w-6xl">
           <!-- Header de la campaña -->
           <div class="card-parchment mb-6 corner-ornament">
-            <div class="card-body p-8">
+            <div class="card-body p-3 sm:p-6">
               <div class="text-center mb-6">
                 <div class="text-6xl mb-4">📜</div>
                 <h1 class="text-5xl font-medieval text-neutral mb-3">{campaign?.name}</h1>
-                <p class="text-neutral/60 font-body italic">Creada el {campaign ? new Date(campaign.createdAt).toLocaleDateString() : ''}</p>
+                <p class="text-neutral/60 font-body italic">Creada el {formatDate(campaign?.createdAt)}</p>
               </div>
 
               {#if isDM}
@@ -277,7 +283,7 @@ function getInviteURL(code: string | null | undefined): string {
           <div class="mb-6">
             <h2 class="text-2xl font-medieval text-secondary mb-4">👑 Dungeon Master</h2>
             <div class="card-parchment corner-ornament">
-              <div class="card-body p-6">
+              <div class="card-body p-3 sm:p-6">
                 <div class="flex items-center gap-4">
                   <div class="avatar">
                     <div class="w-20 rounded-full ring-4 ring-secondary ring-offset-4 ring-offset-[#f4e4c1]">
@@ -289,7 +295,7 @@ function getInviteURL(code: string | null | undefined): string {
                       {members?.dm?.userName || campaign?.dmName}
                     </h3>
                     <p class="text-neutral/60 font-body">
-                      Maestro de mazmorras desde {members?.dm ? new Date(members.dm.joinedAt).toLocaleDateString() : 'el principio'}
+                      Maestro de mazmorras desde {formatDate(members?.dm?.joinedAt, 'el principio')}
                     </p>
                   </div>
                   <div class="badge badge-ornate badge-lg">DM</div>
@@ -318,7 +324,7 @@ function getInviteURL(code: string | null | undefined): string {
                             {player.userName}
                           </h3>
                           <p class="text-sm text-neutral/60 font-body">
-                            Se unió el {new Date(player.joinedAt).toLocaleDateString()}
+                            Se unió el {formatDate(player.joinedAt)}
                           </p>
                           <div class="badge badge-success badge-sm mt-2">Jugador</div>
                         </div>
@@ -511,7 +517,7 @@ function getInviteURL(code: string | null | undefined): string {
                   <span class="font-bold">Usos:</span> {generatedLink.usedCount}/{generatedLink.maxUses === -1 ? '∞' : generatedLink.maxUses}
                 </div>
                 <div>
-                  <span class="font-bold">Expira:</span> {new Date(generatedLink.expiresAt).toLocaleDateString()}
+                  <span class="font-bold">Expira:</span> {formatDate(generatedLink.expiresAt)}
                 </div>
               </div>
             </div>
@@ -534,7 +540,7 @@ function getInviteURL(code: string | null | undefined): string {
                     <p class="text-sm font-mono font-bold">{link.code}</p>
                     <p class="text-xs text-neutral/60">
                       Usos: {link.usedCount}/{link.maxUses === -1 ? '∞' : link.maxUses} • 
-                      Expira: {new Date(link.expiresAt).toLocaleDateString()}
+                      Expira: {formatDate(link.expiresAt)}
                     </p>
                   </div>
                   <div class="flex gap-2">

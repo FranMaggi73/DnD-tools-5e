@@ -4,13 +4,16 @@
   import { userStore } from '$lib/stores/authStore';
   import { goto } from '$app/navigation';
 
+  import { page } from '$app/stores';
   let error = '';
+  $: requestedNext = $page.url.searchParams.get('next') || '';
+  $: destination = /^\/join\/[a-f0-9]{48}$/.test(requestedNext) ? requestedNext : '/dashboard';
 
   async function handleGoogleLogin() {
     try {
       error = '';
       await signInWithPopup(auth, googleProvider);
-      goto('/dashboard');
+      goto(destination);
     } catch (err: any) {
       error = err.message;
     }
@@ -25,7 +28,7 @@
   }
 
   $: if ($userStore && typeof window !== 'undefined') {
-    goto('/dashboard');
+    goto(destination);
   }
 </script>
 
@@ -93,7 +96,7 @@
             
             <div class="flex flex-col gap-3 w-full">
               <button 
-                on:click={() => goto('/dashboard')}
+                on:click={() => goto(destination)}
                 class="btn btn-dnd btn-lg w-full"
               >
                 <span class="text-xl">📖</span>

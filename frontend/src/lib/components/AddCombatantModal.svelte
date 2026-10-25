@@ -2,7 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import debounce from 'lodash/debounce';
   import { open5eApi } from '$lib/api/api';
-  import type { Monster, Character } from '$lib/types';
+  import type { Monster, MonsterSummary, Character } from '$lib/types';
   // ===== IMPORTAR VALIDACIONES =====
   import { 
     validateHP, 
@@ -27,10 +27,11 @@
 
   // === MODO MONSTRUO ===
   let searchQuery = '';
-  let suggestions: Monster[] = [];
+  let suggestions: MonsterSummary[] = [];
   let selectedMonster: Monster | null = null;
   let loading = false;
   let noResults = false;
+  let lookupError = '';
 
   // Campos autocompletables del monstruo
   let name = '';
@@ -78,11 +79,11 @@
   }
 
   // Validación del formulario según el tab activo
-  $: isPlayerValid = selectedPlayer && initiative >= 1 && !validationErrors.initiative;
+  $: isPlayerValid = selectedPlayer && Number.isInteger(initiative) && !validationErrors.initiative;
 
   $: isMonsterValid = !validationErrors.name && !validationErrors.initiative && 
                       !validationErrors.maxHp && !validationErrors.armorClass &&
-                      name.trim() && maxHp > 0 && armorClass > 0 && initiative >= 1;
+                      name.trim() && maxHp > 0 && armorClass > 0 && Number.isInteger(initiative);
 
   function handleBlur(field: keyof typeof touched) {
     touched[field] = true;
@@ -142,20 +143,25 @@
     }
     loading = true;
     noResults = false;
+    lookupError = '';
     try {
       const result = await open5eApi.searchMonsters(query);
+      if (searchQuery.trim() !== query || !isOpen) return;
       suggestions = result.results || [];
       noResults = suggestions.length === 0;
     } catch (err) {
       console.error('Error buscando monstruos:', err);
       suggestions = [];
       noResults = true;
+      lookupError = 'No se pudo cargar el catálogo. Podés reintentar la búsqueda o crear la criatura manualmente.';
     } finally {
       loading = false;
     }
-  }, 500);
+  }, 150);
 
-  async function selectSuggestion(monster: Monster) {
+  async function selectSuggestion(monster: MonsterSummary) {
+    loading = true; lookupError = '';
+    try {
     selectedMonster = await open5eApi.getMonster(monster.slug);
 
     name = selectedMonster.name;
@@ -173,6 +179,9 @@
     touched.name = true;
     touched.maxHp = true;
     touched.armorClass = true;
+    } catch {
+      lookupError = 'No se pudo cargar la ficha completa. Volvé a seleccionarla.';
+    } finally { loading = false; }
   }
 
   function handleAddMonster() {
@@ -187,6 +196,8 @@
       cr,
       size,
       alignment,
+      creatureSource: selectedMonster ? 'open5e' : '',
+      monsterSlug: selectedMonster?.slug || '',
       isNpc: true
     });
 
@@ -293,7 +304,7 @@
             </label>
             <input
               type="number"
-              min="1"
+              min="-100"
               max="100"
               step="1"
               required
@@ -334,7 +345,7 @@
         <div class="space-y-4">
           <div class="form-control mb-4">
             <label class="label">
-              <span class="label-text font-medieval text-neutral">Buscar monstruo (Open5e)</span>
+              <span class="label-text font-medieval text-neutral">Buscar monstruo en el catálogo</span>
             </label>
             <input
               type="text"
@@ -351,6 +362,7 @@
           </div>
 
           <!-- Loading indicator -->
+          {#if lookupError}<p class="text-error text-sm" role="alert">{lookupError}</p>{/if}
           {#if loading}
             <div class="flex justify-center items-center py-4">
               <span class="loading loading-spinner loading-md text-secondary"></span>
@@ -389,6 +401,7 @@
                       <span class="text-xs text-neutral/60">
                         {s.type} | CR {s.challenge_rating}
                       </span>
+                      {#if s.catalogSource}<span class="block text-xs text-neutral/60">{s.catalogSource.name} · {s.catalogSource.edition}</span>{/if}
                     </div>
                     <span class="text-xs badge badge-sm badge-primary">
                       Seleccionar
@@ -436,7 +449,7 @@
                   type="number"
                   bind:value={initiative}
                   on:blur={() => handleBlur('initiative')}
-                  min="1"
+                  min="-100"
                   max="100"
                   class="input input-bordered bg-[#2d241c] text-base-content 
                          {validationErrors.initiative && touched.initiative ? 'border-error border-2' : 'border-primary/50'} 

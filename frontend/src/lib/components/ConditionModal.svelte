@@ -1,281 +1,120 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import debounce from 'lodash/debounce';
-  import { open5eApi } from '$lib/api/api';
-  import type { Combatant, Condition } from '$lib/types';
-
-  export let isOpen: boolean = false;
+  import type { Combatant } from '$lib/types';
+  import { CONDITION_NAMES, CONDITION_INFO, conditionIcon, type ConditionName } from '$lib/rules/2024';
+  export let isOpen = false;
   export let combatant: Combatant | null = null;
-  export let isDM: boolean = false; // 👈 NUEVO
-
-  const dispatch = createEventDispatcher();
-
+  export let isDM = false;
+  export let busy = false;
+  export let error = '';
   let searchQuery = '';
-  let suggestions: Condition[] = [];
-  let loading = false;
-
-  // Buscar condiciones en Open5e usando la API centralizada
-  const searchConditions = debounce(async () => {
-    if (!searchQuery.trim()) {
-      suggestions = [];
-      return;
-    }
-    
-    loading = true;
-    try {
-      const result = await open5eApi.searchConditions(searchQuery);
-      suggestions = result.results;
-    } catch (err) {
-      console.error('Error searching conditions:', err);
-      suggestions = [];
-    } finally {
-      loading = false;
-    }
-  }, 300);
-
-  function addCondition(conditionName: string) {
-    if (!combatant || !conditionName.trim() || !isDM) return; // 👈 VERIFICAR isDM
-    
-    const currentConditions = Array.isArray(combatant.conditions) ? combatant.conditions : [];
-    if (currentConditions.includes(conditionName)) {
-      return;
-    }
-
-    dispatch('add', conditionName);
-    searchQuery = '';
-    suggestions = [];
-  }
-
-  function removeCondition(conditionName: string) {
-    if (!combatant || !isDM) return; // 👈 VERIFICAR isDM
-    dispatch('remove', conditionName);
-  }
-
-  function handleClose() {
-    searchQuery = '';
-    suggestions = [];
+  let source = '';
+  let rounds = 0;
+  let expires: 'start' | 'end' = 'end';
+  const dispatch = createEventDispatcher();
+  const label = (name: string) => CONDITION_INFO[name as ConditionName]?.label || name;
+  const searchable = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  $: results = CONDITION_NAMES.filter(name => searchable(`${name} ${label(name)}`).includes(searchable(searchQuery.trim())));
+  $: validDuration = Number.isInteger(rounds) && rounds >= 0 && rounds <= 1000000;
+  function close() {
+    if (busy) return;
+    searchQuery = ''; source = ''; rounds = 0; expires = 'end';
     dispatch('close');
   }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      handleClose();
-    }
+  function toggleCondition(condition: ConditionName) {
+    if (busy || !combatant) return;
+    if (combatant.conditions.includes(condition)) dispatch('remove', condition);
+    else if (validDuration) dispatch('add', { condition, source, rounds: rounds === 0 ? null : rounds, expires });
   }
 </script>
-
-{#if isOpen && combatant && isDM}
-  <div 
-    class="modal modal-open z-50" 
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="condition-modal-title"
-    on:keydown={handleKeydown}
-  >
-    <div class="card-parchment border-4 border-secondary w-5/6 h-5/6 mx-4 relative flex flex-col">
-      <button 
-        class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3 z-10 hover:bg-error/20" 
-        on:click={handleClose}
-        aria-label="Cerrar modal"
-      >✕</button>
-
-      <div class="p-4 flex-shrink-0 bg-gradient-to-b from-[#f4e4c1] to-transparent">
-        <h3 
-          id="condition-modal-title"
-          class="font-bold text-2xl font-medieval text-neutral text-center mb-3"
-        >
-          ⚠️ Estados de Combate
-        </h3>
-        <!-- Info del Combatiente - Más compacta -->
+<svelte:window on:keydown={(event) => { if (isOpen && event.key === 'Escape') close(); }} />
+{#if isOpen && combatant}
+  <div class="modal modal-open z-50" role="dialog" aria-modal="true" aria-labelledby="condition-modal-title">
+    <div class="card-parchment border-2 sm:border-4 border-secondary w-full sm:w-11/12 max-w-5xl h-[92dvh] md:h-[82dvh] relative flex flex-col !overflow-hidden text-neutral">
+      <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 z-10 hover:bg-error/20" aria-label="Cerrar modal" disabled={busy} on:click={close}>✕</button>
+      <header class="p-3 sm:p-4 shrink-0 bg-gradient-to-b from-[#f4e4c1] to-transparent">
+        <h2 id="condition-modal-title" class="font-bold text-xl sm:text-2xl font-medieval text-center mb-3 pr-9">⚠️ Estados de Combate</h2>
         <div class="bg-gradient-to-r from-primary/10 to-accent/10 p-3 rounded-lg border border-primary/30 flex items-center gap-3">
-          <div class="avatar">
-            <div class="w-12 h-12 rounded-full ring-2 ring-secondary">
-              <div class="bg-primary/20 flex items-center justify-center">
-                <span class="text-xl">{combatant.isNpc ? '👹' : '🧙‍♂️'}</span>
-              </div>
-            </div>
-          </div>
-          <div class="flex-1 min-w-0">
-            <h4 class="text-lg font-medieval text-neutral font-bold truncate">{combatant.name}</h4>
-            <div class="flex gap-2 mt-1">
-              <div class="badge badge-xs bg-error/30 text-neutral border-error/50">
-                ❤️ {combatant.currentHp}/{combatant.maxHp}
-              </div>
-              <div class="badge badge-xs bg-info/30 text-neutral border-info/50">
-                🛡️ {combatant.armorClass}
-              </div>
+          <div class="w-10 h-10 rounded-full ring-2 ring-secondary bg-primary/20 flex items-center justify-center shrink-0 text-xl">{combatant.isNpc ? '👹' : '🧙‍♂️'}</div>
+          <div class="min-w-0 flex-1">
+            <h3 class="font-medieval font-bold truncate">{combatant.name}</h3>
+            <div class="flex flex-wrap gap-2 mt-1">
+              <span class="badge badge-xs bg-error/30 text-neutral border-error/50">❤️ {combatant.currentHp}/{combatant.maxHp}</span>
+              <span class="badge badge-xs bg-info/30 text-neutral border-info/50">🛡️ {combatant.armorClass}</span>
             </div>
           </div>
         </div>
-      </div>
+        {#if error}<p class="text-error text-sm mt-2" role="alert">{error}</p>{/if}
+      </header>
 
-      <!-- Layout de 2 columnas - Altura fija -->
-      <div class="flex-1 overflow-hidden flex flex-col md:flex-row gap-3 p-4" style="min-height: 0;">
-        <!-- Columna izquierda: Estados Activos (30%) - Altura fija -->
-        <div class="md:w-1/3 flex flex-col" style="min-height: 300px;">
-          <div class="bg-warning/10 rounded-lg border-2 border-warning/30 p-3 flex flex-col h-full">
-            <div class="flex items-center justify-between mb-3">
-              <h5 class="font-medieval text-neutral font-bold flex items-center gap-2">
-                <span>⚠️</span>
-                <span>Estados Activos</span>
-              </h5>
-              <span class="badge badge-warning badge-sm">
-                {combatant.conditions && Array.isArray(combatant.conditions) ? combatant.conditions.length : 0}
-              </span>
+      <div class="flex-1 min-h-0 overflow-y-auto md:overflow-hidden flex flex-col md:flex-row gap-3 px-3 pb-3 sm:px-4 sm:pb-4">
+        <section class="md:w-1/3 shrink-0 md:shrink flex flex-col min-h-0" aria-label="Estados activos">
+          <div class="bg-warning/10 rounded-lg border-2 border-warning/30 p-3 flex flex-col md:h-full min-h-0">
+            <div class="flex items-center justify-between gap-2 mb-2">
+              <h3 class="font-medieval font-bold text-sm">⚠️ Estados Activos</h3>
+              <span class="badge badge-warning badge-sm">{combatant.conditions.length}</span>
             </div>
-
-            {#if combatant.conditions && Array.isArray(combatant.conditions) && combatant.conditions.length > 0}
-              <div class="flex-1 overflow-y-auto custom-scrollbar pr-1 space-y-2">
-                {#each combatant.conditions as condition}
-                  <div class="bg-warning/20 rounded px-3 py-2 border border-warning/40 flex items-center justify-between gap-2 hover:bg-warning/30 transition-colors">
-                    <span class="font-medieval text-sm text-neutral flex-1">{condition}</span>
-                    <button 
-                      class="btn btn-xs btn-circle btn-ghost hover:bg-error hover:text-white"
-                      on:click={() => removeCondition(condition)}
-                      title="Eliminar"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                {/each}
-              </div>
-            {:else}
-              <div class="flex-1 flex flex-col items-center justify-center text-center py-6">
-                <div class="text-3xl mb-2 opacity-50">😌</div>
-                <p class="text-xs text-neutral/60 font-body italic">
-                  Sin estados activos
-                </p>
-              </div>
-            {/if}
-          </div>
-        </div>
-
-        <!-- Columna derecha: Búsqueda y Resultados (70%) - Altura fija -->
-        <div class="md:w-2/3 flex flex-col" style="min-height: 300px;">
-          <!-- Búsqueda -->
-          <div class="mb-3">
-            <div class="relative">
-              <input 
-                type="text" 
-                bind:value={searchQuery}
-                on:input={searchConditions}
-                placeholder="Buscar condición (ej: blinded, poisoned, stunned)..."
-                class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full pr-10"
-              />
-              <div class="absolute right-3 top-1/2 -translate-y-1/2 text-neutral/50">
-                🔍
-              </div>
-            </div>
-            <p class="text-xs text-neutral/50 mt-1 italic">
-              Base de datos oficial de D&D 5e
-            </p>
-          </div>
-
-          <!-- Resultados con scroll -->
-          <div class="flex-1 overflow-y-auto custom-scrollbar bg-neutral/5 rounded-lg border border-primary/20 p-3">
-            {#if loading}
-              <div class="flex flex-col items-center justify-center h-full">
-                <span class="loading loading-spinner loading-md text-secondary"></span>
-                <p class="text-xs text-neutral/60 mt-2">Buscando...</p>
-              </div>
-            {:else if suggestions.length > 0}
-              <div class="space-y-2">
-                {#each suggestions as suggestion}
-                  {@const currentConditions = Array.isArray(combatant.conditions) ? combatant.conditions : []}
-                  {@const isActive = currentConditions.includes(suggestion.name)}
-                  <button
-                    on:click={() => addCondition(suggestion.name)}
-                    disabled={isActive}
-                    class="w-full text-left p-3 rounded-lg border-2 transition-all {isActive 
-                      ? 'border-success/50 bg-success/10 cursor-not-allowed opacity-60' 
-                      : 'border-primary/30 bg-[#f4e4c1]/50 hover:bg-[#f4e4c1] hover:border-primary/50 hover:shadow-md'
-                    }"
-                  >
-                    <div class="flex items-start justify-between gap-2 mb-1">
-                      <span class="font-medieval font-bold text-neutral">
-                        {suggestion.name}
-                      </span>
-                      {#if isActive}
-                        <span class="badge badge-xs badge-success shrink-0">✓ Activo</span>
-                      {/if}
+            {#if combatant.conditions.length}
+              <ul class="space-y-2 overflow-y-auto max-h-36 md:max-h-none md:flex-1 min-h-0">
+                {#each combatant.conditions as name}
+                  <li class="bg-warning/20 rounded px-2 py-2 border border-warning/40 flex items-start justify-between gap-2">
+                    <div class="min-w-0 flex-1">
+                      <span class="font-medieval text-sm inline-flex items-center gap-2"><span class="text-xl" aria-hidden="true">{conditionIcon(name)}</span>{label(name)}</span>
+                      {#each combatant.rules.effects.filter(effect => effect.condition === name) as effect}
+                        <p class="text-xs text-neutral/70 break-words">{effect.source || 'Sin origen indicado'} · {effect.rounds === null ? 'Final manual' : `${effect.rounds} turnos, al ${effect.expires === 'start' ? 'inicio' : 'final'}`}</p>
+                      {/each}
                     </div>
-                    <p class="text-xs text-neutral/70 font-body leading-snug">
-                      {open5eApi.cleanDescription(suggestion.desc, 120)}
-                    </p>
-                  </button>
+                    {#if isDM}<button class="btn btn-xs btn-circle btn-ghost shrink-0 hover:bg-error hover:text-white" disabled={busy} aria-label={`Quitar ${label(name)}`} on:click={() => dispatch('remove', name)}>✕</button>{/if}
+                  </li>
                 {/each}
-              </div>
-            {:else if searchQuery.trim()}
-              <div class="flex flex-col items-center justify-center h-full text-center">
-                <div class="text-4xl mb-3">🔍</div>
-                <p class="text-neutral/70 font-body mb-3">
-                  No se encontró "<span class="font-bold">{searchQuery}</span>"
-                </p>
-                <button 
-                  on:click={() => addCondition(searchQuery.trim())}
-                  class="btn btn-primary btn-sm"
-                >
-                  ➕ Agregar como personalizado
-                </button>
-              </div>
+              </ul>
             {:else}
-              <div class="flex flex-col items-center justify-center h-full text-center px-4">
-                <div class="text-5xl mb-3">📖</div>
-                <p class="text-neutral/70 font-body mb-2">
-                  Escribe para buscar condiciones
-                </p>
-                <div class="flex flex-wrap gap-1 justify-center text-xs text-neutral/50 mt-2">
-                  <span class="bg-neutral/10 px-2 py-1 rounded">blinded</span>
-                  <span class="bg-neutral/10 px-2 py-1 rounded">charmed</span>
-                  <span class="bg-neutral/10 px-2 py-1 rounded">frightened</span>
-                  <span class="bg-neutral/10 px-2 py-1 rounded">grappled</span>
-                  <span class="bg-neutral/10 px-2 py-1 rounded">paralyzed</span>
-                </div>
-              </div>
+              <div class="flex-1 text-center py-3 md:py-8"><div class="text-3xl opacity-50 mb-1">😌</div><p class="text-xs text-neutral/60 italic">Sin estados activos</p></div>
             {/if}
           </div>
-        </div>
-      </div>
-    </div>
-  </div>
-{:else if isOpen && combatant && !isDM}
-  <!-- Mensaje para jugadores que intenten ver condiciones (modo lectura) -->
-  <div class="modal modal-open z-50" on:keydown={handleKeydown}>
-    <div class="card-parchment border-4 border-secondary w-11/12 max-w-md relative p-6">
-      <button 
-        class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" 
-        on:click={handleClose}
-      >✕</button>
-      
-      <h3 class="font-bold text-2xl font-medieval text-neutral text-center mb-4">
-        ⚠️ Estados de {combatant.name}
-      </h3>
+        </section>
 
-      {#if combatant.conditions && Array.isArray(combatant.conditions) && combatant.conditions.length > 0}
-        <div class="space-y-2">
-          {#each combatant.conditions as condition}
-            <div class="bg-warning/20 rounded px-3 py-2 border border-warning/40">
-              <span class="font-medieval text-sm text-neutral">{condition}</span>
+        {#if isDM}
+          <section class="md:w-2/3 flex flex-col min-h-0 shrink-0 md:shrink" aria-label="Buscar condiciones">
+            <div class="relative mb-1">
+              <input type="search" bind:value={searchQuery} aria-label="Buscar condición" placeholder="Buscar condición…" class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full pr-10" />
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true">🔍</span>
             </div>
-          {/each}
-        </div>
-      {:else}
-        <div class="text-center py-6">
-          <div class="text-4xl mb-2">😌</div>
-          <p class="text-neutral/70 font-body">Sin estados activos</p>
-        </div>
-      {/if}
+            <p class="text-xs text-neutral/60 mb-2">Reglas 2024 · Buscá en español o inglés. Tocá una tarjeta para activar o quitar la condición.</p>
 
-      <p class="text-xs text-center text-neutral/60 italic mt-4">
-        Solo el DM puede modificar estados
-      </p>
+            <details class="rounded-lg border border-primary/20 bg-primary/5 mb-3">
+              <summary class="cursor-pointer text-sm font-medieval p-3">Origen y duración <span class="font-body text-neutral/60">· {rounds === 0 ? 'final manual' : `${rounds} turnos`}</span></summary>
+              <fieldset disabled={busy} class="space-y-2 px-3 pb-3">
+                <label class="form-control text-sm">Origen o efecto <input bind:value={source} maxlength="100" class="input input-bordered input-sm bg-[#2d241c] text-base-content" placeholder="Ej.: red, veneno, conjuro" /></label>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <label class="form-control text-sm">Turnos propios (0 = manual) <input type="number" min="0" max="1000000" bind:value={rounds} class="input input-bordered input-sm bg-[#2d241c] text-base-content" /></label>
+                  <label class="form-control text-sm">Contar al <select bind:value={expires} class="select select-bordered select-sm bg-[#2d241c] text-base-content"><option value="start">Inicio de su turno</option><option value="end">Final de su turno</option></select></label>
+                </div>
+              </fieldset>
+            </details>
 
-      <button 
-        on:click={handleClose}
-        class="btn btn-dnd w-full mt-4"
-      >
-        Cerrar
-      </button>
+            <div class="md:flex-1 min-h-0 md:overflow-y-auto bg-neutral/5 rounded-lg border border-primary/20 p-2 sm:p-3">
+              <div class="space-y-2">
+                {#each results as name}
+                  {@const active = combatant.conditions.includes(name)}
+                  <button on:click={() => toggleCondition(name)} aria-pressed={active} disabled={busy || (!active && !validDuration)} class="w-full text-left p-3 rounded-lg border-2 transition-colors disabled:opacity-50 {active ? 'border-success/50 bg-success/10' : 'border-primary/30 bg-[#f4e4c1]/50 hover:bg-[#f4e4c1] hover:border-primary/50'}">
+                    <div class="flex flex-wrap items-start justify-between gap-2 mb-1">
+                      <span class="font-medieval font-bold text-sm inline-flex items-center gap-2"><span class="text-xl" aria-hidden="true">{conditionIcon(name)}</span>{label(name)}</span>
+                      {#if active}<span class="badge badge-xs badge-success">✓ Activo · tocar para quitar</span>{:else}<span class="text-primary text-sm" aria-hidden="true">＋</span>{/if}
+                    </div>
+                    <p class="text-xs text-neutral/70 font-body leading-snug">{CONDITION_INFO[name].description}</p>
+                  </button>
+                {:else}
+                  <div class="text-center py-8"><div class="text-3xl mb-2">🔍</div><p class="text-sm text-neutral/70">No se encontró «{searchQuery}».</p></div>
+                {/each}
+              </div>
+            </div>
+            <p class="text-xs text-neutral/60 mt-2">Las tiradas para terminar efectos se resuelven en la mesa. El agotamiento está en Vida y estados.</p>
+          </section>
+        {:else}
+          <p class="text-sm text-neutral/60 self-center p-4">Solo el DM puede modificar estados.</p>
+        {/if}
+      </div>
     </div>
   </div>
 {/if}

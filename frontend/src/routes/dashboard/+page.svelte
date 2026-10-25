@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { api } from '$lib/api/api';
+  import { fromDoc } from '$lib/api/firestore';
   import { goto } from '$app/navigation';
   import { userStore } from '$lib/stores/authStore';
   import type { Campaign, CampaignMembers, CampaignMember } from '$lib/types';
@@ -16,6 +17,7 @@
     onSnapshot,
     doc,
     getDocs,
+    getDoc,
     DocumentReference,
     DocumentSnapshot,
     documentId
@@ -79,6 +81,7 @@
       campaignsUnsubscribe = onSnapshot(
         membersQuery,
         async (snapshot) => {
+          try {
           const campaignIds = snapshot.docs.map(doc => doc.data().campaignId);
 
           if (campaignIds.length === 0) {
@@ -88,20 +91,16 @@
             return;
           }
 
-          // ✅ OPTIMIZACIÓN: Obtener TODAS las campañas en una sola query
-          const campaignsSnapshot = await getDocs(
-            query(
-              collection(db, 'events'),
-              where(documentId(), 'in', campaignIds.slice(0, 10)) // Firestore limita 'in' a 10
-            )
-          );
-
-          const campaignsMap = new Map(
-            campaignsSnapshot.docs.map(doc => [doc.id, { id: doc.id, ...doc.data() } as Campaign])
-          );
+          const campaignEntries = await Promise.all(campaignIds.map(async (id) => {
+            const snapshot = await getDoc(doc(db, 'events', id));
+            return snapshot.exists() && !snapshot.data().deleted
+              ? [id, fromDoc<Campaign>(snapshot)] as const : null;
+          }));
+          const campaignsMap = new Map(campaignEntries.filter((entry) => entry !== null));
+          const activeIds = campaignIds.filter(id => campaignsMap.has(id));
 
           // ✅ Obtener miembros en paralelo
-          const membersPromises = campaignIds.map(async (id) => {
+          const membersPromises = activeIds.map(async (id) => {
             const membersSnapshot = await getDocs(
               query(
                 collection(db, 'event_members'),
@@ -109,7 +108,7 @@
               )
             );
 
-            const membersList = membersSnapshot.docs.map(doc => doc.data()) as CampaignMember[];
+            const membersList = membersSnapshot.docs.map(entry => fromDoc<CampaignMember>(entry));
 
             let dm: CampaignMember | null = null;
             let players: CampaignMember[] = [];
@@ -143,6 +142,11 @@
             .filter(Boolean) as Array<{ campaign: Campaign; members: CampaignMembers }>;
 
           loading = false;
+          } catch (cause: any) {
+            campaignsWithMembers = [];
+            error = cause.message;
+            loading = false;
+          }
         },
         (err) => {
           console.error('Error en listener de campañas:', err);
@@ -197,12 +201,12 @@ async function getAll(...refs: DocumentReference[]): Promise<DocumentSnapshot[]>
   }
 </script>
 
-<div class="container mx-auto justify-center items-center flex flex-col p-6 lg:p-8">
-  <div class="mb-8 text-center">
-    <h1 class="text-4xl lg:text-5xl font-bold text-secondary title-ornament mx-4 mb-3 text-shadow">
+<div class="container mx-auto justify-center items-center flex flex-col p-3 sm:p-6 lg:p-8 pb-24">
+  <div class="mb-4 sm:mb-8 text-center">
+    <h1 class="text-2xl sm:text-4xl lg:text-5xl font-bold text-secondary title-ornament mx-4 mb-3 text-shadow">
       Mis Campañas
     </h1>
-    <p class="text-base-content/70 font-body italic text-lg">
+    <p class="text-base-content/70 font-body italic text-sm sm:text-lg">
       "Las aventuras aguardan a quienes se atreven a explorar..."
     </p>
   </div>
@@ -232,7 +236,7 @@ async function getAll(...refs: DocumentReference[]): Promise<DocumentSnapshot[]>
       </div>
     </div>
   {:else if campaignsWithMembers.length === 0}
-    <div class="card-parchment max-w-2xl mx-auto p-12 text-center corner-ornament">
+    <div class="card-parchment max-w-2xl mx-auto p-5 sm:p-12 text-center corner-ornament">
       <div class="text-6xl mb-4">📖</div>
       <h2 class="text-2xl font-medieval mb-3 text-neutral">Tu Grimorio está Vacío</h2>
       <p class="text-neutral/70 font-body text-lg mb-6">
@@ -246,11 +250,11 @@ async function getAll(...refs: DocumentReference[]): Promise<DocumentSnapshot[]>
       </button>
     </div>
   {:else}
-    <div class="w-fit gap-6">
+    <div class="grid w-full max-w-6xl grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-5">
       {#each campaignsWithMembers as { campaign, members }}
         <div class="card-parchment card-hover corner-ornament">
-          <div class="card-body">
-            <h2 class="card-title text-2xl font-medieval text-neutral mb-4 text-center">
+          <div class="card-body p-3 sm:p-5 gap-3">
+            <h2 class="card-title text-lg sm:text-2xl font-medieval text-neutral mb-1 text-center">
               {campaign.name}
             </h2>
             <div class="mb-4 bg-gradient-to-r from-primary/20 to-accent/20 p-3 rounded-lg border border-primary/30">
@@ -295,7 +299,7 @@ async function getAll(...refs: DocumentReference[]): Promise<DocumentSnapshot[]>
               {/if}
             </div>
 
-            <div class="card-actions justify-center mt-6">
+            <div class="card-actions justify-center mt-2">
               <button 
                 on:click={() => goto(`/campaigns/${campaign.id}`)}
                 class="btn btn-dnd w-full"

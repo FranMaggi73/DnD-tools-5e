@@ -204,6 +204,7 @@
         },
         (err) => {
           console.error('Error en listener de notas personales:', err);
+          notes = [];
           error = err.message;
           loading = false;
         }
@@ -227,6 +228,7 @@
         },
         (err) => {
           console.error('Error en listener de notas compartidas:', err);
+          notes = [];
           error = err.message;
           loading = false;
         }
@@ -390,7 +392,7 @@
   }
 </script>
 
-<div class="min-h-screen p-4 md:p-6">
+<div class="min-h-screen p-3 md:p-6">
   <div class="container mx-auto max-w-7xl">
     
     <!-- Header -->
@@ -405,7 +407,7 @@
         </button>
         
         <div class="text-center">
-          <h1 class="text-3xl md:text-4xl font-bold text-secondary title-ornament">
+          <h1 class="text-2xl md:text-4xl font-bold text-secondary title-ornament">
             📝 Notas
           </h1>
           <p class="text-base-content/70 font-body italic mt-2">

@@ -24,6 +24,7 @@
   let loading = true;
   let error = '';
   let processingItem: string | null = null;
+  let creatingItem = false;
   let searchLocalQuery = '';
 
   let showAddItemModal = false;
@@ -154,6 +155,7 @@
         },
         (err) => {
           console.error('Error en listener de items:', err);
+          inventory = null;
           error = err.message;
           loading = false;
         }
@@ -194,6 +196,8 @@
         },
         (err) => {
           console.error('Error en listener de currency:', err);
+          inventory = null;
+          error = err.message;
         }
       );
 
@@ -204,7 +208,9 @@
   }
 
   async function handleAddItem(event: CustomEvent) {
+    if (creatingItem) return;
     try {
+      creatingItem = true;
       error = '';
       await inventoryApi.createItem(characterId, event.detail);
       showAddItemModal = false;
@@ -212,11 +218,11 @@
     } catch (err: any) {
       error = err.message || 'Error agregando item';
       console.error('Error adding item:', err);
-    }
+    } finally { creatingItem = false; }
   }
 
   async function handleUpdateItem(event: CustomEvent) {
-    if (!selectedItem) return;
+    if (!selectedItem || processingItem) return;
     
     try {
       error = '';
@@ -425,7 +431,7 @@
   }
 </script>
 
-<div class="space-y-4">
+<div class="space-y-3 sm:space-y-4">
   
   {#if error}
     <div class="alert alert-error">
@@ -438,7 +444,7 @@
   {/if}
 
   {#if loading}
-    <div class="space-y-4">
+    <div class="space-y-3 sm:space-y-4">
       <div class="skeleton h-32 w-full"></div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
         {#each Array(4) as _}
@@ -493,12 +499,12 @@
     {/if}
         
     <!-- Header con stats -->
-    <div class="bg-gradient-to-r from-primary/10 to-accent/10 p-4 rounded-lg border-2 border-primary/30">
-      <div class="flex flex-wrap justify-between items-center gap-4">
+    <div class="bg-gradient-to-r from-primary/10 to-accent/10 p-2 sm:p-4 rounded-lg border border-primary/30 inventory-summary">
+      <div class="grid grid-cols-2 sm:flex sm:flex-wrap justify-between items-center gap-2 sm:gap-4">
         
         <button 
           on:click={() => showCurrencyModal = true}
-          class="flex items-center gap-3 hover:bg-primary/10 p-2 rounded-lg transition-colors flex-1 min-w-[200px]"
+          class="flex items-center gap-3 hover:bg-primary/10 p-2 rounded-lg transition-colors col-span-2 sm:col-span-1 sm:flex-1 min-w-0"
           disabled={!isOwner}
         >
           <div class="text-3xl">💰</div>
@@ -524,7 +530,7 @@
           </div>
         </button>
 
-        <div class="flex items-center gap-3 flex-1 min-w-[150px]">
+        <div class="flex items-center gap-3 sm:flex-1 min-w-0">
           <div class="text-3xl">📦</div>
           <div>
             <p class="text-xs font-medieval text-neutral/60">ITEMS</p>
@@ -533,7 +539,7 @@
           </div>
         </div>
 
-        <div class="flex items-center gap-3 flex-1 min-w-[150px]">
+        <div class="flex items-center gap-3 sm:flex-1 min-w-0">
           <div class="text-3xl">💎</div>
           <div>
             <p class="text-xs font-medieval text-neutral/60">VALOR</p>
@@ -555,7 +561,7 @@
 
     <!-- Items por tipo -->
     {#if inventory.items.length === 0}
-      <div class="card-parchment p-12 text-center">
+      <div class="card-parchment p-5 sm:p-12 text-center">
         <div class="text-6xl mb-4">🎒</div>
         <h3 class="text-2xl font-medieval text-neutral mb-2">Inventario Vacío</h3>
         <p class="text-neutral/70 font-body mb-4">
@@ -576,7 +582,7 @@
         {/if}
       </div>
     {:else}
-      <div class="space-y-4">
+      <div class="space-y-3 sm:space-y-4">
         {#each itemTypes as type}
           {@const items = itemsByType[type]}
           {@const paginatedItems = getPaginatedItems(type)}
@@ -652,9 +658,11 @@
                             </span>
                           {/if}
                           
+                          {#if item.isMagical}<span class="badge badge-secondary badge-xs">✨ Mágico</span>{/if}
+                          {#if item.requiresAttunement}<span class="badge badge-warning badge-xs">🔗 Sintonización</span>{/if}
                           {#if item.weaponData}
                             <span class="badge badge-error badge-xs">
-                              ⚔️ {item.weaponData.damageDice}{#if item.weaponData.properties.versatile}/{item.weaponData.properties.versatile}{/if}
+                              ⚔️ {item.weaponData.damageDice}{#if item.weaponData.properties?.versatile}/{item.weaponData.properties.versatile}{/if}
                               {#if item.weaponData.damageType}
                                 {item.weaponData.damageType}
                               {/if}
@@ -662,6 +670,8 @@
                                 +{item.weaponData.magicBonus}
                               {/if}
                             </span>
+                            {#if item.weaponData.isMagical || (item.weaponData.magicBonus || 0) > 0}<span class="badge badge-secondary badge-xs">✨ Mágica</span>{/if}
+                            {#if item.weaponData.requiresAttunement}<span class="badge badge-warning badge-xs">🔗 Sintonización</span>{/if}
                           {/if}
                           
                           {#if item.armorData}
@@ -672,6 +682,8 @@
                                 AC {item.armorData.baseAC}{item.armorData.magicBonus ? `+${item.armorData.magicBonus}` : ''}
                               {/if}
                             </span>
+                            {#if item.armorData.isMagical || (item.armorData.magicBonus || 0) > 0}<span class="badge badge-secondary badge-xs">✨ Mágica</span>{/if}
+                            {#if item.armorData.requiresAttunement}<span class="badge badge-warning badge-xs">🔗 Sintonización</span>{/if}
                           {/if}
                         </div>
                       </div>
@@ -725,6 +737,8 @@
 <AddItemModal
   bind:isOpen={showAddItemModal}
   {characterId}
+  busy={creatingItem}
+  {error}
   on:add={handleAddItem}
   on:close={() => showAddItemModal = false}
 />
@@ -739,6 +753,8 @@
   bind:isOpen={showEditModal}
   item={selectedItem}
   {isOwner}
+  busy={processingItem !== null}
+  {error}
   on:update={handleUpdateItem}
   on:close={() => { showEditModal = false; selectedItem = null; }}
 />

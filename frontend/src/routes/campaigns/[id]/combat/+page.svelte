@@ -3,11 +3,14 @@
   import { page } from '$app/stores';
   import { userStore } from '$lib/stores/authStore';
   import { api } from '$lib/api/api';
+  import type { HealthAction, ConditionName } from '$lib/rules/2024';
+  import { fromDoc } from '$lib/api/firestore';
   import type { Campaign, Encounter, Combatant, Character } from '$lib/types';
   import CombatantCard from '$lib/components/CombatantCard.svelte';
   import AddCombatantModal from '$lib/components/AddCombatantModal.svelte';
   import HPModal from '$lib/components/HPModal.svelte';
   import ConditionModal from '$lib/components/ConditionModal.svelte';
+  import CombatantSheetModal from '$lib/components/CombatantSheetModal.svelte';
   import { headerTitle } from '$lib/stores/uiStore';
   
   // ===== NUEVO: Importar Firestore =====
@@ -43,6 +46,7 @@
   let characters: Character[] = [];
   let loading = true;
   let error = '';
+  let processing = false;
 
   let showAddCombatantModal = false;
   let showCreateEncounterModal = false;
@@ -52,10 +56,12 @@
   let showHPModal = false;
   let showConditionModal = false;
   let selectedCombatant: Combatant | null = null;
+  let sheetCombatant: Combatant | null = null;
 
   // ===== NUEVO: Variables para listeners =====
   let encounterUnsubscribe: (() => void) | null = null;
   let combatantsUnsubscribe: (() => void) | null = null;
+  let listeningEncounterId = '';
   const db = getFirestore(app);
 
   $: isDM = campaign && $userStore && campaign.dmId === $userStore.uid;
@@ -92,7 +98,9 @@
         encounterQuery,
         (snapshot) => {
           if (snapshot.empty) {
+            sheetCombatant = null;
             encounter = null;
+            listeningEncounterId = '';
             combatants = [];
             if (combatantsUnsubscribe) {
               combatantsUnsubscribe();
@@ -100,10 +108,12 @@
             }
           } else {
             const doc = snapshot.docs[0];
-            encounter = { id: doc.id, ...doc.data() } as Encounter;
+            encounter = fromDoc<Encounter>(doc);
             
             // Setup listener para combatientes cuando hay encuentro activo
-            if (!combatantsUnsubscribe && encounter) {
+            if (encounter && encounter.id !== listeningEncounterId) {
+              combatantsUnsubscribe?.();
+              listeningEncounterId = encounter.id;
               setupCombatantsListener(encounter.id);
             }
           }
@@ -111,6 +121,9 @@
         },
         (err) => {
           console.error('Error en listener de encuentro:', err);
+          encounter = null;
+          sheetCombatant = null;
+          combatants = [];
           error = err.message;
           loading = false;
         }
@@ -132,29 +145,20 @@
     combatantsUnsubscribe = onSnapshot(
       combatantsQuery,
       (snapshot) => {
-        combatants = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as Combatant[];
+        combatants = snapshot.docs.map(entry => fromDoc<Combatant>(entry))
+          .sort((a, b) => b.initiative - a.initiative || a.id.localeCompare(b.id));
 
-        // ✅ OPTIMIZACIÓN: Solo actualizar si cambió realmente
         if (selectedCombatant) {
-          const updated = combatants.find(c => c.id === selectedCombatant!.id);
-          
-          // ✅ Comparar valores críticos antes de actualizar
-          if (updated && (
-            updated.currentHp !== selectedCombatant.currentHp ||
-            updated.conditions?.length !== selectedCombatant.conditions?.length ||
-            updated.temporaryHp !== selectedCombatant.temporaryHp ||
-            updated.deathSaves?.successes !== selectedCombatant.deathSaves?.successes ||
-            updated.deathSaves?.failures !== selectedCombatant.deathSaves?.failures
-          )) {
-            selectedCombatant = updated;
-          }
+          selectedCombatant = combatants.find(entry => entry.id === selectedCombatant!.id) || null;
+          if (!selectedCombatant) { showHPModal = false; showConditionModal = false; }
         }
+        if (sheetCombatant) sheetCombatant = combatants.find(entry => entry.id === sheetCombatant!.id) || null;
       },
       (err) => {
         console.error('Error en listener de combatientes:', err);
+        combatants = [];
+        selectedCombatant = null;
+        sheetCombatant = null;
       }
     );
   }
@@ -237,6 +241,11 @@
     showConditionModal = true;
     showHPModal = false;
   }
+  function openSheet(event: CustomEvent<Combatant>) {
+    showHPModal = false; showConditionModal = false;
+    selectedCombatant = null;
+    sheetCombatant = event.detail;
+  }
 
   function closeEncounterModal() {
     showCreateEncounterModal = false;
@@ -245,75 +254,19 @@
     encounterValidationError = '';
   }
 
-  async function handleApplyHP(event: CustomEvent) {
-    if (!selectedCombatant) return;
-    try {
-      const change = event.detail as number;
-      const newHP = Math.max(0, Math.min(selectedCombatant.maxHp, selectedCombatant.currentHp + change));
-      await api.updateCombatant(selectedCombatant.id, { currentHp: newHP });
-      // El listener actualizará automáticamente
-      showHPModal = false;
-      selectedCombatant = null;
-    } catch (err: any) {
-      error = err.message;
-    }
+  async function mutateSelected(action: (id: string) => Promise<Combatant>) {
+    if (!selectedCombatant || processing) return;
+    processing = true; error = '';
+    try { selectedCombatant = await action(selectedCombatant.id); }
+    catch (cause: any) { error = cause.message; }
+    finally { processing = false; }
   }
-
-  async function handleUpdateTemp(event: CustomEvent) {
-  if (!selectedCombatant) return;
-  try {
-    const tempHp = event.detail as number;
-    await api.updateCombatant(selectedCombatant.id, { temporaryHp: tempHp });
-  } catch (err: any) {
-    error = err.message;
+  function handleHealth(event: CustomEvent<HealthAction>) { return mutateSelected(id => api.applyCombatantHealth(id, event.detail)); }
+  function handleAddCondition(event: CustomEvent<{ condition: ConditionName; source: string; rounds: number | null; expires: 'start' | 'end' }>) {
+    const e = event.detail;
+    return mutateSelected(id => api.addCondition(id, e.condition, e.source, e.rounds, e.expires));
   }
-}
-
-async function handleUpdateDeathSaves(event: CustomEvent) {
-  if (!selectedCombatant) return;
-  try {
-    const deathSaves = event.detail;
-    await api.updateCombatant(selectedCombatant.id, { deathSaves });
-  } catch (err: any) {
-    error = err.message;
-  }
-}
-
-  async function handleAddCondition(event: CustomEvent) {
-    if (!selectedCombatant) return;
-    try {
-      const condition = event.detail as string;
-      const currentConditions = Array.isArray(selectedCombatant.conditions) 
-        ? selectedCombatant.conditions 
-        : [];
-      
-      if (currentConditions.includes(condition)) {
-        return;
-      }
-      
-      const conditions = [...currentConditions, condition];
-      await api.updateCombatant(selectedCombatant.id, { conditions });
-      // El listener actualizará automáticamente
-    } catch (err: any) {
-      error = err.message;
-    }
-  }
-
-  async function handleRemoveCondition(event: CustomEvent) {
-    if (!selectedCombatant) return;
-    try {
-      const condition = event.detail as string;
-      const currentConditions = Array.isArray(selectedCombatant.conditions) 
-        ? selectedCombatant.conditions 
-        : [];
-      
-      const conditions = currentConditions.filter(c => c !== condition);
-      await api.updateCombatant(selectedCombatant.id, { conditions });
-      // El listener actualizará automáticamente
-    } catch (err: any) {
-      error = err.message;
-    }
-  }
+  function handleRemoveCondition(event: CustomEvent<string>) { return mutateSelected(id => api.removeCondition(id, event.detail)); }
 
   async function nextTurn() {
     if (!encounter) return;
@@ -344,7 +297,7 @@ async function handleUpdateDeathSaves(event: CustomEvent) {
         </div>
       {:else if !encounter}
         <div class="flex items-center justify-center h-full p-4">
-          <div class="card-parchment max-w-2xl w-full p-12 corner-ornament text-center">
+          <div class="card-parchment max-w-2xl w-full p-5 sm:p-12 corner-ornament text-center">
             <div class="text-6xl mb-4">⚔️</div>
             <h2 class="text-3xl font-medieval text-neutral mb-4">No hay combate activo</h2>
             <p class="text-neutral/70 font-body mb-6">
@@ -365,10 +318,10 @@ async function handleUpdateDeathSaves(event: CustomEvent) {
           </div>
         </div>
       {:else}
-        <div class="p-4 max-w-5xl mx-auto">
+        <div class="p-3 sm:p-4 max-w-5xl mx-auto">
           <!-- HEADER DEL ENCUENTRO -->
-          <div class="card-parchment mb-6 corner-ornament">
-            <div class="card-body p-6 flex flex-col lg:flex-row justify-between gap-4">
+          <div class="card-parchment mb-3 sm:mb-6 corner-ornament">
+            <div class="card-body p-3 sm:p-5 flex flex-col lg:flex-row justify-between gap-3">
               
               <!-- Nombre y badges -->
               <div class="flex-1 flex flex-col sm:flex-row sm:items-center sm:gap-4 flex-wrap">
@@ -381,7 +334,7 @@ async function handleUpdateDeathSaves(event: CustomEvent) {
 
               <!-- BOTONES DM -->
               {#if isDM}
-                <div class="flex flex-col sm:flex-row gap-2 mt-2 lg:mt-0 w-full sm:w-auto">
+                <div class="flex flex-wrap gap-2 mt-1 lg:mt-0 w-full sm:w-auto">
                   <button 
                     class="btn btn-success btn-sm gap-2 flex-1 sm:flex-none"
                     on:click={() => showAddCombatantModal = true}
@@ -424,7 +377,7 @@ async function handleUpdateDeathSaves(event: CustomEvent) {
               </p>
             </div>
           {:else}
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
               {#each combatants as combatant, index}
                 <CombatantCard 
                   {combatant}
@@ -432,6 +385,7 @@ async function handleUpdateDeathSaves(event: CustomEvent) {
                   isDM={!!isDM} 
                   on:updateHP={openHPModal}
                   on:addCondition={openConditionModal}
+                  on:viewSheet={openSheet}
                   on:remove={handleRemoveCombatant}
                 />
               {/each}
@@ -507,16 +461,22 @@ async function handleUpdateDeathSaves(event: CustomEvent) {
   bind:isOpen={showHPModal}
   combatant={selectedCombatant}
   isDM={!!isDM}  
-  on:apply={handleApplyHP}
-  on:updateTemp={handleUpdateTemp}
-  on:updateDeathSaves={handleUpdateDeathSaves}
+  busy={processing}
+  {error}
+  on:health={handleHealth}
   on:close={() => { showHPModal = false; selectedCombatant = null; }}
 />
+
+{#if sheetCombatant && isDM}
+  <CombatantSheetModal combatant={sheetCombatant} on:close={() => sheetCombatant = null} />
+{/if}
 
 <ConditionModal 
   bind:isOpen={showConditionModal}
   combatant={selectedCombatant}
   isDM={!!isDM}  
+  busy={processing}
+  {error}
   on:add={handleAddCondition}
   on:remove={handleRemoveCondition}
   on:close={() => { showConditionModal = false; selectedCombatant = null; }}

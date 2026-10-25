@@ -12,7 +12,7 @@ firebase-debug.*.log*
 
 # Firebase config
 
-backend/serviceAccountKey.json
+serviceAccountKey.json
 
 
 # Uncomment this if you'd like others to create their own Firebase project.
@@ -68,11 +68,11 @@ node_modules/
 # dotenv environment variables file
 .env
 
-# redis
-redis-config.env
-
 # dataconnect generated files
 .dataconnect
-backend/cmd/api/serviceAccountKey.json
-frontend/.svelte-kit/generated/server/internal.js
-frontend/.svelte-kit/ambient.d.ts
+frontend/.svelte-kit/
+frontend/build/
+.tools/
+*.local
+firestore-debug.log
+ui-debug.log

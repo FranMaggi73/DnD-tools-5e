@@ -83,6 +83,7 @@
           <span class="ml-2">{item.label}</span>
         </button>
       {/each}
+      <a href="/sources" class="btn btn-ghost text-secondary font-medieval text-sm justify-start">📚 Fuentes y licencias</a>
     </div>
   </div>
 </div>

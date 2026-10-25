@@ -1,9 +1,11 @@
 <!-- frontend/src/routes/campaigns/[id]/characters/+page.svelte -->
 <script lang="ts">
+  import {normalizeBuild} from '$lib/rules/characterBuilder';
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
   import { userStore } from '$lib/stores/authStore';
   import { api } from '$lib/api/api';
+  import { fromDoc } from '$lib/api/firestore';
   import type { Campaign, Character, CharacterForm } from '$lib/types';
   import { DND_SKILLS, getProficiencyBonus } from '$lib/types';
   import CharacterSheet from '$lib/components/CharacterCard.svelte';
@@ -23,17 +25,21 @@
   let error = '';
   
   let showFormModal = false;
+  let submitting=false;
+  let submitError='';
   let editingCharacter: Character | null = null;
   let isEdit = false;
 
   function emptyCharacterForm(): CharacterForm {
     return {
+      build: normalizeBuild(),
       name: '',
-      class: 'Aventurero',
+      class: '',
       level: 1,
       maxHp: 10,
       armorClass: 10,
       initiative: 0,
+    initiativeBonus: 0,
       speed: 30,
       abilityScores: {
         strength: 10,
@@ -62,12 +68,14 @@
 
   function characterToForm(character: Character): CharacterForm {
     return {
+      build: normalizeBuild(character.build),
       name: character.name,
       class: character.class,
       level: character.level,
       maxHp: character.maxHp,
       armorClass: character.armorClass,
       initiative: character.initiative,
+    initiativeBonus: character.initiative - Math.floor((character.abilityScores.dexterity - 10) / 2),
       speed: character.speed,
       abilityScores: { ...character.abilityScores },
       savingThrows: { ...character.savingThrows },
@@ -116,14 +124,12 @@
       charactersUnsubscribe = onSnapshot(
         charactersQuery,
         (snapshot) => {
-          characters = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          })) as Character[];
+          characters = snapshot.docs.map(entry => fromDoc<Character>(entry));
           loading = false;
         },
         (err) => {
           console.error('Error en listener de personajes:', err);
+          characters = [];
           error = err.message;
           loading = false;
         }
@@ -146,6 +152,7 @@
     editingCharacter = null;
     isEdit = false;
     resetForm();
+    submitError='';
     showFormModal = true;
   }
 
@@ -153,20 +160,24 @@
     editingCharacter = character;
     isEdit = true;
     form = characterToForm(character);
+    submitError='';
     showFormModal = true;
   }
 
   async function handleSubmit() {
+    if(submitting)return;submitting=true;submitError='';
     try {
       const proficiencyBonus = getProficiencyBonus(form.level);
       
       const characterData = {
+        build: form.build,
         name: form.name,
         class: form.class,
         level: form.level,
         maxHp: form.maxHp,
         armorClass: form.armorClass,
         initiative: form.initiative,
+        initiativeBonus: form.initiativeBonus,
         speed: form.speed,
         abilityScores: form.abilityScores,
         proficiencyBonus: proficiencyBonus,
@@ -183,8 +194,8 @@
       showFormModal = false;
       resetForm();
     } catch (err: any) {
-      error = err.message;
-    }
+      submitError = err.message;
+    } finally {submitting=false;}
   }
 
   async function handleDelete(character: Character) {
@@ -205,12 +216,12 @@
 
 <div class="min-h-screen flex flex-col">
   <div class="flex flex-1">
-    <div class="flex-1 p-4 sm:p-6">
+    <div class="flex-1 p-3 sm:p-6">
       <div class="container mx-auto max-w-7xl">
         
         <!-- Header -->
-        <div class="mb-6 sm:mb-8 text-center">
-          <h1 class="text-3xl sm:text-4xl lg:text-5xl font-bold text-secondary title-ornament mb-3 text-shadow">
+        <div class="mb-3 sm:mb-6 text-center">
+          <h1 class="text-2xl sm:text-3xl lg:text-4xl font-bold text-secondary title-ornament mb-3 text-shadow">
             Personajes
           </h1>
           <p class="text-base-content/70 font-body italic text-base sm:text-lg mb-2">
@@ -291,14 +302,16 @@
             </div>
             
             <div class="container mx-auto max-w-7xl">
-              <div class="grid grid-cols-1 gap-6">
+              <div class="grid grid-cols-1 gap-3 sm:gap-6">
                 {#each otherCharacters as character}
                   <div class="flex justify-center">
                     <div class="w-full max-w-6xl">
                       <CharacterSheet 
                         {character}
-                        isOwner={false}
-                        showInventory={true}
+                        isOwner={campaign?.dmId === $userStore?.uid}
+                        showInventory={campaign?.dmId === $userStore?.uid}
+                        on:edit={(e) => openEditModal(e.detail)}
+                        on:delete={(e) => handleDelete(e.detail)}
                       />
                     </div>
                   </div>
@@ -314,6 +327,8 @@
 
 <!-- Modal del Formulario -->
 <CharacterFormModal
+  busy={submitting}
+  {submitError}
   bind:isOpen={showFormModal}
   {isEdit}
   bind:form

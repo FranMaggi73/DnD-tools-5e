@@ -1,88 +1,51 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount } from 'svelte';
   import { onAuthStateChanged, signOut } from 'firebase/auth';
   import { auth } from '$lib/firebase';
-  import { userStore, loadingStore, tokenStore } from '$lib/stores/authStore';
+  import { ensureProfile } from '$lib/api/spark';
+  import { userStore, loadingStore } from '$lib/stores/authStore';
   import { headerTitle } from '$lib/stores/uiStore';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import Sidebar from '$lib/components/Sidebar.svelte';
   import InvitationsButton from '$lib/components/InvitationsButton.svelte';
-  
-  // ✅ NUEVO: Importar sistema de tokens
-  import { 
-    startTokenRefreshSystem, 
-    stopTokenRefreshSystem,
-    refreshToken 
-  } from '$lib/utils/tokenManager';
-  
   import '../app.css';
 
   let sidebarOpen = false;
-
+  let authError = '';
   $: campaignId = $page.params.id;
   $: isCampaign = $page.url.pathname.startsWith('/campaigns/');
   $: isLoginPage = $page.url.pathname === '/login';
   $: isRootPage = $page.url.pathname === '/';
 
-  onMount(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+  onMount(() => onAuthStateChanged(auth, async (user) => {
+    loadingStore.set(true);
+    userStore.set(null);
+    authError = '';
+    try {
+      if (user) await ensureProfile();
       userStore.set(user);
-
-      if (user) {
-        // ✅ Obtener token inicial
-        const token = await user.getIdToken();
-        tokenStore.set(token);
-        
-        // ✅ Iniciar sistema de renovación automática
-        startTokenRefreshSystem();
-      } else {
-        tokenStore.set(null);
-        
-        // ✅ Detener renovación si no hay usuario
-        stopTokenRefreshSystem();
+      const path = $page.url.pathname;
+      if (!user && path !== '/login' && path !== '/' && path !== '/sources' && !path.startsWith('/join/')) {
+        await goto('/login');
       }
+    } catch (cause) {
+      authError = cause instanceof Error ? cause.message : 'No se pudo iniciar la sesión.';
+    } finally { loadingStore.set(false); }
+  }));
 
-      loadingStore.set(false);
-
-      if (!user && $page.url.pathname !== '/login' && $page.url.pathname !== '/') {
-        goto('/login');
-      }
-    });
-
-    // ✅ NUEVO: Renovar token al enfocar la ventana (si estuvo inactiva)
-    const handleVisibilityChange = async () => {
-      if (!document.hidden && auth.currentUser) {
-        console.log('🔄 Ventana enfocada, verificando token...');
-        await refreshToken();
-      }
-    };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      unsubscribe();
-      stopTokenRefreshSystem();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  });
-
-  function handleLogout() {
-    stopTokenRefreshSystem(); // ✅ Detener renovación antes de logout
-    signOut(auth).then(() => goto('/login'));
-  }
-
-  function handleInvitationResponded() {
-    location.reload();
-  }
-
-  function toggleSidebar() {
-    sidebarOpen = !sidebarOpen;
-  }
+  function handleLogout() { signOut(auth).then(() => goto('/login')); }
+  function handleInvitationResponded() { location.reload(); }
+  function toggleSidebar() { sidebarOpen = !sidebarOpen; }
 </script>
 
 <div class="min-h-screen relative safe-top safe-bottom" data-theme="dnd">
-  {#if $loadingStore}
+  {#if authError}
+    <div class="max-w-lg mx-auto p-8" role="alert">
+      <p>{authError}</p>
+      <button class="btn btn-dnd mt-4" on:click={() => location.reload()}>Reintentar</button>
+    </div>
+  {:else if $loadingStore}
     <!-- Loading Screen -->
     <div class="flex flex-col items-center justify-center h-screen gap-4 px-4">
       <div class="text-4xl sm:text-5xl md:text-6xl">🎲</div>
@@ -99,7 +62,7 @@
     <div 
       class="navbar-medieval sticky top-0 z-30 w-full flex items-center justify-between 
              px-3 sm:px-4 lg:px-6 h-14 sm:h-16 lg:h-20
-             safe-left safe-right py-8" 
+             safe-left safe-right py-0" 
     >
       <!-- LEFT SECTION -->
       <div class="flex items-center gap-2 flex-1 min-w-0">
@@ -129,7 +92,7 @@
         {/if}
 
         <!-- Title - Solo visible en móvil -->
-        <h1 class="lg:hidden btn btn-ghost text-base sm:text-lg font-medieval text-secondary hover:text-accent sm:max-w-xs">
+        <h1 class="lg:hidden truncate min-w-0 text-sm sm:text-lg font-medieval text-secondary hover:text-accent sm:max-w-xs">
           {$headerTitle}
         </h1>
       </div>
@@ -142,7 +105,7 @@
       </div>
 
       <!-- RIGHT SECTION -->
-      <div class="flex items-center gap-2 sm:gap-3 md:gap-4 flex-1 justify-end">
+      <div class="flex items-center gap-2 sm:gap-3 md:gap-4 shrink-0 lg:flex-1 justify-end">
         <!-- Invitaciones + Avatar (solo si hay usuario y no es login) -->
         {#if $userStore && !isLoginPage && !isRootPage}
           <InvitationsButton onInvitationResponded={handleInvitationResponded} />

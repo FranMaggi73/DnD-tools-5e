@@ -7,7 +7,11 @@
     formatModifier, 
     getProficiencyBonus 
   } from '$lib/types';
+  import CharacterBuildSheet from './CharacterBuildSheet.svelte';
   import InventoryPanel from './InventoryPanel.svelte';
+  import CharacterRulesPanel from './CharacterRulesPanel.svelte';
+  import ConditionBadge from './ConditionBadge.svelte';
+  import { skillBonus, hasJackOfAllTrades, effectiveSpeed } from '$lib/rules/2024';
 
   export let character: Character;
   export let isOwner: boolean = false;
@@ -69,22 +73,18 @@
   }
 
   function getSkillBonusForCharacter(skill: Skill): number {
-    const abilityMod = abilityModifiers[skill.ability];
-    let bonus = abilityMod ?? 0;
-    
-    if (skill.expertise) {
-      bonus += proficiencyBonus * 2;
-    } else if (skill.proficient) {
-      bonus += proficiencyBonus;
-    }
-    
-    return bonus;
+    return skillBonus(character.abilityScores[skill.ability], skill, proficiencyBonus,
+      hasJackOfAllTrades(character.class, character.level), character.rules.exhaustion);
+  }
+  function passivePerception(value: Character) {
+    const perception = value.skills.find(skill => skill.name === 'Perception');
+    return 10 + (perception ? getSkillBonusForCharacter(perception) : 0) - (value.conditions.includes('Poisoned') ? 5 : 0);
   }
 
   function getSavingThrowBonusForCharacter(ability: AbilityKey): number {
     const abilityMod = abilityModifiers[ability];
     const isProficient = character.savingThrows[ability];
-    return isProficient ? (abilityMod + proficiencyBonus) : abilityMod;
+    return abilityMod + (isProficient ? proficiencyBonus : 0) - 2 * character.rules.exhaustion;
   }
 
   function getSkillLabel(skillName: string): string {
@@ -112,14 +112,14 @@
   }
 </script>
 
-<div class="card-parchment w-full max-w-6xl mx-auto">
-  <div class="card-body p-4 sm:p-6">
+<div class="card-parchment character-sheet w-full max-w-6xl mx-auto">
+  <div class="card-body p-3 sm:p-5 gap-3">
     
     <!-- Header -->
-    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
-      <div class="flex items-center gap-4 flex-1 min-w-0">
+    <div class="flex items-start justify-between gap-2">
+      <div class="flex items-center gap-3 flex-1 min-w-0">
         <div class="avatar flex-shrink-0">
-          <div class="w-20 h-20 rounded-full ring-2 ring-secondary ring-offset-2 ring-offset-[#f4e4c1]">
+          <div class="w-12 h-12 sm:w-16 sm:h-16 rounded-full ring-2 ring-secondary ring-offset-2 ring-offset-[#f4e4c1]">
             <div class="bg-gradient-to-br from-primary to-accent flex items-center justify-center w-full h-full">
               <span class="text-3xl">🧙‍♂️</span>
             </div>
@@ -127,13 +127,13 @@
         </div>
 
         <div class="flex-1 min-w-0">
-          <h3 class="text-2xl font-medieval font-bold text-neutral mb-1">
+          <h3 class="text-lg sm:text-2xl font-medieval font-bold text-neutral leading-tight break-words">
             {character.name}
           </h3>
-          <p class="text-base text-neutral/70 font-body">
+          <p class="text-sm text-neutral/70 font-body">
             {character.class} • Nivel {character.level}
           </p>
-          <div class="flex gap-2 mt-1">
+          <div class="flex flex-wrap gap-1 mt-1">
             <div class="badge badge-sm badge-secondary">+{proficiencyBonus} Competencia</div>
             <div class="badge badge-sm badge-info">{character.speed} pies</div>
           </div>
@@ -158,7 +158,7 @@
     </div>
 
     <!-- Tabs -->
-    <div class="tabs tabs-boxed bg-neutral/20 mb-4">
+    <div class="tabs tabs-boxed bg-neutral/20">
       <button 
         class="tab flex-1 {activeTab === 'stats' ? 'tab-active' : ''}"
         on:click={() => activeTab = 'stats'}
@@ -166,6 +166,7 @@
         <span class="text-lg mr-2">📊</span>
         Estadísticas
       </button>
+      {#if showInventory}
       <button 
         class="tab flex-1 {activeTab === 'inventory' ? 'tab-active' : ''}"
         on:click={() => activeTab = 'inventory'}
@@ -173,26 +174,40 @@
         <span class="text-lg mr-2">🎒</span>
         Inventario
       </button>
+      {/if}
     </div>
 
+    <div class="flex flex-wrap items-center gap-1 text-sm text-neutral">
+      <span class="badge badge-outline">Percepción pasiva: {character.rules.lifeState === 'alive' ? passivePerception(character) : '—'}</span>
+      <span class="badge badge-outline">Agotamiento: {character.rules.exhaustion}/6</span>
+      {#if hasJackOfAllTrades(character.class, character.level)}<span class="badge badge-outline">Media competencia en habilidades no competentes</span>{/if}
+      <div class="flex items-center gap-1 h-8 shrink-0" aria-label="Concentración e inspiración">
+      {#if character.rules.concentration}
+        <span class="badge h-auto rounded-full border border-info/60 bg-info/20 text-neutral px-2 py-1 text-base" tabindex="0" title={`Concentración: ${character.rules.concentration}`} aria-label={`Concentración: ${character.rules.concentration}`}>🔮</span>
+      {/if}
+      {#if character.rules.heroicInspiration}
+        <span class="badge h-auto rounded-full border border-secondary bg-secondary/30 text-neutral px-2 py-1 text-base" tabindex="0" title="Inspiración heroica disponible" aria-label="Inspiración heroica disponible">✨</span>
+      {/if}
+      </div>
+    </div>
     <!-- Content -->
     {#if activeTab === 'stats'}
       <!-- Stats Tab -->
       <div class="space-y-4">
         
         <!-- Stats Principales -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="grid grid-cols-4 gap-1.5 sm:gap-3 sheet-summary">
           <div class="bg-gradient-to-br from-info/20 to-success/20 p-3 rounded-lg border border-info/30 text-center">
             <p class="text-xs font-medieval text-neutral/60 mb-1">CA</p>
             <p class="text-2xl font-bold text-neutral">{character.armorClass}</p>
           </div>
           <div class="bg-gradient-to-br from-warning/20 to-error/20 p-3 rounded-lg border border-warning/30 text-center">
             <p class="text-xs font-medieval text-neutral/60 mb-1">INIT</p>
-            <p class="text-2xl font-bold text-neutral">+{character.initiative}</p>
+            <p class="text-2xl font-bold text-neutral">{formatModifier(character.initiative - 2 * character.rules.exhaustion)}</p>
           </div>
           <div class="bg-gradient-to-br from-success/20 to-primary/20 p-3 rounded-lg border border-success/30 text-center">
-            <p class="text-xs font-medieval text-neutral/60 mb-1">VELOCIDAD</p>
-            <p class="text-2xl font-bold text-neutral">{character.speed}'</p>
+            <p class="text-xs font-medieval text-neutral/60 mb-1">PIES</p>
+            <p class="text-2xl font-bold text-neutral">{effectiveSpeed(character.speed, character.rules, character.conditions)}'</p>
           </div>
           <div class="bg-gradient-to-br from-primary/20 to-accent/20 p-3 rounded-lg border border-primary/30 text-center">
             <p class="text-xs font-medieval text-neutral/60 mb-1">NIVEL</p>
@@ -206,7 +221,7 @@
             <span class="font-medieval text-neutral/70 text-sm">PUNTOS DE VIDA</span>
             <span class="font-bold text-neutral">{character.currentHp}/{character.maxHp}</span>
           </div>
-          <progress class={"progress w-full h-4 " + `progress-${hpColor}`} value={character.currentHp} max={character.maxHp}></progress>
+          <progress class={"progress w-full h-2.5 sm:h-3 " + `progress-${hpColor}`} value={character.currentHp} max={character.maxHp}></progress>
         </div>
 
         <!-- Condiciones -->
@@ -215,7 +230,7 @@
             <p class="text-xs font-medieval text-neutral/60 mb-2">⚠️ CONDICIONES ACTIVAS</p>
             <div class="flex flex-wrap gap-1">
               {#each character.conditions as condition}
-                <div class="badge badge-warning badge-sm">{condition}</div>
+                <ConditionBadge {condition} />
               {/each}
             </div>
           </div>
@@ -223,10 +238,10 @@
 
         <!-- Ability Scores -->
         <div>
-          <h4 class="font-medieval text-lg text-neutral mb-3 flex items-center gap-2">
-            💪 Puntuaciones de Habilidad
+          <h4 class="font-medieval text-base sm:text-lg text-neutral mb-2 flex items-center gap-2">
+            💪 Características
           </h4>
-          <div class="grid grid-cols-3 md:grid-cols-6 gap-3">
+          <div class="grid grid-cols-3 min-[380px]:grid-cols-6 gap-1.5 sm:gap-3 sheet-abilities">
             {#each abilityKeys as ability}
               <div class="bg-gradient-to-br from-primary/10 to-accent/10 p-3 rounded-lg border-2 border-primary/30 text-center">
                 <div class="text-xs font-medieval text-neutral/70 mb-1">
@@ -245,15 +260,15 @@
 
         <!-- Saving Throws -->
         <div>
-          <h4 class="font-medieval text-lg text-neutral mb-3 flex items-center gap-2">
+          <h4 class="font-medieval text-base sm:text-lg text-neutral mb-2 flex items-center gap-2">
             🛡️ Tiradas de Salvación
           </h4>
-          <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+          <div class="grid grid-cols-2 min-[380px]:grid-cols-3 gap-1.5 sm:gap-2 sheet-saves">
             {#each savingThrowKeys as ability}
               <div class={"flex items-center gap-2 p-2 rounded-lg border-2 " + (character.savingThrows[ability] ? 'bg-success/20 border-success' : 'bg-neutral/10 border-neutral/30')}>
                 <div class={"w-4 h-4 rounded-full border-2 " + (character.savingThrows[ability] ? 'bg-success border-success' : 'border-neutral/50')}></div>
                 <div class="flex-1">
-                  <div class="text-sm font-medieval">{abilityNames[ability]}</div>
+                  <div class="text-sm font-medieval">{abilityLabels[ability]}</div>
                   <div class="text-xs text-neutral/70">{formatModifier(getSavingThrowBonusForCharacter(ability))}</div>
                 </div>
               </div>
@@ -263,21 +278,21 @@
 
         <!-- Skills -->
         <div>
-          <h4 class="font-medieval text-lg text-neutral mb-3 flex items-center gap-2">
+          <h4 class="font-medieval text-base sm:text-lg text-neutral mb-2 flex items-center gap-2">
             🎯 Habilidades
           </h4>
 
           {#if proficientSkills.length > 0}
             <div class="mb-3">
               <p class="text-xs font-medieval text-neutral/60 mb-2">COMPETENTES</p>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div class="grid grid-cols-1 min-[360px]:grid-cols-2 gap-1.5 sm:gap-2 sheet-skills">
                 {#each proficientSkills as skill}
                   <div class={"flex items-center gap-2 p-2 rounded-lg border-2 " + (skill.expertise ? 'bg-warning/20 border-warning' : 'bg-success/20 border-success')}>
                     <div class={"w-4 h-4 rounded-full border-2 flex items-center justify-center text-xs " + (skill.expertise ? 'bg-warning border-warning' : 'bg-success border-success')}>
                       {#if skill.expertise}★{/if}
                     </div>
                     <div class="flex-1 min-w-0">
-                      <div class="text-sm font-medieval truncate">{getSkillLabel(skill.name)}</div>
+                      <div class="text-sm leading-tight">{getSkillLabel(skill.name)}</div>
                     </div>
                     <div class="text-sm font-bold text-neutral">
                       {formatModifier(getSkillBonusForCharacter(skill))}
@@ -294,12 +309,12 @@
                 OTRAS HABILIDADES ({otherSkills.length})
               </summary>
               <div class="collapse-content">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-2 pt-2">
+                <div class="grid grid-cols-1 min-[360px]:grid-cols-2 gap-1.5 sm:gap-2 sheet-skills pt-2">
                   {#each otherSkills as skill}
                     <div class="flex items-center gap-2 p-2 rounded-lg border-2 bg-neutral/10 border-neutral/30">
                       <div class="w-4 h-4 rounded-full border-2 border-neutral/50"></div>
                       <div class="flex-1 min-w-0">
-                        <div class="text-sm font-medieval truncate">{getSkillLabel(skill.name)}</div>
+                        <div class="text-sm leading-tight">{getSkillLabel(skill.name)}</div>
                       </div>
                       <div class="text-sm font-bold text-neutral">
                         {formatModifier(getSkillBonusForCharacter(skill))}
@@ -312,7 +327,9 @@
           {/if}
         </div>
       </div>
-    {:else}
+      <CharacterBuildSheet {character}/>
+      <CharacterRulesPanel {character} editable={isOwner} />
+    {:else if showInventory}
       <!-- Inventory Tab -->
       <InventoryPanel 
         characterId={character.id}

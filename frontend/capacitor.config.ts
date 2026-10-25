@@ -6,8 +6,6 @@ const config: CapacitorConfig = {
   webDir: 'build',
   server: {
     androidScheme: 'https',
-    // ✅ Usar tu backend de producción
-    url: 'https://dnd5etools-73.web.app',
     cleartext: false
   },
   android: {

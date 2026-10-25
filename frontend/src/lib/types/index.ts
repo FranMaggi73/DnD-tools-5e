@@ -1,3 +1,4 @@
+import type { CharacterRules } from '$lib/rules/2024';
 export interface User {
   uid: string;
   email: string;
@@ -88,6 +89,9 @@ export interface Skill {
 
 
 export interface Character {
+  build?: import('$lib/rules/characterBuilder').CharacterBuild;
+  instanceId?: string;
+  rules: CharacterRules;
   id: string;
   campaignId: string;
   userId: string;
@@ -122,6 +126,8 @@ export interface Character {
 // ===== FORM TYPES =====
 
 export interface CharacterForm {
+  build?: import('$lib/rules/characterBuilder').CharacterBuild;
+  initiativeBonus?: number;
   // Básico
   name: string;
   class: string;
@@ -149,6 +155,7 @@ export type AbilityKey = keyof AbilityScores;
 // ===========================
 
 export interface Encounter {
+  rosterVersion?: number;
   id: string;
   campaignId: string;
   name: string;
@@ -160,6 +167,9 @@ export interface Encounter {
 }
 
 export interface Combatant {
+  monsterSlug?: string;
+  characterInstanceId?: string;
+  rules: CharacterRules;
   id: string;
   encounterId: string;
   type: 'character' | 'creature' | 'player';
@@ -182,6 +192,7 @@ export interface Combatant {
 // ===========================
 
 export interface Monster {
+  catalogSource?: CatalogSource;
   slug: string;
   name: string;
   size: string;
@@ -203,16 +214,44 @@ export interface Monster {
     swim?: number;
     fly?: number;
     burrow?: number;
+    climb?: number;
   };
+  armor_desc?: string;
+  desc?: string;
+  strength_save?: number | null;
+  dexterity_save?: number | null;
+  constitution_save?: number | null;
+  intelligence_save?: number | null;
+  wisdom_save?: number | null;
+  charisma_save?: number | null;
+  skills?: Record<string, number>;
+  damage_vulnerabilities?: string;
+  damage_resistances?: string;
+  damage_immunities?: string;
+  condition_immunities?: string;
+  senses?: string;
+  languages?: string;
+  actions?: MonsterAction[] | null;
+  bonus_actions?: MonsterAction[] | null;
+  reactions?: MonsterAction[] | null;
+  legendary_desc?: string;
+  legendary_actions?: MonsterAction[] | null;
+  special_abilities?: MonsterAction[] | null;
+  spell_list?: string[];
+  document__title?: string;
   document__slug?: string;
 }
+export interface MonsterAction { name: string; desc: string; attack_bonus?: number; damage_dice?: string; damage_bonus?: number }
 
 export interface MonsterSearchResult {
   count: number;
   next: string | null;
   previous: string | null;
-  results: Monster[];
+  results: MonsterSummary[];
 }
+export interface CatalogSource {
+  status?: string; published?: string; contentMode?: string;key:string;name:string;edition:string;licenses:string[]}
+export type MonsterSummary=Pick<Monster,'slug'|'name'|'type'|'challenge_rating'|'document__slug'|'document__title'|'catalogSource'>;
 
 export interface Condition {
   slug: string;
@@ -339,6 +378,7 @@ export function createEmptyCharacterForm(): CharacterForm {
     maxHp: 10,
     armorClass: 10,
     initiative: 0,
+    initiativeBonus: 0,
     speed: 30,
     abilityScores: {
       strength: 10,
@@ -376,6 +416,7 @@ export function characterToForm(character: Character): CharacterForm {
     maxHp: character.maxHp,
     armorClass: character.armorClass,
     initiative: character.initiative,
+    initiativeBonus: character.initiative - Math.floor((character.abilityScores.dexterity - 10) / 2),
     speed: character.speed,
     abilityScores: { ...character.abilityScores },
     savingThrows: { ...character.savingThrows },

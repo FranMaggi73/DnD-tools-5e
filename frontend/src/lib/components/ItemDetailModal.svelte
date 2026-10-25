@@ -3,6 +3,27 @@
   import { createEventDispatcher } from 'svelte';
   import type { InventoryItem } from '$lib/api/inventory';
   import type { Character } from '$lib/types';
+  import type { CatalogSource } from '$lib/types';
+  import { catalogApi } from '$lib/api/catalog';
+  import { open5eInventoryApi, type Open5eItem } from '$lib/api/inventory';
+  let catalogSource:CatalogSource|null=null;
+  let sourceRecord:Open5eItem|null=null;
+  let loadedSlug='';
+  $: if(isOpen && item && item.open5eSlug!==loadedSlug) {
+    loadedSlug=item.open5eSlug || '';
+    catalogSource=null;sourceRecord=null;
+    if(loadedSlug) loadReference(loadedSlug);
+  }
+  async function loadReference(slug:string) {
+    try {
+      const source=await catalogApi.sourceForItem(slug);
+      if(loadedSlug!==slug) return;
+      catalogSource=source;
+      for(const category of ['magicitems','weapons','armor','gear']) {
+        try { const record=await catalogApi.getItem(slug,category); if(loadedSlug===slug) sourceRecord=record; break; } catch{}
+      }
+    } catch { /* The saved inventory remains usable without catalog access. */ }
+  }
 
   export let isOpen: boolean = false;
   export let item: InventoryItem | null = null;
@@ -67,6 +88,10 @@
             </h3>
             <div class="flex flex-wrap gap-2">
               <span class="badge badge-primary">{getTypeLabel(item.type)}</span>
+              {#if item.isMagical}<span class="badge badge-secondary">✨ Mágico</span>{/if}
+              {#if item.weaponData?.isMagical || (item.weaponData?.magicBonus || 0) > 0}<span class="badge badge-secondary">✨ Arma mágica</span>{/if}
+              {#if item.armorData?.isMagical || (item.armorData?.magicBonus || 0) > 0}<span class="badge badge-secondary">✨ {item.type === 'shield' ? 'Escudo mágico' : 'Armadura mágica'}</span>{/if}
+              {#if item.requiresAttunement || item.weaponData?.requiresAttunement || item.armorData?.requiresAttunement}<span class="badge badge-warning">🔗 Requiere sintonización</span>{/if}
               {#if item.quantity > 1}
                 <span class="badge badge-neutral">×{item.quantity}</span>
               {/if}
@@ -83,6 +108,8 @@
 
       <!-- Content -->
       <div class="flex-1 overflow-y-auto p-6">
+        {#if item.open5eSlug}<p class="text-xs text-neutral/70 mb-3"><a class="link" href={catalogSource?`/sources#${catalogSource.key}`:'/sources'}>{catalogSource?`${catalogSource.name} · ${catalogSource.edition}`:'Fuentes y licencias del catálogo'}</a></p>{/if}
+        {#if sourceRecord?.desc && sourceRecord.desc !== item.description}<details class="border border-primary/20 rounded p-3 mb-4"><summary class="cursor-pointer font-medieval text-sm text-neutral">Descripción original del catálogo</summary><p class="text-sm text-neutral/80 whitespace-pre-wrap mt-2">{open5eInventoryApi.cleanDescription(sourceRecord.desc,100000)}</p></details>{/if}
         
         <!-- Descripción -->
         {#if item.description}
@@ -111,7 +138,7 @@
 
               <!-- Daño -->
               <div class="bg-error/10 p-3 rounded-lg border border-error/30">
-                <p class="text-xs font-medieval text-neutral/60 mb-1">DAÑO</p>
+                <p class="text-xs font-medieval text-neutral/60 mb-1">DAÑO · {item.weaponData.properties?.twoHanded ? 'DOS MANOS' : 'UNA MANO'}</p>
                 <p class="text-xl font-bold text-neutral">
                   {item.weaponData.damageDice}
                 </p>
@@ -209,7 +236,7 @@
                 <p class="text-xs font-medieval text-neutral/60 mb-1">CLASE DE ARMADURA</p>
                 <p class="text-2xl font-bold text-neutral">
                   {#if item.armorData.armorType === 'Shield'}
-                    +{2}             
+                    +{item.armorData.baseAC}
                   {:else}
                     {item.armorData.baseAC}
                   {/if}

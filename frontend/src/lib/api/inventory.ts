@@ -1,17 +1,13 @@
-// frontend/src/lib/api/inventory.ts
-
-import { get } from 'svelte/store';
-import { tokenStore } from '$lib/stores/authStore';
-
-const API_BASE_URL = import.meta.env.MODE === 'development'
-  ? 'http://localhost:8080/api'
-  : (import.meta.env.VITE_API_URL || 'https://dm-events-backend-858373640437.us-central1.run.app/api');
-
+import { catalogApi } from './catalog';
+import type { CatalogSource } from '$lib/types';
+import { plainText } from '$lib/utils/plainText';
 // ===========================
 // TYPES
 // ===========================
 
 export interface InventoryItem {
+  isMagical?: boolean;
+  requiresAttunement?: boolean;
   id: string;
   characterId: string;
   campaignId: string;
@@ -34,6 +30,8 @@ export interface WeaponData {
   damageType: string;
   properties: WeaponProperties;
   magicBonus?: number;
+  isMagical?: boolean;
+  requiresAttunement?: boolean;
 }
 
 export interface WeaponProperties {
@@ -61,6 +59,8 @@ export interface ArmorData {
   strengthRequirement?: number;
   stealthDisadvantage?: boolean;
   magicBonus?: number;
+  isMagical?: boolean;
+  requiresAttunement?: boolean;
 }
 
 export interface Currency {
@@ -77,6 +77,12 @@ export interface InventoryResponse {
 }
 
 export interface Open5eItem {
+  weight?:string|number;
+  weight_unit?:string;
+  requires_attunement?:boolean|string;
+  attunement_detail?:string|null;
+  catalogData?: Partial<InventoryItem>;
+  catalogSource?: CatalogSource;
   slug: string;
   name: string;
   type: string;
@@ -108,228 +114,19 @@ export interface Open5eSearchResult {
   results: Open5eItem[];
 }
 
-// ===========================
-// CACHE DE BÚSQUEDAS
-// ===========================
+export { sparkInventory as inventoryApi } from './sparkInventory';
 
-interface SearchCache {
-  query: string;
-  results: Open5eSearchResult;
-  timestamp: number;
-}
-
-const searchCache = new Map<string, SearchCache>();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
-
-function getCachedSearch(query: string): Open5eSearchResult | null {
-  const cached = searchCache.get(query.toLowerCase());
-  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-    return cached.results;
-  }
-  searchCache.delete(query.toLowerCase());
-  return null;
-}
-
-function setCachedSearch(query: string, results: Open5eSearchResult): void {
-  searchCache.set(query.toLowerCase(), {
-    query,
-    results,
-    timestamp: Date.now()
-  });
-}
-
-// ===========================
-// API FUNCTIONS
-// ===========================
-
-async function fetchWithAuth<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const token = get(tokenStore);
-  
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...options.headers as Record<string, string>,
-  };
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  const response = await fetch(`${API_BASE_URL}${url}`, {
-    ...options,
-    headers,
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Error en la petición' }));
-    throw new Error(error.error || 'Error en la petición');
-  }
-
-  return response.json();
-}
-
-export const inventoryApi = {
-  getInventory: (characterId: string) =>
-    fetchWithAuth<InventoryResponse>(`/characters/${characterId}/inventory`),
-
-  createItem: (characterId: string, data: {
-    name: string;
-    type: string;
-    description?: string;
-    quantity: number;
-    value: number;
-    weaponData?: any;
-    armorData?: any;
-    open5eSlug?: string;
-    rarity?: string;
-  }) =>
-    fetchWithAuth<InventoryItem>(`/characters/${characterId}/items`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-
-  updateItem: (itemId: string, data: {
-    name?: string;
-    description?: string;
-    quantity?: number;
-    value?: number;
-  }) =>
-    fetchWithAuth<InventoryItem>(`/items/${itemId}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
-
-  deleteItem: (itemId: string) =>
-    fetchWithAuth<{ message: string }>(`/items/${itemId}`, {
-      method: 'DELETE',
-    }),
-
-  updateCurrency: (characterId: string, currency: Partial<Currency>) =>
-    fetchWithAuth<Currency>(`/characters/${characterId}/currency`, {
-      method: 'PUT',
-      body: JSON.stringify(currency),
-    }),
-};
-function getEndpointsForType(type?: string): string[] {
-  if (!type || type === 'other') {
-    // Si no hay tipo, buscar en todos
-    return ['magicitems', 'weapons', 'armor', 'gear'];
-  }
-  
-  // Mapeo de tipos a endpoints
-  const typeMap: Record<string, string[]> = {
-    weapon: ['weapons', 'magicitems'], // Armas pueden ser mágicas
-    armor: ['armor', 'magicitems'],
-    shield: ['armor'],
-    consumable: ['magicitems', 'gear'],
-    tool: ['gear'],
-    treasure: ['magicitems', 'gear'],
-  };
-  
-  return typeMap[type] || ['magicitems', 'weapons', 'armor', 'gear'];
-}
-
-// ===========================
-// OPEN5E API - MEJORADO
-// ===========================
-
-// ✅ Controller para cancelar búsquedas anteriores
-let currentSearchController: AbortController | null = null;
-
+// Compatibility facade for existing forms; requests stay on our own origin.
 export const open5eInventoryApi = {
-  /**
-   * ✅ OPTIMIZADO: Búsqueda selectiva por tipo
-   */
-  searchItems: async (query: string, type?: string): Promise<Open5eSearchResult> => {
-    const searchQuery = query.trim().toLowerCase();
-    
-    // Verificar cache primero
-    const cached = getCachedSearch(searchQuery);
-    if (cached) {
-      return cached;
-    }
-
-    // Cancelar búsqueda anterior
-    if (currentSearchController) {
-      currentSearchController.abort();
-    }
-    currentSearchController = new AbortController();
-    
-    try {
-      // ✅ NUEVO: Determinar qué endpoints buscar según el tipo
-      const endpoints = getEndpointsForType(type);
-      
-      // Hacer solo los fetches necesarios
-      const promises = endpoints.map((endpoint: any) => 
-        fetch(`https://api.open5e.com/v1/${endpoint}/?search=${encodeURIComponent(searchQuery)}&limit=20`, {
-          signal: currentSearchController?.signal
-        })
-          .then(r => r.json())
-          .then(data => ({ ...data, source: endpoint }))
-          .catch(() => ({ results: [], source: endpoint }))
-      );
-      
-      const results = await Promise.all(promises);
-      
-      const allResults = results.flatMap((result: { results: any; source: any; }) => 
-        (result.results || []).map((item: any) => ({ 
-          ...item, 
-          source: result.source 
-        }))
-      );
-      
-      const filtered = allResults
-        .filter((item: any) => {
-          const name = item.name.toLowerCase();
-          return name.includes(searchQuery);
-        })
-        .sort((a: any, b: any) => {
-          const aName = a.name.toLowerCase();
-          const bName = b.name.toLowerCase();
-          const aStarts = aName.startsWith(searchQuery);
-          const bStarts = bName.startsWith(searchQuery);
-          
-          if (aStarts && !bStarts) return -1;
-          if (!aStarts && bStarts) return 1;
-          
-          return aName.length - bName.length;
-        })
-        .slice(0, 30);
-      
-      const result: Open5eSearchResult = {
-        count: filtered.length,
-        next: null,
-        previous: null,
-        results: filtered
-      };
-
-      setCachedSearch(searchQuery, result);
-      
-      return result;
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        throw error;
-      }
-      console.error('Error searching Open5e:', error);
-      return {
-        count: 0,
-        next: null,
-        previous: null,
-        results: []
-      };
-    }
-  },
-  
-  getItem: async (slug: string, category: string = 'magicitems'): Promise<Open5eItem> => {
-    const response = await fetch(`https://api.open5e.com/v1/${category}/${slug}/`);
-    if (!response.ok) throw new Error('Error obteniendo item');
-    return response.json();
-  },
+  searchItems: catalogApi.searchItems,
+  getItem: catalogApi.getItem,
 
   /**
    * ✅ MEJORADO: Conversión más robusta con mejor manejo de datos
    */
 // REEMPLAZAR CON:
 convertToInventoryItem: (open5eItem: any): Partial<InventoryItem> => {
+  if (open5eItem.catalogData) return JSON.parse(JSON.stringify(open5eItem.catalogData));
   const name = open5eItem.name || '';
   const description = cleanDescription(open5eItem.desc || '', 1000);
   const value = parseCostRobust(open5eItem.cost);
@@ -378,7 +175,9 @@ convertToInventoryItem: (open5eItem: any): Partial<InventoryItem> => {
       damageDice: open5eItem.damage_dice || open5eItem.damage || '1d4',
       damageType: open5eItem.damage_type || 'bludgeoning',
       properties: parseWeaponProperties(open5eItem.properties, open5eItem.desc),
-      magicBonus: extractMagicBonus(name)
+      magicBonus: extractMagicBonus(name),
+      isMagical: open5eItem.source === 'magicitems' || extractMagicBonus(name) > 0,
+      requiresAttunement: !!open5eItem.requires_attunement
     };
   }
 
@@ -390,10 +189,16 @@ convertToInventoryItem: (open5eItem: any): Partial<InventoryItem> => {
       dexModifier: parseDexModifier(open5eItem),
       strengthRequirement: open5eItem.strength_requirement,
       stealthDisadvantage: open5eItem.stealth_disadvantage || false,
-      magicBonus: extractMagicBonus(name)
+      magicBonus: extractMagicBonus(name),
+      isMagical: open5eItem.source === 'magicitems' || extractMagicBonus(name) > 0,
+      requiresAttunement: !!open5eItem.requires_attunement
     };
   }
 
+  if(!['weapon','armor','shield'].includes(inferredType)) {
+    item.isMagical=open5eItem.source==='magicitems';
+    item.requiresAttunement=!!open5eItem.requires_attunement;
+  }
   return item;
 },
 
@@ -422,19 +227,7 @@ function detectConsumable(name: string, description: string): boolean {
 }
 
 function cleanDescription(html: string, maxLength: number = 200): string {
-  if (!html) return '';
-  
-  const temp = document.createElement('div');
-  temp.innerHTML = html;
-  let text = temp.textContent || temp.innerText || '';
-  
-  text = text.replace(/\s+/g, ' ').trim();
-  
-  if (text.length > maxLength) {
-    text = text.substring(0, maxLength).trim() + '...';
-  }
-  
-  return text;
+  return plainText(html,maxLength);
 }
 
 /**

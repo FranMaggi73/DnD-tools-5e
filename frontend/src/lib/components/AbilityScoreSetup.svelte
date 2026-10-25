@@ -1,0 +1,18 @@
+<script lang="ts">
+ import type {CharacterForm,AbilityScores,AbilityKey} from '$lib/types';import {abilities,pointCost} from '$lib/rules/characterBuilder';import {abilityKey} from '$lib/utils/catalogLabels';import {catalogApi} from '$lib/api/catalog';
+ export let form:CharacterForm;let method='standard';let base=Object.fromEntries(abilities.map((key,i)=>[key,[15,14,13,12,10,8][i]])) as AbilityScores;let bonus:Record<AbilityKey,number>={strength:0,dexterity:0,constitution:0,intelligence:0,wisdom:0,charisma:0};let error='';
+ const labels=['FUE','DES','CON','INT','SAB','CAR'];
+ $: cost=pointCost(Object.values(base));
+ function setMethod(){error='';base=Object.fromEntries(abilities.map((key,i)=>[key,method==='standard'?[15,14,13,12,10,8][i]:method==='pointbuy'?8:form.abilityScores[key]])) as AbilityScores;}
+ async function apply(){error='';const values=Object.values(base);if(method==='standard'&&values.slice().sort((a,b)=>a-b).join(',')!=='8,10,12,13,14,15'){error='La matriz debe usar 15, 14, 13, 12, 10 y 8 una sola vez.';return;}if(method==='pointbuy'&&(cost===null||cost>27)){error='Compra por puntos: valores de 8 a 15 y hasta 27 puntos.';return;}
+ const bonuses=Object.values(bonus);const sorted=bonuses.filter(Boolean).sort().join(',');if(form.build?.edition==='2024'&&sorted!==''&&sorted!=='1,2'&&sorted!=='1,1,1'){error='El trasfondo 2024 permite +2/+1 o +1/+1/+1.';return;}
+ if(form.build?.edition==='2024'&&form.build.background.key&&sorted){try{const bg=await catalogApi.getOption(form.build.background.key);const allowed=bg.features.find(f=>f.type==='ability_score')?.desc.toLowerCase()||bg.mechanics?.ability?.flatMap((v:any)=>(v.choose?.weighted?.from||v.choose?.from||[]).map((key:string)=>abilityKey[key])).join(' ');if(allowed&&abilities.some(a=>bonus[a]>0&&!allowed.includes(a))){error='Elegí los aumentos entre las características indicadas por tu trasfondo.';return;}}catch{error='No se pudo verificar el trasfondo. Reintentá.';return;}}
+ const scores=Object.fromEntries(abilities.map(key=>[key,base[key]+bonus[key]])) as AbilityScores;if(Object.values(scores).some(v=>!Number.isInteger(v)||v<1||v>(method==='manual'?30:20))){error='Revisá las puntuaciones y los aumentos.';return;}form.abilityScores=scores;}
+</script>
+<details class="border border-primary/30 p-2 rounded mb-3"><summary class="cursor-pointer font-semibold">Asignar características y aumentos</summary>
+ <select aria-label="Método de características" class="select select-bordered select-sm w-full my-2" bind:value={method} on:change={setMethod}><option value="standard">Matriz estándar</option><option value="pointbuy">Compra por puntos (27)</option><option value="manual">Manual / tiradas</option></select>
+ <p class="text-xs mb-2">Ingresá la base y el aumento por separado. «Aplicar» reemplaza las puntuaciones finales. En 2024 los aumentos vienen del trasfondo.</p>
+ {#if method==='pointbuy'}<p class="text-sm font-bold">Gastados: {cost??'inválido'} / 27</p>{/if}
+ <div class="grid grid-cols-3 gap-2">{#each abilities as key,i}<div><label class="text-xs">{labels[i]} base<input aria-label={`${labels[i]} base`} type="number" class="input input-bordered input-sm w-full" bind:value={base[key]} min={method==='pointbuy'?8:1} max={method==='pointbuy'?15:30}/></label><label class="text-xs">Aumento<input aria-label={`${labels[i]} aumento`} type="number" class="input input-bordered input-sm w-full" bind:value={bonus[key]} min="0" max="2"/></label></div>{/each}</div>
+ <button type="button" class="btn btn-sm mt-2" on:click={apply}>Aplicar puntuaciones</button>{#if error}<p role="alert" class="text-error text-sm mt-2">{error}</p>{/if}
+</details>

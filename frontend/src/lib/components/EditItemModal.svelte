@@ -2,6 +2,10 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import type { InventoryItem } from '$lib/api/inventory';
+  import WeaponFields from './WeaponFields.svelte';
+  import ArmorFields from './ArmorFields.svelte';
+  import { armorFormFromData, armorDataFromForm, validateArmorForm } from '$lib/utils/armorForm';
+  import { weaponFormFromData, weaponDataFromForm, validateWeaponForm } from '$lib/utils/weaponForm';
   import { 
     validateItemName, 
     validateItemQuantity, 
@@ -12,6 +16,8 @@
   export let isOpen: boolean = false;
   export let item: InventoryItem | null = null;
   export let isOwner: boolean = false;
+  export let busy = false;
+  export let error = '';
 
   const dispatch = createEventDispatcher();
 
@@ -20,8 +26,6 @@
     description: string;
     quantity: number;
     value: number;
-    weaponMagicBonus: number;
-    armorMagicBonus: number;
   };
 
   let form: Form = {
@@ -29,8 +33,6 @@
     description: '',
     quantity: 1,
     value: 0,
-    weaponMagicBonus: 0,
-    armorMagicBonus: 0,
   };
 
   let validationErrors: { name: string; quantity: string; value: string; description: string } = {
@@ -48,6 +50,8 @@
   };
 
   let hasChanges: boolean = false;
+  let weaponForm = weaponFormFromData();
+  let armorForm = armorFormFromData();
   let isValid: boolean = false;
   
   // ✅ NUEVO: Variable para controlar si ya se inicializó el formulario
@@ -63,9 +67,9 @@
         description: item.description || '',
         quantity: item.quantity,
         value: item.value,
-        weaponMagicBonus: item.weaponData?.magicBonus || 0,
-        armorMagicBonus: item.armorData?.magicBonus || 0,
       };
+      weaponForm = weaponFormFromData(item.weaponData);
+      armorForm = armorFormFromData(item.armorData, item.type);
       resetValidation();
       formInitialized = true;
       lastItemId = item.id;
@@ -116,13 +120,13 @@
       const valueChanged = Number(form.value) !== Number(item.value);
       
       let weaponChanged = false;
-      if (item.weaponData) {
-        weaponChanged = Number(form.weaponMagicBonus) !== Number(item.weaponData.magicBonus || 0);
+      if (item.type === 'weapon') {
+        weaponChanged = !item.weaponData || JSON.stringify(weaponForm) !== JSON.stringify(weaponFormFromData(item.weaponData));
       }
       
       let armorChanged = false;
-      if (item.armorData) {
-        armorChanged = Number(form.armorMagicBonus) !== Number(item.armorData.magicBonus || 0);
+      if (item.type === 'armor' || item.type === 'shield') {
+        armorChanged = !item.armorData || JSON.stringify(armorForm) !== JSON.stringify(armorFormFromData(item.armorData, item.type));
       }
       
       hasChanges = nameChanged || descChanged || qtyChanged || valueChanged || weaponChanged || armorChanged;
@@ -131,16 +135,17 @@
     }
   }
 
-  $: isValid = !validationErrors.name && !validationErrors.quantity &&
-               !validationErrors.value && !validationErrors.description &&
-               form.name.trim().length > 0;
+  $: isValid = validateItemName(form.name).valid && validateItemQuantity(form.quantity).valid && form.quantity <= 999 &&
+               validateItemValue(form.value).valid && validateItemDescription(form.description).valid &&
+               (item?.type !== 'weapon' || !validateWeaponForm(weaponForm)) &&
+               (!item || !['armor','shield'].includes(item.type) || !validateArmorForm(armorForm));
 
   function handleBlur(field: keyof typeof touched) {
     touched[field] = true;
   }
 
   function handleUpdate() {
-    if (!isOwner) return;
+    if (!isOwner || busy) return;
 
     Object.keys(touched).forEach(key => {
       touched[key as keyof typeof touched] = true;
@@ -160,25 +165,19 @@
     if (form.quantity !== item?.quantity) updates.quantity = form.quantity;
     if (form.value !== item?.value) updates.value = form.value;
 
-    if (item?.weaponData && form.weaponMagicBonus !== (item.weaponData.magicBonus || 0)) {
-      updates.weaponData = {
-        ...item.weaponData,
-        magicBonus: form.weaponMagicBonus
-      };
+    if (item?.type === 'weapon') {
+      updates.weaponData = weaponDataFromForm(weaponForm, item.weaponData);
     }
 
-    if (item?.armorData && form.armorMagicBonus !== (item.armorData.magicBonus || 0)) {
-      updates.armorData = {
-        ...item.armorData,
-        magicBonus: form.armorMagicBonus
-      };
+    if (item && ['armor','shield'].includes(item.type)) {
+      updates.armorData = armorDataFromForm(armorForm, item.armorData, item.type);
     }
 
     dispatch('update', updates);
-    handleClose();
   }
 
   function handleClose() {
+    if (busy) return;
     resetValidation();
     formInitialized = false;
     lastItemId = null;
@@ -220,18 +219,18 @@
 {#if isOpen && item && isOwner}
   <div class="modal modal-open z-50" on:click={handleClose}>
     <div 
-      class="card-parchment border-4 border-secondary w-11/12 max-w-2xl relative max-h-[90vh] flex flex-col"
+      class="card-parchment border-2 sm:border-4 border-secondary w-full sm:w-11/12 max-w-2xl relative max-h-[92dvh] flex flex-col !overflow-hidden"
       on:click|stopPropagation
     >
       
       <!-- Header -->
-      <div class="p-6 border-b-2 border-secondary flex-shrink-0">
+      <div class="p-3 sm:p-6 border-b-2 border-secondary flex-shrink-0">
         <button 
           class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" 
           on:click={handleClose}
         >✕</button>
         
-        <h3 class="font-bold text-3xl font-medieval text-neutral text-center">
+        <h3 class="font-bold text-xl sm:text-3xl font-medieval text-neutral text-center pr-8">
           ✏️ Modificar Item
         </h3>
         <p class="text-center text-neutral/60 font-body italic mt-2">
@@ -240,7 +239,7 @@
       </div>
 
       <!-- Content -->
-      <div class="flex-1 overflow-y-auto p-6 space-y-4">
+      <div class="flex-1 min-h-0 overflow-y-auto p-3 sm:p-6 space-y-4">
         
         <!-- Nombre -->
         <div class="form-control">
@@ -391,97 +390,17 @@
           {/if}
         </div>
 
-        <!-- ✅ NUEVO: Edición de bonus mágicos -->
-        {#if item.weaponData || item.armorData}
-          <div class="divider text-neutral/50">⚡ Bonus Mágicos</div>
-          
-          {#if item.weaponData}
-            <div class="form-control">
-              <label class="label">
-                <span class="label-text font-medieval text-neutral">⚔️ Bonus de Ataque/Daño</span>
-              </label>
-              <input 
-                type="number" 
-                bind:value={form.weaponMagicBonus}
-                min="0"
-                max="5"
-                class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-24"
-              />
-              <label class="label">
-                <span class="label-text-alt text-neutral/60 italic text-xs">
-                  +0 a +5 (típico para armas mágicas)
-                </span>
-              </label>
-            </div>
-          {/if}
-
-          {#if item.armorData}
-            <div class="form-control">
-              <label class="label">
-                <span class="label-text font-medieval text-neutral">🛡️ Bonus de AC</span>
-              </label>
-              <input 
-                type="number" 
-                bind:value={form.armorMagicBonus}
-                min="0"
-                max="3"
-                class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-24"
-              />
-              <label class="label">
-                <span class="label-text-alt text-neutral/60 italic text-xs">
-                  +0 a +3 (típico para armaduras mágicas)
-                </span>
-              </label>
-            </div>
-          {/if}
+        {#if error}<p class="text-error text-sm" role="alert">{error}</p>{/if}
+        {#if item.type === 'weapon'}
+          <WeaponFields bind:form={weaponForm} disabled={busy} />
         {/if}
-
-        <!-- Info del item original (estadísticas no editables) -->
-        {#if item.weaponData || item.armorData}
-          <div class="divider text-neutral/50">📊 Estadísticas Base</div>
-          
-          {#if item.weaponData}
-            <div class="bg-error/10 p-4 rounded-lg border border-error/30">
-              <p class="font-medieval text-neutral font-bold mb-2">⚔️ Datos de Arma</p>
-              <div class="grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span class="text-neutral/60">Daño Base:</span>
-                  <span class="font-bold ml-2">{item.weaponData.damageDice} {item.weaponData.damageType}</span>
-                </div>
-                <div>
-                  <span class="text-neutral/60">Tipo:</span>
-                  <span class="font-bold ml-2 capitalize">{item.weaponData.weaponType.replace('_', ' ')}</span>
-                </div>
-              </div>
-              <p class="text-xs text-neutral/60 italic mt-2">
-                * El daño base y tipo no son editables
-              </p>
-            </div>
-          {/if}
-
-          {#if item.armorData}
-            <div class="bg-info/10 p-4 rounded-lg border border-info/30">
-              <p class="font-medieval text-neutral font-bold mb-2">🛡️ Datos de Armadura</p>
-              <div class="grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span class="text-neutral/60">AC Base:</span>
-                  <span class="font-bold ml-2">{item.armorData.baseAC}</span>
-                </div>
-                <div>
-                  <span class="text-neutral/60">Tipo:</span>
-                  <span class="font-bold ml-2 capitalize">{item.armorData.armorType}</span>
-                </div>
-              </div>
-              <p class="text-xs text-neutral/60 italic mt-2">
-                * La AC base y tipo no son editables
-              </p>
-            </div>
-          {/if}
+        {#if item.type === 'armor' || item.type === 'shield'}
+          <ArmorFields bind:form={armorForm} disabled={busy} isShield={item.type === 'shield'} />
         {/if}
       </div>
 
       <!-- Footer -->
-      <div class="flex justify-center gap-4 p-6 border-t-2 border-secondary flex-shrink-0">
+      <div class="grid grid-cols-2 gap-2 p-3 sm:p-6 border-t-2 border-secondary flex-shrink-0">
         <button 
           on:click={handleClose}
           class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval"
@@ -491,7 +410,7 @@
         <button 
           on:click={handleUpdate}
           class="btn btn-dnd"
-          disabled={!isValid || !hasChanges}
+          disabled={busy || !isValid || !hasChanges}
         >
           <span class="text-xl">💾</span>
           {hasChanges ? 'Guardar Cambios' : 'Sin Cambios'}

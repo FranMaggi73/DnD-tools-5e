@@ -1,4 +1,10 @@
 <script lang="ts">
+  import CharacterOriginFields from './CharacterOriginFields.svelte';
+  import CharacterBuildDetails from './CharacterBuildDetails.svelte';
+  import CharacterSpellbook from './CharacterSpellbook.svelte';
+  import CharacterTrainingFields from './CharacterTrainingFields.svelte';
+  import AbilityScoreSetup from './AbilityScoreSetup.svelte';
+  import {normalizeBuild,averageHp} from '$lib/rules/characterBuilder';
   import { createEventDispatcher } from 'svelte';
   import type { CharacterForm, Skill, AbilityKey } from '$lib/types';
   import { 
@@ -14,15 +20,20 @@
     validateLevel 
   } from '$lib/utils/validation';
   import debounce from 'lodash/debounce';
+  import { skillBonus, hasJackOfAllTrades, initiativeModifier } from '$lib/rules/2024';
 
+  export let busy = false;
+  export let submitError = '';
   export let isOpen = false;
+  $: if(!form.build)form.build=normalizeBuild();
+  let hpExtraPerLevel=0;
   export let isEdit = false;
   export let form: CharacterForm;
 
   const dispatch = createEventDispatcher();
 
   let currentStep = 1;
-  const totalSteps = 4;
+  const totalSteps = 6;
 
   let errors = {
     name: '',
@@ -42,6 +53,11 @@
     speed: false
   };
 
+  $: if (form.initiativeBonus === undefined) form.initiativeBonus = isEdit ? form.initiative - getAbilityModifier(form.abilityScores.dexterity) : 0;
+  $: {
+    const calculated = initiativeModifier(form.abilityScores, form.initiativeBonus || 0);
+    if (form.initiative !== calculated) form.initiative = calculated;
+  }
   $: proficiencyBonus = getProficiencyBonus(form.level);
 
   $: abilityModifiers = {
@@ -97,7 +113,7 @@
     const validateAbilityScoresDebounced = debounce(() => {
     // Validación pesada de ability scores
     const allScoresValid = Object.values(form.abilityScores).every(
-      score => score >= 1 && score <= 30
+      score => Number.isInteger(score) && score >= 1 && score <= 30
     );
     
     if (!allScoresValid) {
@@ -106,7 +122,7 @@
   }, 300);
   
   // Aplicar validación debounced en cambios de ability scores
-  $: if (form.abilityScores && currentStep === 3) {
+  $: if (form.abilityScores && currentStep === 2) {
     validateAbilityScoresDebounced();
   }
 
@@ -123,17 +139,19 @@
         return valid;
       }
       
-      case 2: {
+      case 3: {
         const valid = form.maxHp > 0 && form.armorClass > 0 && form.speed >= 0 &&
                       !errors.maxHp && !errors.armorClass && !errors.speed;
         return valid;
       }
       
-      case 3: {
-        const valid = Object.values(form.abilityScores).every(score => score >= 1 && score <= 30);
+      case 2: {
+        const valid = Object.values(form.abilityScores).every(score => Number.isInteger(score) && score >= 1 && score <= 30);
         return valid;
       }
       
+      case 5:
+      case 6:
       case 4: {
         return true;
       }
@@ -156,7 +174,7 @@
         touched.name = true;
         touched.class = true;
         touched.level = true;
-      } else if (currentStep === 2) {
+      } else if (currentStep === 3) {
         touched.maxHp = true;
         touched.armorClass = true;
         touched.speed = true;
@@ -223,17 +241,7 @@
   }
 
   function getSkillBonus(skill: Skill | undefined): number {
-    if (!skill) return 0;
-    const abilityMod = abilityModifiers[skill.ability];
-    let bonus = abilityMod;
-    
-    if (skill.expertise) {
-      bonus += proficiencyBonus * 2;
-    } else if (skill.proficient) {
-      bonus += proficiencyBonus;
-    }
-    
-    return bonus;
+    return skill ? skillBonus(form.abilityScores[skill.ability], skill, proficiencyBonus, hasJackOfAllTrades(form.class, form.level)) : 0;
   }
 
   function getSaveBonus(ability: AbilityKey): number {
@@ -248,16 +256,10 @@
       touched[key as keyof typeof touched] = true;
     });
 
-    // Validar paso por paso
-    for (let step = 1; step <= totalSteps; step++) {
-      currentStep = step;
-      if (!isStepValid) {
-        return;
-      }
+    if(!form.name.trim()||errors.name||errors.class||errors.level||errors.maxHp||errors.armorClass||errors.speed||Object.values(form.abilityScores).some(v=>!Number.isInteger(v)||v<1||v>30)) {
+      currentStep=errors.name||errors.class||errors.level?1:errors.maxHp||errors.armorClass||errors.speed?3:2;return;
     }
-
     dispatch('submit', form);
-    resetValidation();
   }
 
   function resetValidation() {
@@ -296,50 +298,47 @@
 
 {#if isOpen}
   <div class="modal modal-open z-50">
-    <div class="card-parchment border-4 border-secondary w-11/12 max-w-4xl max-h-[90vh] relative flex flex-col">
+    <div class="character-builder card-parchment border-2 sm:border-4 border-secondary w-full sm:w-11/12 max-w-4xl max-h-[90dvh] relative flex flex-col min-h-0 min-w-0 overflow-x-hidden">
       
-      <div class="p-6 border-b-2 border-secondary flex-shrink-0">
+      <div class="p-3 sm:p-6 border-b-2 border-secondary flex-shrink-0">
         <button 
           class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" 
           on:click={handleClose}
+          disabled={busy}
         >✕</button>
         
-        <h3 class="font-bold text-3xl font-medieval text-neutral text-center mb-4">
+        <h3 class="font-bold text-xl sm:text-3xl font-medieval text-neutral text-center mb-3 pr-8">
           {isEdit ? '✏️ Editar Personaje' : '🧙‍♂️ Crear Personaje'}
         </h3>
 
-        <div class="flex justify-between items-center mb-2">
+        <div class="grid grid-cols-6 gap-1 mb-2">
           {#each Array(totalSteps) as _, i}
-            <div class="flex items-center flex-1">
+            <div class="flex justify-center min-w-0">
               <button
-                class="btn btn-circle btn-sm {currentStep > i + 1 ? 'btn-success' : currentStep === i + 1 ? 'btn-secondary' : 'btn-ghost'}"
+                class="step-button btn btn-circle btn-sm {currentStep > i + 1 ? 'btn-success' : currentStep === i + 1 ? 'btn-secondary' : 'btn-ghost'}"
                 on:click={() => currentStep = i + 1}
                 disabled={i + 1 > currentStep}
               >
                 {i + 1}
               </button>
-              {#if i < totalSteps - 1}
-                <div class="flex-1 h-1 mx-2 bg-base-300 rounded">
-                  <div 
-                    class="h-full bg-secondary rounded transition-all duration-300"
-                    style="width: {currentStep > i + 1 ? '100%' : '0%'}"
-                  ></div>
-                </div>
-              {/if}
+
             </div>
           {/each}
         </div>
 
         <div class="text-center text-sm text-neutral/70 font-body">
-          {#if currentStep === 1}Información Básica
-          {:else if currentStep === 2}Estadísticas de Combate
-          {:else if currentStep === 3}Puntuaciones de Habilidad
-          {:else if currentStep === 4}Competencias & Salvaciones
+          {#if submitError}<p role="alert" class="text-error text-sm mb-3">{submitError}</p>{/if}
+        {#if currentStep === 1}Información Básica
+          {:else if currentStep === 3}Estadísticas de Combate
+          {:else if currentStep === 2}Características
+          {:else if currentStep === 4}Competencias y Salvaciones
+          {:else if currentStep === 5}Rasgos y Dotes
+          {:else if currentStep === 6}Hechizos
           {/if}
         </div>
       </div>
 
-      <div class="flex-1 overflow-y-auto p-6">
+      <div class="flex-1 min-h-0 overflow-y-auto p-3 sm:p-6">
         
         {#if currentStep === 1}
           <div class="space-y-4">
@@ -368,27 +367,6 @@
               <div class="form-control">
                 <label class="label">
                   <span class="label-text font-medieval text-neutral text-lg">
-                    Clase <span class="text-error">*</span>
-                  </span>
-                </label>
-                <input 
-                  type="text" 
-                  bind:value={form.class}
-                  on:blur={() => handleBlur('class')}
-                  placeholder="Ej: Mago"
-                  class="input input-bordered bg-[#2d241c] text-base-content 
-                        {errors.class && touched.class ? 'border-error border-2' : 'border-primary/50'}"
-                />
-                {#if errors.class && touched.class}
-                  <label class="label">
-                    <span class="label-text-alt text-error">⚠️ {errors.class}</span>
-                  </label>
-                {/if}
-              </div>
-
-              <div class="form-control">
-                <label class="label">
-                  <span class="label-text font-medieval text-neutral text-lg">
                     Nivel <span class="text-error">*</span>
                   </span>
                 </label>
@@ -409,6 +387,8 @@
               </div>
             </div>
 
+            <CharacterOriginFields bind:form/>
+            {#if errors.class}<p class="text-error text-sm">{errors.class}</p>{/if}
             <div class="bg-info/10 p-4 rounded-lg border border-info/30">
               <p class="text-sm font-medieval text-neutral mb-1">
                 Bonus de Competencia: +{proficiencyBonus}
@@ -420,8 +400,9 @@
           </div>
         {/if}
 
-        {#if currentStep === 2}
+        {#if currentStep === 3}
           <div class="space-y-4">
+           {#if form.build}<div class="border border-primary/30 rounded p-2 space-y-2"><label class="block text-sm">Dado de golpe<select aria-label="Dado de golpe" class="select select-bordered select-sm w-full" bind:value={form.build.hitDie}>{#each [6,8,10,12] as die}<option value={die}>d{die}</option>{/each}</select></label><label class="block text-sm">Vida adicional por nivel (especie, dote u otro rasgo)<input class="input input-bordered input-sm w-full" type="number" min="0" max="20" bind:value={hpExtraPerLevel}/></label><button type="button" class="btn btn-sm" on:click={()=>form.maxHp=averageHp(form.build?.hitDie||8,form.level,form.abilityScores.constitution,hpExtraPerLevel)}>Calcular vida con promedio</button><p class="text-xs">Primer nivel: dado máximo + CON. Niveles siguientes: promedio + CON, mínimo 1 por nivel. Ajustá los rasgos adicionales y revisá la vida tras cambiar CON.</p></div>{/if}
             <div class="grid grid-cols-2 gap-4">
               <div class="form-control">
                 <label class="label">
@@ -472,19 +453,19 @@
               <div class="form-control">
                 <label class="label">
                   <span class="label-text font-medieval text-neutral text-lg">
-                    Iniciativa <span class="text-error">*</span>
+                    Bono adicional de iniciativa
                   </span>
                 </label>
                 <input 
                   type="number" 
-                  bind:value={form.initiative}
+                  bind:value={form.initiativeBonus}
                   min="-5"
                   max="15"
                   class="input input-bordered bg-[#2d241c] text-base-content border-primary/50"
                 />
                 <label class="label">
                   <span class="label-text-alt text-neutral/60 italic text-xs">
-                    Normalmente es tu modificador de Destreza
+                    Destreza + bono adicional = {formatModifier(form.initiative)} de iniciativa
                   </span>
                 </label>
               </div>
@@ -514,7 +495,8 @@
           </div>
         {/if}
 
-        {#if currentStep === 3}
+        {#if currentStep === 2}
+          <AbilityScoreSetup bind:form/>
           <div class="space-y-4">
             <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
             {#each abilityKeys as ability}
@@ -550,10 +532,11 @@
         {/if}
 
         {#if currentStep === 4}
+          <CharacterTrainingFields bind:form/>
           <div class="space-y-6">
             <div>
               <h4 class="font-medieval text-xl text-neutral mb-3 flex items-center gap-2">
-                🛡️ Tiradas de Salvación
+                🛡️ Tiradas de Salvación (competencia, sin pericia)
               </h4>
               <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {#each savingThrowKeys as ability}
@@ -581,7 +564,7 @@
             <div class="divider text-neutral/50">⚔️</div>
             <div>
               <h4 class="font-medieval text-xl text-neutral mb-3 flex items-center gap-2">
-                🎯 Habilidades
+                🎯 Habilidades · ★ Pericia
               </h4>
               <div class="space-y-2 max-h-96 overflow-y-auto pr-2">
                 {#each DND_SKILLS as skillDef}
@@ -610,7 +593,7 @@
                         <button
                           on:click={() => toggleSkillExpertise(skillDef.name)}
                           class="btn btn-xs {skillMap[skillDef.name].expertise ? 'btn-warning' : 'btn-ghost'}"
-                          title="Expertise (x2 proficiency)"
+                          title="Pericia: duplica el bono de competencia de esta habilidad"
                         >
                           ★
                         </button>
@@ -622,14 +605,15 @@
             </div>
           </div>
         {/if}
+        {#if currentStep === 5}<CharacterBuildDetails bind:form/>{/if}
+        {#if currentStep === 6 && form.build}<div class="text-sm border border-primary/30 rounded p-2 mb-3"><strong>{form.name}</strong> · {form.class} {form.level}<br/>{[form.build.species.name,form.build.subclass.name,form.build.background.name].filter(Boolean).join(' · ')}<br/>Vida {form.maxHp} · CA {form.armorClass} · Competencia +{proficiencyBonus}</div><CharacterSpellbook bind:build={form.build} level={form.level} abilityScores={form.abilityScores}/>{/if}
       </div>
-
-      <div class="p-6 border-t-2 border-secondary flex-shrink-0">
-        <div class="flex justify-between gap-4">
+      <div class="p-3 sm:p-6 border-t-2 border-secondary flex-shrink-0">
+        <div class="grid grid-cols-2 gap-2 sm:gap-4">
           <button 
             on:click={prevStep}
             class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval"
-            disabled={currentStep === 1}
+            disabled={currentStep === 1 || busy}
           >
             ← Anterior
           </button>
@@ -638,7 +622,7 @@
             <button 
               on:click={nextStep}
               class="btn btn-dnd"
-              disabled={!isStepValid}
+              disabled={!isStepValid || busy}
               type="button"
             >
               Siguiente →
@@ -647,11 +631,11 @@
             <button 
               on:click={handleSubmit}
               class="btn btn-dnd"
-              disabled={!isStepValid}
+              disabled={!isStepValid || busy}
               type="button"
             >
               <span class="text-xl">{isEdit ? '💾' : '✨'}</span>
-              {isEdit ? 'Guardar Cambios' : 'Crear Personaje'}
+              {busy ? 'Guardando…' : isEdit ? 'Guardar Cambios' : 'Crear Personaje'}
             </button>
           {/if}
         </div>
@@ -661,6 +645,9 @@
 {/if}
 
 <style>
+  .step-button { min-width: 0; width: 100%; max-width: 2.75rem; padding-inline: 0; }
+  .step-button:disabled { color: #66594a; background: #d4c39d; opacity: 1; }
+  .character-builder :global(.input), .character-builder :global(.select), .character-builder :global(.textarea) { color: #f7ecd8; background-color: #2d241c; }
   .overflow-y-auto::-webkit-scrollbar {
     width: 8px;
   }

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Combatant } from '$lib/types';
   import { createEventDispatcher } from 'svelte';
+  import ConditionBadge from './ConditionBadge.svelte';
 
   export let combatant: Combatant;
   export let isCurrentTurn: boolean = false;
@@ -10,7 +11,8 @@
 
   $: hpPercentage = (combatant.currentHp / combatant.maxHp) * 100;
   $: hpColor = hpPercentage > 50 ? 'success' : hpPercentage > 25 ? 'warning' : 'error';
-  $: isDead = combatant.currentHp <= 0;
+  $: isDead = combatant.rules.lifeState === 'dead';
+  const lifeLabels = { alive: 'Vivo', unconscious: 'Inconsciente', stable: 'Estable', dead: 'Muerto' };
 
   // Descripción del estado de salud para jugadores
   $: healthStatus = getHealthStatus(hpPercentage);
@@ -32,8 +34,9 @@
     dispatch('addCondition', combatant);
   }
 
-  function handleRemove() {
-    dispatch('remove', combatant);
+  function selectMenu(event: MouseEvent, action: 'viewSheet' | 'remove') {
+    (event.currentTarget as HTMLElement).closest('details')?.removeAttribute('open');
+    dispatch(action, combatant);
   }
 </script>
 
@@ -53,6 +56,11 @@
   {/if}
 
   <div class="card-body p-3 sm:p-4">
+    <div class="flex flex-wrap gap-1 text-xs text-neutral" aria-live="polite">
+      {#if combatant.rules.lifeState !== 'alive'}<span class="badge badge-error">{lifeLabels[combatant.rules.lifeState]}</span>{/if}
+      {#if combatant.rules.exhaustion}<span class="badge badge-warning">Agotamiento {combatant.rules.exhaustion} · d20 −{2 * combatant.rules.exhaustion}</span>{/if}
+      {#if combatant.rules.concentrationSaveDC !== null}<span class="badge badge-warning">Concentración pendiente CD {combatant.rules.concentrationSaveDC}</span>{/if}
+    </div>
     <!-- Header -->
     <div class="flex items-start gap-2 sm:gap-3">
       <div class="avatar flex-shrink-0">
@@ -81,31 +89,36 @@
       </div>
 
       {#if isDM}
-        <div class="dropdown dropdown-end flex-shrink-0">
-          <label tabindex="0" class="btn btn-ghost btn-xs btn-circle">
+        <details class="dropdown dropdown-end flex-shrink-0">
+          <summary class="btn btn-ghost btn-xs btn-circle list-none" aria-label={`Opciones de ${combatant.name}`}>
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
             </svg>
-          </label>
-          <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-neutral rounded-box w-40 sm:w-52 border-2 border-secondary text-sm">
-            <li><a on:click={handleRemove} class="text-error">🗑️ Eliminar</a></li>
+          </summary>
+          <ul class="dropdown-content z-20 menu p-2 shadow bg-neutral rounded-box w-44 sm:w-52 border-2 border-secondary text-sm">
+            <li><button type="button" on:click={(event) => selectMenu(event, 'viewSheet')} class="text-secondary">📋 Ver ficha</button></li>
+            <li><button type="button" on:click={(event) => selectMenu(event, 'remove')} class="text-error">🗑️ Eliminar</button></li>
           </ul>
-        </div>
+        </details>
       {/if}
     </div>
 
+      <div class="flex items-center gap-2 h-8 shrink-0" aria-label="Concentración e inspiración">
+        {#if combatant.rules.concentration}
+          <span class="badge h-auto rounded-full border border-info/60 bg-info/20 text-neutral px-2 py-1 text-base" tabindex="0" title={`Concentración: ${combatant.rules.concentration}`} aria-label={`Concentración: ${combatant.rules.concentration}`}>🔮</span>
+        {/if}
+        {#if combatant.rules.heroicInspiration}
+          <span class="badge h-auto rounded-full border border-secondary bg-secondary/30 text-neutral px-2 py-1 text-base" tabindex="0" title="Inspiración heroica disponible" aria-label="Inspiración heroica disponible">✨</span>
+        {/if}
+      </div>
+
     <!-- HP - DIFERENTE PARA DM Y JUGADORES -->
-<!-- HP - DIFERENTE PARA DM Y JUGADORES -->
 <div class="mt-2 sm:mt-3">
   {#if isDM}
     <!-- Vista DM: HP exacto con barra -->
     <div class="flex justify-between items-center mb-1">
       <span class="text-xs font-medieval text-neutral/70">Puntos de Vida</span>
       <div class="flex items-center gap-1">
-        <!-- HP Temporal badge -->
-        {#if combatant.temporaryHp > 0}
-          <span class="badge badge-xs badge-info">🛡️ +{combatant.temporaryHp}</span>
-        {/if}
         <span class="font-bold text-neutral text-sm sm:text-base">{combatant.currentHp}/{combatant.maxHp}</span>
       </div>
     </div>
@@ -115,17 +128,6 @@
       max={combatant.maxHp}
     ></progress>
     
-    <!-- Barra de HP Temporal (si existe) -->
-    {#if combatant.temporaryHp > 0}
-      <div class="mt-1">
-        <div class="w-full bg-info/20 rounded-full h-1.5">
-          <div 
-            class="bg-info h-full rounded-full"
-            style="width: {Math.min(100, (combatant.temporaryHp / combatant.maxHp) * 100)}%"
-          ></div>
-        </div>
-      </div>
-    {/if}
   {:else}
     <!-- Vista Jugador: Estado descriptivo -->
     <div class="bg-{hpColor}/10 p-2 rounded-lg border border-{hpColor}/30">
@@ -136,10 +138,6 @@
           <span class="font-medieval text-xs sm:text-sm {healthStatus.color} font-bold">
             {healthStatus.label}
           </span>
-          <!-- Badge de HP temporal para jugadores -->
-          {#if combatant.temporaryHp > 0}
-            <span class="badge badge-xs badge-info ml-1">+{combatant.temporaryHp} 🛡️</span>
-          {/if}
         </div>
       </div>
       <!-- Barra visual aproximada (sin números) -->
@@ -149,26 +147,29 @@
           style="width: {hpPercentage}%"
         ></div>
       </div>
-      <!-- Mini barra de HP temporal para jugadores -->
-      {#if combatant.temporaryHp > 0}
-        <div class="w-full bg-info/20 rounded-full h-1 mt-1">
-          <div class="bg-info h-full rounded-full w-1/3"></div>
-        </div>
-      {/if}
     </div>
   {/if}
+  <div class="mt-2">
+    <div class="flex justify-between items-center gap-2 mb-1">
+      <span class="text-xs font-medieval text-neutral/70">HP temporales</span>
+      <span class="badge badge-xs border-info/50 bg-info/20 text-neutral">🛡️ {combatant.temporaryHp}</span>
+    </div>
+    <progress class="progress progress-info w-full h-1.5 bg-info/20" aria-label="HP temporales" max={isDM ? combatant.maxHp : 3} value={isDM ? combatant.temporaryHp : combatant.temporaryHp > 0 ? 1 : 0}></progress>
+  </div>
 </div>
     <!-- Condiciones - VISIBLE PARA TODOS -->
-    {#if combatant.conditions && combatant.conditions.length > 0}
-      <div class="mt-2">
-        <span class="text-xs font-medieval text-neutral/70 block mb-1">Condiciones:</span>
-        <div class="flex flex-wrap gap-1">
+      <div class="mt-2 p-2 rounded-lg border border-warning/30 bg-warning/10">
+        <span class="text-xs font-medieval text-neutral/70 block mb-1">Condiciones</span>
+        {#if combatant.conditions && combatant.conditions.length > 0}
+        <div class="flex flex-wrap items-center gap-1 min-h-8">
           {#each combatant.conditions as condition}
-            <div class="badge badge-xs sm:badge-sm badge-warning">{condition}</div>
+            <ConditionBadge {condition} />
           {/each}
         </div>
+        {:else}
+          <p class="text-sm text-neutral/70 min-h-8 flex items-center">Sin condiciones</p>
+        {/if}
       </div>
-    {/if}
 
     <!-- Actions (DM only) -->
     {#if isDM}

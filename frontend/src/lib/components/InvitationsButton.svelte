@@ -1,5 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { collection, onSnapshot, query, where } from 'firebase/firestore';
+  import { auth, db } from '$lib/firebase';
+  import { fromDoc } from '$lib/api/firestore';
   import { api } from '$lib/api/api';
   import type { Invitation } from '$lib/types';
 
@@ -14,9 +17,11 @@
   let dropdownOpen = false; // ✅ NUEVO: Estado del dropdown
 
   onMount(() => {
-    loadInvitations();
-    const interval = setInterval(loadInvitations, 30000);
-    return () => clearInterval(interval);
+    if (!auth.currentUser?.email) return;
+    return onSnapshot(query(collection(db, 'invitations'),
+      where('toEmail', '==', auth.currentUser.email.toLowerCase()), where('status', '==', 'pending')),
+      snapshot => { invitations = snapshot.docs.map(entry => fromDoc<Invitation>(entry)); },
+      cause => { invitations = []; console.error('Error al cargar invitaciones:', cause); });
   });
 
   async function loadInvitations() {

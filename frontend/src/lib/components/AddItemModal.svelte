@@ -2,11 +2,17 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import debounce from 'lodash/debounce';
-  import { open5eInventoryApi, type Open5eItem } from '$lib/api/inventory';
+  import { open5eInventoryApi, type Open5eItem, type WeaponData, type ArmorData } from '$lib/api/inventory';
   import { validateCompleteItem, type CreateItemData } from '$lib/utils/validation';
+  import WeaponFields from './WeaponFields.svelte';
+  import ArmorFields from './ArmorFields.svelte';
+  import { armorFormFromData, armorDataFromForm, validateArmorForm } from '$lib/utils/armorForm';
+  import { weaponFormFromData, weaponDataFromForm, validateWeaponForm } from '$lib/utils/weaponForm';
 
   export let isOpen: boolean = false;
   export let characterId: string = '';
+  export let busy = false;
+  export let error = '';
 
   const dispatch = createEventDispatcher();
 
@@ -22,6 +28,11 @@
 
   // Modo manual
   let manualMode = false;
+  let weaponForm = weaponFormFromData();
+  let originalWeapon: WeaponData | undefined;
+  let originalArmor: ArmorData | undefined;
+  let armorForm = armorFormFromData();
+  let lastArmorType = '';
   let manualForm = {
     name: '',
     type: 'other',
@@ -29,13 +40,17 @@
     quantity: 1,
     value: 0,
   };
+  $: if (['armor','shield'].includes(manualForm.type) && manualForm.type !== lastArmorType) {
+    armorForm = armorFormFromData(originalArmor, manualForm.type);
+    lastArmorType = manualForm.type;
+  }
 
   // ✅ NUEVO: Estados de validación
   let validationError = '';
   let touched = false;
 
   // ✅ NUEVO: Cache de búsquedas (usando el cache del API)
-  const DEBOUNCE_TIME = 800; // ✅ CORREGIDO: Aumentado de 500ms a 800ms
+  const DEBOUNCE_TIME = 150;
 
   // ✅ MEJORADO: Búsqueda con cancelación
  const handleSearch = debounce(async () => {
@@ -56,8 +71,10 @@
     
     try {
       // ✅ NUEVO: Pasar tipo al API
-      const type = selectedTypeFilter === 'all' ? undefined : selectedTypeFilter;
+      const filter = selectedTypeFilter;
+      const type = filter === 'all' ? undefined : filter;
       const result = await open5eInventoryApi.searchItems(query, type);
+      if (searchQuery.trim() !== query || selectedTypeFilter !== filter || !isOpen || manualMode) return;
       
       suggestions = (result.results || []).slice(0, 20);
       noResults = suggestions.length === 0;
@@ -86,18 +103,19 @@
 
       // ✅ CORREGIDO: Solo fetch si source está definido
       if ((item as any).source) {
-        try {
-          fullItem = await open5eInventoryApi.getItem(item.slug, category);
-        } catch (err) {
-          console.warn('Could not fetch full item, using summary:', err);
-          fullItem = item;
-        }
+        fullItem = await open5eInventoryApi.getItem(item.slug, category);
       }
 
+      fullItem = { ...fullItem, source: category };
       selectedItem = fullItem;
 
       // Convertir a formato de inventario
       const converted = open5eInventoryApi.convertToInventoryItem(fullItem);
+      originalWeapon = converted.weaponData;
+      weaponForm = weaponFormFromData(originalWeapon);
+      originalArmor = converted.armorData;
+      armorForm = armorFormFromData(originalArmor, converted.type);
+      lastArmorType = converted.type || '';
 
       manualForm = {
         name: converted.name || fullItem.name || '',
@@ -129,10 +147,11 @@
     };
     
     const result = validateCompleteItem(itemData);
-    validationError = result.valid ? '' : result.error || '';
+    validationError = result.valid ? (manualForm.type === 'weapon' ? validateWeaponForm(weaponForm) : ['armor','shield'].includes(manualForm.type) ? validateArmorForm(armorForm) : '') : result.error || '';
   }
 
   function handleAddItem() {
+    if (busy) return;
     touched = true;
     
     if (!manualForm.name.trim()) {
@@ -153,23 +172,33 @@
       validationError = validation.error || '';
       return;
     }
+    if (manualForm.type === 'weapon' && validateWeaponForm(weaponForm)) {
+      validationError = validateWeaponForm(weaponForm);
+      return;
+    }
+    if (manualForm.quantity < 1 || manualForm.quantity > 999) { validationError = 'La cantidad debe estar entre 1 y 999.'; return; }
+    if (['armor','shield'].includes(manualForm.type) && validateArmorForm(armorForm)) { validationError = validateArmorForm(armorForm); return; }
     
     const fullItemData = {
       ...itemData,
-      weaponData: selectedItem && manualForm.type === 'weapon' 
-        ? open5eInventoryApi.convertToInventoryItem(selectedItem).weaponData 
+      weaponData: manualForm.type === 'weapon'
+        ? weaponDataFromForm(weaponForm, originalWeapon)
         : undefined,
-      armorData: selectedItem && (manualForm.type === 'armor' || manualForm.type === 'shield')
-        ? open5eInventoryApi.convertToInventoryItem(selectedItem).armorData
+      armorData: manualForm.type === 'armor' || manualForm.type === 'shield'
+        ? armorDataFromForm(armorForm, originalArmor, manualForm.type)
         : undefined,
       open5eSlug: selectedItem?.slug,
+      rarity: selectedItem?.rarity,
+      ...(!['weapon','armor','shield'].includes(manualForm.type) && selectedItem ? {
+        isMagical: open5eInventoryApi.convertToInventoryItem(selectedItem).isMagical || false,
+        requiresAttunement: open5eInventoryApi.convertToInventoryItem(selectedItem).requiresAttunement || false
+      } : {}),
     };
     
     dispatch('add', fullItemData);
-    handleClose();
   }
 
-  function handleClose() {
+  function resetForm() {
     // ✅ Cancelar búsquedas pendientes
     if (searchController) {
       searchController.abort();
@@ -179,6 +208,8 @@
     searchQuery = '';
     suggestions = [];
     selectedItem = null;
+    originalWeapon = undefined; originalArmor = undefined;
+    weaponForm = weaponFormFromData(); armorForm = armorFormFromData(); lastArmorType = '';
     manualMode = false;
     manualForm = {
       name: '',
@@ -191,8 +222,13 @@
     loading = false;
     validationError = '';
     touched = false;
+  }
+  function handleClose() {
+    if (busy) return;
+    resetForm();
     dispatch('close');
   }
+  $: if (!isOpen) resetForm();
 
   function startManualMode() {
     manualMode = true;
@@ -236,18 +272,18 @@
     on:keydown={(e) => e.key === 'Escape' && handleClose()}
   >
     <div 
-      class="card-parchment border-4 border-secondary w-11/12 max-w-4xl max-h-[90vh] relative flex flex-col"
+      class="card-parchment border-2 sm:border-4 border-secondary w-full sm:w-11/12 max-w-4xl max-h-[92dvh] relative flex flex-col !overflow-hidden"
       on:click|stopPropagation
     >
       
       <!-- Header -->
-      <div class="p-6 border-b-2 border-secondary flex-shrink-0">
+      <div class="p-3 sm:p-6 border-b-2 border-secondary flex-shrink-0">
         <button 
           class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" 
           on:click={handleClose}
         >✕</button>
         
-        <h3 class="font-bold text-3xl font-medieval text-neutral text-center mb-2">
+        <h3 class="font-bold text-xl sm:text-3xl font-medieval text-neutral text-center mb-2 pr-8">
           {#if manualMode}
             ➕ Agregar Item
           {:else}
@@ -258,13 +294,14 @@
           {#if manualMode}
             Completa los detalles del item
           {:else}
-            Busca en la base de datos oficial de D&D 5e
+            Buscá objetos en nuestro catálogo
           {/if}
         </p>
       </div>
 
       <!-- Content -->
-      <div class="flex-1 overflow-y-auto p-6">
+      <div class="flex-1 min-h-0 overflow-y-auto p-3 sm:p-6">
+        {#if validationError && !manualMode}<p class="text-error text-sm mb-3" role="alert">{validationError}</p>{/if}
         
         {#if !manualMode}
           <!-- Modo búsqueda -->
@@ -364,6 +401,7 @@
                         {#if item.category}
                           <span class="badge badge-xs badge-secondary">{item.category}</span>
                         {/if}
+                        {#if item.catalogSource}<span class="badge badge-xs badge-outline">{item.catalogSource.name} · {item.catalogSource.edition}</span>{/if}
                       </div>
                       
                       <p class="text-xs text-neutral/70 line-clamp-2 w-full">
@@ -380,7 +418,7 @@
               <div class="text-center py-12">
                 <div class="text-6xl mb-4">📦</div>
                 <p class="text-neutral/70 font-body mb-4">
-                  Escribe para buscar items en la base de datos oficial
+                  Escribí para buscar objetos en el catálogo
                 </p>
                 <div class="flex flex-wrap gap-2 justify-center text-xs text-neutral/50">
                   <span class="bg-neutral/10 px-3 py-1 rounded">plate armor</span>
@@ -410,6 +448,7 @@
                 <span>{validationError}</span>
               </div>
             {/if}
+            {#if error}<p class="text-error text-sm" role="alert">{error}</p>{/if}
             
             <!-- Nombre -->
             <div class="form-control">
@@ -442,8 +481,14 @@
               </select>
             </div>
 
-            <!-- Grid de cantidad, valor, peso -->
-            <div class="grid grid-cols-3 gap-4">
+            {#if manualForm.type === 'weapon'}
+              <WeaponFields bind:form={weaponForm} disabled={busy} />
+            {/if}
+            {#if manualForm.type === 'armor' || manualForm.type === 'shield'}
+              <ArmorFields bind:form={armorForm} disabled={busy} isShield={manualForm.type === 'shield'} />
+            {/if}
+            <!-- Cantidad y valor -->
+            <div class="grid grid-cols-2 gap-3">
               <div class="form-control">
                 <label class="label">
                   <span class="label-text font-medieval text-neutral">Cantidad</span>
@@ -488,7 +533,7 @@
       </div>
 
       <!-- Footer -->
-      <div class="flex justify-center gap-4 p-6 border-t-2 border-secondary flex-shrink-0">
+      <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2 p-3 sm:p-6 border-t-2 border-secondary flex-shrink-0">
         <button 
           on:click={handleClose}
           class="btn btn-outline border-2 border-neutral text-neutral hover:bg-neutral hover:text-secondary font-medieval"
@@ -499,8 +544,8 @@
         {#if manualMode}
           <button 
             on:click={handleAddItem}
-            class="btn btn-dnd"
-            disabled={!manualForm.name.trim() || !!validationError}
+            class="btn btn-dnd whitespace-normal min-w-0"
+            disabled={busy || !manualForm.name.trim() || !!validationError || (manualForm.type === 'weapon' && !!validateWeaponForm(weaponForm)) || (['armor','shield'].includes(manualForm.type) && !!validateArmorForm(armorForm))}
           >
             <span class="text-xl">➕</span>
             Agregar al Inventario
