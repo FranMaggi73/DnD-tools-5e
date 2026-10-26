@@ -10,6 +10,7 @@
   import CharacterBuildSheet from './CharacterBuildSheet.svelte';
   import InventoryPanel from './InventoryPanel.svelte';
   import CharacterRulesPanel from './CharacterRulesPanel.svelte';
+  import ResourcePanel from './ResourcePanel.svelte';
   import ConditionBadge from './ConditionBadge.svelte';
   import { skillBonus, hasJackOfAllTrades, effectiveSpeed } from '$lib/rules/2024';
 
@@ -21,6 +22,7 @@
 
   // Estados de las pestañas
   let activeTab: 'stats' | 'inventory' = 'stats';
+  let resourcesOpen = false;
 
   $: hpPercentage = character.maxHp ? (character.currentHp / character.maxHp) * 100 : 0;
   $: hpColor = hpPercentage > 50 ? 'success' : hpPercentage > 25 ? 'warning' : 'error';
@@ -135,7 +137,6 @@
           </p>
           <div class="flex flex-wrap gap-1 mt-1">
             <div class="badge badge-sm badge-secondary">+{proficiencyBonus} Competencia</div>
-            <div class="badge badge-sm badge-info">{character.speed} pies</div>
           </div>
         </div>
       </div>
@@ -158,6 +159,7 @@
     </div>
 
     <!-- Tabs -->
+    {#if showInventory}
     <div class="tabs tabs-boxed bg-neutral/20">
       <button 
         class="tab flex-1 {activeTab === 'stats' ? 'tab-active' : ''}"
@@ -177,6 +179,7 @@
       {/if}
     </div>
 
+    {/if}
     <div class="flex flex-wrap items-center gap-1 text-sm text-neutral">
       <span class="badge badge-outline">Percepción pasiva: {character.rules.lifeState === 'alive' ? passivePerception(character) : '—'}</span>
       <span class="badge badge-outline">Agotamiento: {character.rules.exhaustion}/6</span>
@@ -191,32 +194,33 @@
       </div>
     </div>
     <!-- Content -->
+    <div class="sheet-content" role="region" aria-label={`Ficha de ${character.name}`} tabindex="0">
     {#if activeTab === 'stats'}
       <!-- Stats Tab -->
-      <div class="space-y-4">
+      <div class="space-y-2">
         
         <!-- Stats Principales -->
         <div class="grid grid-cols-4 gap-1.5 sm:gap-3 sheet-summary">
-          <div class="bg-gradient-to-br from-info/20 to-success/20 p-3 rounded-lg border border-info/30 text-center">
+          <div class="bg-gradient-to-br from-info/20 to-success/20 p-2 rounded-lg border border-info/30 text-center">
             <p class="text-xs font-medieval text-neutral/60 mb-1">CA</p>
-            <p class="text-2xl font-bold text-neutral">{character.armorClass}</p>
+            <p class="text-xl font-bold text-neutral">{character.armorClass}</p>
           </div>
-          <div class="bg-gradient-to-br from-warning/20 to-error/20 p-3 rounded-lg border border-warning/30 text-center">
+          <div class="bg-gradient-to-br from-warning/20 to-error/20 p-2 rounded-lg border border-warning/30 text-center">
             <p class="text-xs font-medieval text-neutral/60 mb-1">INIT</p>
-            <p class="text-2xl font-bold text-neutral">{formatModifier(character.initiative - 2 * character.rules.exhaustion)}</p>
+            <p class="text-xl font-bold text-neutral">{formatModifier(character.initiative - 2 * character.rules.exhaustion)}</p>
           </div>
-          <div class="bg-gradient-to-br from-success/20 to-primary/20 p-3 rounded-lg border border-success/30 text-center">
+          <div class="bg-gradient-to-br from-success/20 to-primary/20 p-2 rounded-lg border border-success/30 text-center">
             <p class="text-xs font-medieval text-neutral/60 mb-1">PIES</p>
-            <p class="text-2xl font-bold text-neutral">{effectiveSpeed(character.speed, character.rules, character.conditions)}'</p>
+            <p class="text-xl font-bold text-neutral">{effectiveSpeed(character.speed, character.rules, character.conditions)}'</p>
           </div>
-          <div class="bg-gradient-to-br from-primary/20 to-accent/20 p-3 rounded-lg border border-primary/30 text-center">
+          <div class="bg-gradient-to-br from-primary/20 to-accent/20 p-2 rounded-lg border border-primary/30 text-center">
             <p class="text-xs font-medieval text-neutral/60 mb-1">NIVEL</p>
-            <p class="text-2xl font-bold text-neutral">{character.level}</p>
+            <p class="text-xl font-bold text-neutral">{character.level}</p>
           </div>
         </div>
 
         <!-- HP -->
-        <div class="bg-gradient-to-r from-success/10 to-error/10 p-3 rounded-lg border border-success/30">
+        <div class="bg-gradient-to-r from-success/10 to-error/10 p-2 rounded-lg border border-success/30">
           <div class="flex justify-between items-center mb-2">
             <span class="font-medieval text-neutral/70 text-sm">PUNTOS DE VIDA</span>
             <span class="font-bold text-neutral">{character.currentHp}/{character.maxHp}</span>
@@ -226,7 +230,7 @@
 
         <!-- Condiciones -->
         {#if hasConditions}
-          <div class="bg-warning/10 p-3 rounded-lg border border-warning/30">
+          <div class="bg-warning/10 p-2 rounded-lg border border-warning/30">
             <p class="text-xs font-medieval text-neutral/60 mb-2">⚠️ CONDICIONES ACTIVAS</p>
             <div class="flex flex-wrap gap-1">
               {#each character.conditions as condition}
@@ -237,13 +241,11 @@
         {/if}
 
         <!-- Ability Scores -->
-        <div>
-          <h4 class="font-medieval text-base sm:text-lg text-neutral mb-2 flex items-center gap-2">
-            💪 Características
-          </h4>
+        <details class="sheet-section">
+          <summary class="font-medieval text-sm text-neutral cursor-pointer">💪 Características</summary>
           <div class="grid grid-cols-3 min-[380px]:grid-cols-6 gap-1.5 sm:gap-3 sheet-abilities">
             {#each abilityKeys as ability}
-              <div class="bg-gradient-to-br from-primary/10 to-accent/10 p-3 rounded-lg border-2 border-primary/30 text-center">
+              <div class="bg-gradient-to-br from-primary/10 to-accent/10 p-2 rounded-lg border-2 border-primary/30 text-center">
                 <div class="text-xs font-medieval text-neutral/70 mb-1">
                   {abilityLabels[ability]}
                 </div>
@@ -256,13 +258,11 @@
               </div>
             {/each}
           </div>
-        </div>
+        </details>
 
         <!-- Saving Throws -->
-        <div>
-          <h4 class="font-medieval text-base sm:text-lg text-neutral mb-2 flex items-center gap-2">
-            🛡️ Tiradas de Salvación
-          </h4>
+        <details class="sheet-section">
+          <summary class="font-medieval text-sm text-neutral cursor-pointer">🛡️ Tiradas de Salvación</summary>
           <div class="grid grid-cols-2 min-[380px]:grid-cols-3 gap-1.5 sm:gap-2 sheet-saves">
             {#each savingThrowKeys as ability}
               <div class={"flex items-center gap-2 p-2 rounded-lg border-2 " + (character.savingThrows[ability] ? 'bg-success/20 border-success' : 'bg-neutral/10 border-neutral/30')}>
@@ -274,13 +274,11 @@
               </div>
             {/each}
           </div>
-        </div>
+        </details>
 
         <!-- Skills -->
-        <div>
-          <h4 class="font-medieval text-base sm:text-lg text-neutral mb-2 flex items-center gap-2">
-            🎯 Habilidades
-          </h4>
+        <details class="sheet-section">
+          <summary class="font-medieval text-sm text-neutral cursor-pointer">🎯 Habilidades</summary>
 
           {#if proficientSkills.length > 0}
             <div class="mb-3">
@@ -325,8 +323,14 @@
               </div>
             </details>
           {/if}
-        </div>
+        </details>
       </div>
+      {#if isOwner}
+        <details class="sheet-section mt-2 text-neutral" bind:open={resourcesOpen}>
+          <summary class="font-medieval text-sm font-semibold cursor-pointer">Recursos</summary>
+          {#if resourcesOpen}<div class="pt-2"><ResourcePanel {character}/></div>{/if}
+        </details>
+      {/if}
       <CharacterBuildSheet {character}/>
       <CharacterRulesPanel {character} editable={isOwner} />
     {:else if showInventory}
@@ -336,5 +340,17 @@
         isOwner={isOwner}
       />
     {/if}
+    </div>
   </div>
 </div>
+
+<style>
+ .character-sheet { display: flex; flex-direction: column; max-height: min(78dvh, 48rem); }
+ .card-body { min-height: 0; padding: .75rem; gap: .625rem; }
+ .sheet-content { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; padding-right: .25rem; }
+ .sheet-section { border: 1px solid #8b45134d; border-radius: .5rem; padding: .625rem; }
+ .sheet-section > summary { min-height: 1.5rem; }
+ .sheet-section[open] > summary { margin-bottom: .625rem; }
+ .sheet-content :global(.sheet-abilities > div) { padding: .375rem .125rem; border-width: 1px; }
+ .sheet-content :global(.sheet-abilities .text-3xl) { font-size: 1.25rem; }
+</style>

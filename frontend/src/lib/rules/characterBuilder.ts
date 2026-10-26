@@ -7,7 +7,7 @@ export interface BuildRef {key:string;name:string}
 export interface LearnedSpell {key:string;name:string;level:number;prepared:boolean;desc:string}
 export interface CharacterBuild {
   version:1;scope:'official'|'third-party'|'playtest'|'homebrew'|'all';edition:'2024'|'2014'|'all';species:BuildRef;variant:BuildRef;background:BuildRef;class:BuildRef;subclass:BuildRef;
-  lineage:string;tools:string;weapons:string;armor:string;languages:string;choices:string;feats:BuildRef[];
+  choiceChecks:string[];lineage:string;tools:string;weapons:string;armor:string;languages:string;choices:string;feats:BuildRef[];
   customFeatures:Array<{name:string;desc:string}>;spells:LearnedSpell[];castingAbility:AbilityKey|'none';
   slots:number[];pactSlots:number;pactLevel:number;hitDie:number;
 }
@@ -20,7 +20,7 @@ export function normalizeBuild(input?:unknown):CharacterBuild {
  if(typeof v==='string') {try {v=JSON.parse(v);}catch{v={};}}
  if(!v||typeof v!=='object'||Array.isArray(v))v={};
  return {version:1,scope:['official','third-party','playtest','homebrew','all'].includes(v.scope)?v.scope:'official',edition:['2024','2014','all'].includes(v.edition)?v.edition:'2024',species:ref(v.species),variant:ref(v.variant),background:ref(v.background),class:ref(v.class),subclass:ref(v.subclass),
-  lineage:txt(v.lineage,200),tools:txt(v.tools),weapons:txt(v.weapons),armor:txt(v.armor),languages:txt(v.languages),choices:txt(v.choices,10000),
+  choiceChecks:(Array.isArray(v.choiceChecks)?v.choiceChecks:[]).filter((key:unknown)=>typeof key==='string'&&key.length<=100).slice(0,200),lineage:txt(v.lineage,200),tools:txt(v.tools),weapons:txt(v.weapons),armor:txt(v.armor),languages:txt(v.languages),choices:txt(v.choices,10000),
   feats:(Array.isArray(v.feats)?v.feats:[]).slice(0,30).map(ref),customFeatures:(Array.isArray(v.customFeatures)?v.customFeatures:[]).slice(0,30).map((x:any)=>({name:txt(x?.name,100),desc:txt(x?.desc,4000)})),
   spells:(Array.isArray(v.spells)?v.spells:[]).slice(0,200).map((x:any)=>({key:txt(x?.key,200),name:txt(x?.name,100),level:num(x?.level,0,9),prepared:x?.prepared===true,desc:txt(x?.desc,4000)})),
   castingAbility:abilities.includes(v.castingAbility)?v.castingAbility:'none',slots:Array.from({length:9},(_,i)=>num(v.slots?.[i],0,20)),pactSlots:num(v.pactSlots,0,20),pactLevel:num(v.pactLevel,0,9),hitDie:[6,8,10,12].includes(v.hitDie)?v.hitDie:8};

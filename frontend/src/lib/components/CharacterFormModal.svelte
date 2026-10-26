@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CharacterChoicesChecklist from './CharacterChoicesChecklist.svelte';
   import CharacterOriginFields from './CharacterOriginFields.svelte';
   import CharacterBuildDetails from './CharacterBuildDetails.svelte';
   import CharacterSpellbook from './CharacterSpellbook.svelte';
@@ -605,7 +606,7 @@
             </div>
           </div>
         {/if}
-        {#if currentStep === 5}<CharacterBuildDetails bind:form/>{/if}
+        {#if currentStep === 5}<div class="mb-3"><CharacterChoicesChecklist bind:form/></div><CharacterBuildDetails bind:form/>{/if}
         {#if currentStep === 6 && form.build}<div class="text-sm border border-primary/30 rounded p-2 mb-3"><strong>{form.name}</strong> · {form.class} {form.level}<br/>{[form.build.species.name,form.build.subclass.name,form.build.background.name].filter(Boolean).join(' · ')}<br/>Vida {form.maxHp} · CA {form.armorClass} · Competencia +{proficiencyBonus}</div><CharacterSpellbook bind:build={form.build} level={form.level} abilityScores={form.abilityScores}/>{/if}
       </div>
       <div class="p-3 sm:p-6 border-t-2 border-secondary flex-shrink-0">

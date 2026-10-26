@@ -29,9 +29,9 @@
 </script>
 
 {#if editable}
-  <details class="border border-neutral/30 rounded-lg p-3 mt-4">
+  <details class="border border-neutral/30 rounded-lg p-2 mt-2">
     <summary class="font-medieval cursor-pointer">Vida, estados y descansos · reglas 2024</summary>
-    <div class="space-y-5 pt-4">
+    <div class="space-y-3 pt-3">
       {#if error}<p class="text-error" role="alert">{error}</p>{/if}
       {#if result}<p class="text-success" role="status">{result}</p>{/if}
       <HealthControls target={character} {busy} on:health={health} />
@@ -61,3 +61,8 @@
     </div>
   </details>
 {/if}
+
+<style>
+ .input,.select {color:#f7ecd8;background:#2d241c;}
+ .btn:disabled {color:#594c39;background:#d8c9aa;border-color:#9e8a69;opacity:1;}
+</style>

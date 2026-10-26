@@ -155,6 +155,8 @@ export type AbilityKey = keyof AbilityScores;
 // ===========================
 
 export interface Encounter {
+  characterIds?: string[];
+  activeCombatantId?:string;publicVersion?:number;
   rosterVersion?: number;
   id: string;
   campaignId: string;
@@ -167,6 +169,7 @@ export interface Encounter {
 }
 
 export interface Combatant {
+  hidden?:boolean;hideStats?:boolean;notes?:string;initiativeBonus?:number;
   monsterSlug?: string;
   characterInstanceId?: string;
   rules: CharacterRules;

@@ -69,6 +69,7 @@
         { path: `/campaigns/${campaignId}`, label: 'Home', icon: '🏠', active: isCampaignPage },
         { path: `/campaigns/${campaignId}/combat`, label: 'Combate', icon: '⚔️', active: isCombatPage },
         { path: `/campaigns/${campaignId}/characters`, label: 'Personajes', icon: '🧙‍♂️', active: isCharactersPage },
+        { path: `/campaigns/${campaignId}/library`, label: 'Biblioteca', icon: '📚', active: currentPath===`/campaigns/${campaignId}/library` },
         { path: `/campaigns/${campaignId}/notes`, label: 'Notas', icon: '📝', active: isNotesPage },
       ] as item, i}
         <button
@@ -83,7 +84,7 @@
           <span class="ml-2">{item.label}</span>
         </button>
       {/each}
-      <a href="/sources" class="btn btn-ghost text-secondary font-medieval text-sm justify-start">📚 Fuentes y licencias</a>
+      <button on:click={() => navigateTo(`/sources?campaign=${encodeURIComponent(campaignId)}`)} class="btn text-secondary font-medieval text-sm justify-start {currentPath==='/sources'?'btn-dnd':'btn-ghost'}" aria-current={currentPath==='/sources'?'page':undefined}>📚 Fuentes y licencias</button>
     </div>
   </div>
 </div>

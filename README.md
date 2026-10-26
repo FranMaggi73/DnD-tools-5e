@@ -230,6 +230,52 @@ identidades con tokens verificados o no verificados.
 
 ## Permisos y comportamiento
 
+### Juego en mesa
+
+La sección Combate tiene una sola pantalla para el encuentro, con iniciativa,
+participantes y controles del DM. Cada card del DM tiene un botón visible
+**Ver ficha**; para los jugadores, ese acceso aparece en su propio personaje.
+La ficha rápida reúne vida, condiciones, contadores y hechizos preparados, mientras
+que los rasgos, habilidades, edición e inventario se consultan en **Personajes**.
+El botón **Ver mi ficha** también está disponible sin un encuentro activo.
+
+Las fichas de Personajes mantienen altura máxima, desplazamiento interno y
+secciones desplegables. Las plantillas y la bitácora se mantienen plegadas en
+Combate; ya no hay una pestaña En mesa independiente.
+
+Los contadores se configuran desde Ver ficha o el desplegable Recursos de Personajes,
+con máximo y recuperación manual, corta
+o larga. Sus cambios se guardan en `character_resources`, separados de la ficha;
+los descansos recuperan salud y recursos juntos. Las sugerencias requieren revisar
+la recuperación de cada rasgo. No hay consumo automático al lanzar hechizos ni
+bonos automáticos de equipo. La revisión del creador señala elecciones pendientes
+y permite confirmar las elecciones manuales al subir de nivel.
+
+El DM puede añadir hasta 20 criaturas juntas, tirar sus iniciativas, reservar vida
+y CA, ocultarlas y guardar notas privadas. Puede guardar las criaturas de un
+encuentro como plantilla e iniciar otro con vida completa. Las plantillas son
+privadas del DM y no incluyen personajes de jugadores.
+
+`combatants` contiene los detalles privados del DM; `combat_public` contiene
+exclusivamente lo que ven los jugadores. La página del DM actualiza automáticamente
+los encuentros anteriores al abrirlos por primera vez. `encounters.characterIds`
+permite comprobar si un personaje participa sin leer los detalles privados. Al
+desplegar esta versión deben publicarse reglas, índices y Hosting juntos; las
+pestañas antiguas deben recargarse.
+
+La bitácora registra nuevas operaciones de combate, vida, descansos y recursos;
+los eventos privados solo los lee el DM. La interfaz consulta las últimas 100
+entradas al abrirla, pero no hay borrado automático de entradas históricas. La
+biblioteca permite filtrar por libro, edición y tipo, consultar sin cerrar el
+creador y guardar hasta 200 favoritos y 12 búsquedas recientes por usuario en
+`catalog_preferences`.
+
+Los índices estáticos incluyen propiedades, manos, daño, magia, sintonización,
+categoría de armadura, sigilo y datos de lanzamiento. La biblioteca combina estos
+subfiltros con clase, nivel y escuela de hechizos antes de limitar a 60 resultados,
+sin descargar los textos completos para filtrar. Las búsquedas recientes conservan
+también los subfiltros; el importador los regenera desde datos estructurados.
+
 - Los miembros ven campaña, miembros, personajes y combate de su propia campaña.
   Solo el dueño del personaje y el DM pueden leer o modificar su inventario y monedas.
 - Las notas personales solo las ve su autor. Las compartidas son visibles para los
@@ -252,7 +298,8 @@ identidades con tokens verificados o no verificados.
   documentos permanecen almacenados y cuentan para la cuota. Para una purga física,
   usá la consola con una cuenta administradora y eliminá los documentos asociados de
   `event_members`, `characters`, `inventory_items`, `currencies`, `encounters`,
-  `combatants`, `notes`, `invitations` e `invitation_links`, y finalmente el documento
+  `combatants`, `combat_public`, `character_resources`, `campaign_activity`,
+  `encounter_templates`, `notes`, `invitations` e `invitation_links`, y finalmente el documento
   de `events`. No hay un proceso automático de limpieza ni backups en esta versión.
 - El límite de 500 objetos es una ayuda de la interfaz, no una cuota de seguridad
   garantizada por las reglas. Las reglas sí validan cantidades, monedas, HP, roles

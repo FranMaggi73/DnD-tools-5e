@@ -1,3 +1,4 @@
+import {libraryPreferencesApi} from '../frontend/src/lib/api/libraryPreferences';
 import {normalizeBuild} from '../frontend/src/lib/rules/characterBuilder';
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -432,7 +433,8 @@ describe('Characters, inventory, notes and combat', () => {
     await api.resetEncounter(encounter.id);
     expect((await api.getActiveEncounter(c.id)).round).toBe(1);
     await invitePlayer(c.id);
-    expect(await api.getCombatants(encounter.id)).toHaveLength(1);
+    expect(await api.getPublicCombatants(encounter.id)).toHaveLength(1);
+    await expect(api.getCombatants(encounter.id)).rejects.toThrow();
     await expect(api.updateCombatant(fighter.id, { currentHp: 10 })).rejects.toThrow();
     login('dm');
     await api.endEncounter(encounter.id);
@@ -461,4 +463,56 @@ test('expanded sheets persist catalog and custom choices, preserve them on legac
  login('stranger');await assertFails(updateDoc(doc(state.db,'characters',character.id),{buildJson:'{}',updatedAt:stamp()}));
  login('player');build.spells.push({key:'',name:'My spell',level:2,prepared:false,desc:'Custom rules'});await api.updateCharacter(character.id,{...form(),class:'Wizard',build});
  expect((await api.getCampaignCharacters(c.id))[0].build?.spells[1].desc).toBe('Custom rules');
+});
+
+
+test('resource edits serialize, rest recovery is atomic, and another player cannot edit them',async()=>{
+ const c=await campaign();await invitePlayer(c.id);const character=await api.createCharacter(c.id,form());
+ await api.changeResource(character.id,{kind:'save',pool:{id:'ki',name:'Enfoque',max:4,current:4,recovery:'short'}});
+ await Promise.all([api.changeResource(character.id,{kind:'adjust',id:'ki',delta:-1}),api.changeResource(character.id,{kind:'adjust',id:'ki',delta:-1})]);
+ let saved=JSON.parse((await getDoc(doc(state.db,'character_resources',character.id))).data()!.poolsJson);expect(saved[0].current).toBe(2);
+ await api.changeResource(character.id,{kind:'save',pool:{id:'ki',name:'Enfoque',max:5,current:4,recovery:'short'}});saved=JSON.parse((await getDoc(doc(state.db,'character_resources',character.id))).data()!.poolsJson);expect(saved[0].current).toBe(2);
+ await api.restCharacter(character.id,'short',0);saved=JSON.parse((await getDoc(doc(state.db,'character_resources',character.id))).data()!.poolsJson);expect(saved[0].current).toBe(5);
+ const logs=await getDocs(query(collection(state.db,'campaign_activity'),where('campaignId','==',c.id),where('visibility','==','public')));expect(logs.docs.some(d=>d.data().message.includes('descanso corto'))).toBe(true);
+ await expect(api.changeResource(character.id,{kind:'adjust',id:'ki',delta:1})).rejects.toThrow();
+ login('stranger');await assertFails(getDoc(doc(state.db,'character_resources',character.id)));await expect(api.changeResource(character.id,{kind:'adjust',id:'ki',delta:-1})).rejects.toThrow();
+});
+
+test('bulk combat creation publishes only visible data and private notes remain inaccessible',async()=>{
+ const c=await campaign();const encounter=await api.createEncounter(c.id,'Emboscada');
+ await api.addCreatureGroup(encounter.id,{name:'Goblin',initiative:10,maxHp:7,armorClass:15,count:20,hideStats:true});
+ const fighters=await api.getCombatants(encounter.id);expect(fighters).toHaveLength(20);expect(new Set(fighters.map(f=>f.name)).size).toBe(20);
+ await api.setCombatVisibility(fighters[0].id,{hidden:true,hideStats:true,notes:'Ataque sorpresa'});
+ const publicRows=await api.getPublicCombatants(encounter.id);expect(publicRows).toHaveLength(19);expect(publicRows.every(f=>f.currentHp===null&&f.armorClass===null)).toBe(true);
+ await invitePlayer(c.id);await expect(api.getCombatants(encounter.id)).rejects.toThrow();expect(await api.getPublicCombatants(encounter.id)).toHaveLength(19);await assertFails(getDoc(doc(state.db,'combatants',fighters[0].id)));
+ const publicLogs=await getDocs(query(collection(state.db,'campaign_activity'),where('campaignId','==',c.id),where('visibility','==','public')));expect(publicLogs.docs.some(d=>d.data().message.includes('sorpresa'))).toBe(false);await assertFails(getDocs(query(collection(state.db,'campaign_activity'),where('campaignId','==',c.id))));
+ login('dm');await api.setCombatVisibility(fighters[0].id,{hidden:false,hideStats:false,notes:'Ataque sorpresa'});expect((await api.getPublicCombatants(encounter.id)).find(f=>f.id===fighters[0].id)?.currentHp).toBe(7);
+ await api.updateCombatant(fighters[0].id,{initiative:99,currentHp:3});const projection=(await api.getPublicCombatants(encounter.id)).find(f=>f.id===fighters[0].id)!;expect(projection.initiative).toBe(99);expect(projection.currentHp).toBe(3);expect(projection).not.toHaveProperty('notes');
+});
+
+test('hidden groups and encounter templates respect Firestore transaction limits',async()=>{
+ const c=await campaign();const encounter=await api.createEncounter(c.id,'Caverna');
+ await api.addCreatureGroup(encounter.id,{name:'Araña',initiative:5,maxHp:10,armorClass:12,count:20,hidden:true});expect(await api.getPublicCombatants(encounter.id)).toHaveLength(0);
+ const creatures=await api.getCombatants(encounter.id);await api.saveEncounterTemplate(c.id,'Caverna guardada',creatures);const templates=await getDocs(query(collection(state.db,'encounter_templates'),where('campaignId','==',c.id)));expect(templates.size).toBe(1);
+ await api.endEncounter(encounter.id);const fresh=await api.startEncounterTemplate(templates.docs[0].id,true);expect((await api.getCombatants(fresh.id)).length).toBe(20);expect(await api.getPublicCombatants(fresh.id)).toHaveLength(0);
+ await invitePlayer(c.id);await assertFails(getDoc(doc(state.db,'encounter_templates',templates.docs[0].id)));
+});
+
+test('catalog favorites and search history are private and merge concurrent changes',async()=>{
+ await campaign();await Promise.all([libraryPreferencesApi.change({favorite:{kind:'spells',key:'light',name:'Light'}}),libraryPreferencesApi.change({favorite:{kind:'items',key:'rope',name:'Rope'}})]);expect((await libraryPreferencesApi.get()).favorites).toHaveLength(2);
+ await libraryPreferencesApi.change({recent:{kind:'spells',query:'light',edition:'2024',scope:'official',source:'',type:''}});expect((await libraryPreferencesApi.get()).recent[0].query).toBe('light');
+ login('stranger');expect((await libraryPreferencesApi.get()).favorites).toHaveLength(0);await assertFails(getDoc(doc(state.db,'catalog_preferences','dm')));
+});
+
+test('players outside an active encounter can rest without access to private combatants, while hidden participants cannot',async()=>{
+ const c=await campaign();await invitePlayer(c.id);const character=await api.createCharacter(c.id,form());
+ login('dm');const encounter=await api.createEncounter(c.id,'Batalla reservada');
+ await api.addCreatureGroup(encounter.id,{name:'Sombra',initiative:10,maxHp:10,armorClass:12,hidden:true});
+ login('player');await api.restCharacter(character.id,'short',0);await api.updateCharacter(character.id,{...form(),name:'Preparado'});
+ login('dm');const fighter=await api.addCombatant(encounter.id,{type:'character',characterId:character.id,initiative:1,maxHp:10,armorClass:10});
+ await api.setCombatVisibility(fighter.id,{hidden:true,hideStats:true,notes:'Solo DM'});
+ login('player');await expect(api.restCharacter(character.id,'short',0)).rejects.toThrow('está en combate');
+ await assertFails(getDoc(doc(state.db,'combatants',fighter.id)));
+ login('dm');await api.removeCombatant(fighter.id);
+ login('player');await api.restCharacter(character.id,'short',0);
 });

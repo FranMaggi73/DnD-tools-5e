@@ -13,8 +13,12 @@
 
   let sidebarOpen = false;
   let authError = '';
+  let lastCampaignId = '';
   $: campaignId = $page.params.id;
   $: isCampaign = $page.url.pathname.startsWith('/campaigns/');
+  $: isSourcesPage = $page.url.pathname === '/sources';
+  $: if (isCampaign && campaignId) lastCampaignId = campaignId;
+  $: navigationCampaignId = isCampaign ? campaignId : isSourcesPage ? $page.url.searchParams.get('campaign') || lastCampaignId : '';
   $: isLoginPage = $page.url.pathname === '/login';
   $: isRootPage = $page.url.pathname === '/';
 
@@ -53,9 +57,9 @@
       <p class="font-medieval text-secondary text-sm sm:text-base text-center">Cargando grimorio...</p>
     </div>
   {:else}
-    <!-- Sidebar (solo en campañas) -->
-    {#if isCampaign && campaignId}
-      <Sidebar campaignId={campaignId} bind:isOpen={sidebarOpen} />
+    <!-- La consulta de fuentes conserva la navegación de la campaña. -->
+    {#if navigationCampaignId}
+      <Sidebar campaignId={navigationCampaignId} bind:isOpen={sidebarOpen} />
     {/if}
 
     <!-- Header -->
@@ -66,8 +70,8 @@
     >
       <!-- LEFT SECTION -->
       <div class="flex items-center gap-2 flex-1 min-w-0">
-        <!-- Hamburger (solo en campañas) -->
-        {#if isCampaign}
+        <!-- Hamburguesa de la campaña y su consulta de fuentes. -->
+        {#if navigationCampaignId}
           <button
             class="btn btn-ghost btn-sm btn-circle flex-shrink-0"
             on:click={toggleSidebar}

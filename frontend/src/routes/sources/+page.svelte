@@ -1,10 +1,12 @@
 <script lang="ts">
   import {statusLabel} from '$lib/utils/catalogLabels';
   import { onMount } from 'svelte';
+  import { headerTitle } from '$lib/stores/uiStore';
   import { catalogApi, type CatalogCredits, type CatalogManifest } from '$lib/api/catalog';
   let credits:CatalogCredits|null=null;
   let manifest:CatalogManifest|null=null;
   let error='';
+  headerTitle.set('Fuentes y licencias');
   function safeLink(value='') {
     try {const url=new URL(/^https?:/i.test(value)?value:`https://${value}`);return ['http:','https:'].includes(url.protocol)?url.href:undefined;} catch{return undefined;}
   }

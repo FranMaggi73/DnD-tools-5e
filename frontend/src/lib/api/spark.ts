@@ -1,3 +1,4 @@
+import {resourceApi} from './resources';
 import {encodeBuild} from '$lib/rules/characterBuilder';
 import {
   arrayRemove, arrayUnion, collection, deleteDoc, deleteField, doc, getDoc, getDocs, query,
@@ -184,6 +185,7 @@ export const sparkApi = {
     return message('Personaje eliminado');
   },
 
+  ...resourceApi,
   ...combatApi,
   ...characterStateApi,
 

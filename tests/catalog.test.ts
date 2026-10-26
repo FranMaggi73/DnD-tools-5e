@@ -76,3 +76,43 @@ test('generic catalog objects retain attunement restrictions without needing arm
 test('catalog excerpts are converted to plain text without creating DOM elements or loading images',()=>{
   expect(plainText('<img src="https://example.test/image">A &amp; B &#65;')).toBe('A & B A');
 });
+
+test('library weapon subfilters apply before limiting results and use indexed facts without loading sheets',async()=>{
+ const {catalogApi}=await import('../frontend/src/lib/api/catalog');
+ const rows=await catalogApi.librarySearch({kind:'items',query:'',edition:'2024',scope:'official',source:'srd-2024',type:'weapon',filters:{weaponType:'martial',hands:'versatile',damageType:'slashing',magic:'no'}});
+ expect(rows.some(row=>row.key==='srd-2024_longsword')).toBe(true);
+ expect(rows.every(row=>row.hands==='versatile'&&row.damageType==='slashing'&&row.magical===false)).toBe(true);
+ const bows=await catalogApi.librarySearch({kind:'items',query:'',edition:'2024',scope:'official',source:'srd-2024',type:'weapon',filters:{property:'ammunition',hands:'two'}});
+ expect(bows.some(row=>row.key==='srd-2024_shortbow')).toBe(true);
+ expect(requested.some(path=>/items-\d+-/.test(path))).toBe(false);
+});
+
+test('library armor filters separate shields from heavy armor and combine magic, rarity and stealth',async()=>{
+ const {catalogApi}=await import('../frontend/src/lib/api/catalog');
+ const base={kind:'items' as const,query:'',edition:'2024',scope:'official',source:'srd-2024',type:'armor'};
+ const shields=await catalogApi.librarySearch({...base,filters:{armorType:'shield',magic:'no'}});
+ expect(shields.some(row=>row.key==='srd-2024_shield')).toBe(true);
+ const heavy=await catalogApi.librarySearch({...base,filters:{armorType:'heavy',stealth:'yes',magic:'no',rarity:'common'}});
+ expect(heavy.length).toBeGreaterThan(0);expect(heavy.some(row=>row.key==='srd-2024_shield')).toBe(false);
+});
+
+test('spell library combines class, level, school, concentration and ritual across source class keys',async()=>{
+ const {catalogApi}=await import('../frontend/src/lib/api/catalog');
+ const filters={spellLevel:'1',spellClass:'Wizard',school:'Divination',concentration:'yes',ritual:'yes'};
+ const rows=await catalogApi.librarySearch({kind:'spells',query:'',edition:'2024',scope:'official',source:'srd-2024',type:'',filters});
+ expect(rows.some(row=>row.key==='srd-2024_detect-magic')).toBe(true);
+ expect(rows.every(row=>row.level===1&&row.school==='Divination'&&row.ritual===true&&row.concentration===true)).toBe(true);
+ const facets=await catalogApi.libraryFacets('spells');expect(facets.classes).toContain('Wizard');expect(facets.classes).toContain('Artificer');
+ expect(requested.some(path=>/spells-\d+-/.test(path))).toBe(false);
+});
+
+test('inventory lookup accepts an empty name, applies subfilters and preserves the full item reference',async()=>{
+ const {catalogApi}=await import('../frontend/src/lib/api/catalog');
+ const result=await catalogApi.searchInventoryItems({query:'',type:'weapon',edition:'2024',scope:'official',source:'srd-2024',filters:{hands:'versatile',damageType:'slashing',magic:'no'}});
+ const sword=result.results.find(item=>item.slug==='srd-2024_longsword');expect(sword).toBeDefined();
+ expect(sword?.source).toBe('weapons');expect(sword?.catalogSource?.key).toBe('srd-2024');
+ const full=await catalogApi.getItem(sword!.slug,sword!.source);
+ expect(full.catalogData?.weaponData).toMatchObject({damageDice:'1d8',properties:{versatile:'1d10'}});
+ const shields=await catalogApi.searchInventoryItems({query:'',type:'armor',edition:'2024',scope:'official',source:'srd-2024',filters:{armorType:'shield',magic:'no'}});
+ expect(shields.results.some(item=>item.slug==='srd-2024_shield')).toBe(true);
+});

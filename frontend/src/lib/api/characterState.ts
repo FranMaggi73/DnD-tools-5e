@@ -1,6 +1,9 @@
+import {readResources,writeResources} from './resources';
+import {recoverPools} from '$lib/rules/tablePlay';
+import {logActivity} from './activity';
 import { collection, deleteField, doc, getDocs, query, runTransaction, Timestamp, where, type Transaction } from 'firebase/firestore';
 import { db } from '$lib/firebase';
-import { encodeSkills, fromDoc, read } from './firestore';
+import { currentUser, encodeSkills, fromDoc, read } from './firestore';
 import type { Character } from '$lib/types';
 import { applyHealthAction, encodeRules, rest, normalizeHealth, type CharacterRules, type HealthAction } from '$lib/rules/2024';
 
@@ -8,9 +11,16 @@ export async function requireOutOfCombat(tx: Transaction, character: Character) 
   const campaign = await tx.get(doc(db, 'events', character.campaignId));
   const id = campaign.data()?.activeEncounterId;
   if (!id) return;
-  await tx.get(doc(db, 'encounters', id));
-  const fighters = await getDocs(query(collection(db, 'combatants'), where('encounterId', '==', id)));
-  if (fighters.docs.some(entry => entry.data().characterId === character.id)) {
+  const encounter = await tx.get(doc(db, 'encounters', id));
+  let participating: boolean;
+  if (encounter.data()?.publicVersion === 1) {
+    participating = (encounter.data()?.characterIds || []).includes(character.id);
+  } else {
+    if (campaign.data()?.dmId !== currentUser().uid) throw new Error('El DM debe abrir Combate una vez para actualizar este encuentro.');
+    const fighters = await getDocs(query(collection(db, 'combatants'), where('encounterId', '==', id)));
+    participating = fighters.docs.some(entry => entry.data().characterId === character.id);
+  }
+  if (participating) {
     throw new Error('El personaje está en combate. Gestioná su estado desde Combate; para editar la ficha o descansar, retiralo del encuentro o finalizalo.');
   }
 }
@@ -24,7 +34,9 @@ export const characterStateApi = {
       const ref = doc(db, 'characters', id);
       const character = fromDoc<Character>(await tx.get(ref));
       await requireOutOfCombat(tx, character);
-      tx.update(ref, healthFields({ ...character, ...applyHealthAction(character, action) }));
+      const next=applyHealthAction(character,action);
+      tx.update(ref, healthFields({ ...character, ...next }));
+      logActivity(tx,character.campaignId,`${character.name}: vida ${character.currentHp} → ${next.currentHp}; temporales ${next.temporaryHp}.`);
     });
     return read<Character>('characters', id);
   },
@@ -47,8 +59,11 @@ export const characterStateApi = {
       const latest = fromDoc<Character>(await tx.get(ref));
       if (latest.rules.hitDieSize !== character.rules.hitDieSize) throw new Error('Cambió el dado de golpe. Volvé a intentarlo.');
       await requireOutOfCombat(tx, latest);
+      const resources = await readResources(tx,latest);
       const next = rest(latest, latest.level, latest.abilityScores.constitution, kind, rolls);
       tx.update(ref, healthFields({ ...latest, ...next }));
+      writeResources(tx,latest,resources,recoverPools(resources.pools,kind));
+      logActivity(tx,latest.campaignId,`${latest.name}: completó un descanso ${kind==='short'?'corto':'largo'}.`);
     });
     return { character: await read<Character>('characters', id), rolls };
   }

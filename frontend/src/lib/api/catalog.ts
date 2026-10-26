@@ -1,8 +1,9 @@
+import {matchesLibraryFilters,type LibrarySearch} from '$lib/rules/library';
 import type {CharacterOption,CatalogSpell} from '$lib/rules/characterBuilder';
 import type { CatalogSource, Monster, MonsterSummary, MonsterSearchResult } from '$lib/types';
 import type { Open5eItem, Open5eSearchResult } from './inventory';
 
-interface CatalogRow {key:string;name:string;type:string;sourceKey:string;source:string;cr?:string;rarity?:string;desc:string;pack:number;parentKey?:string;level?:number;classes?:string[];school?:string;edition?:string;status?:string;contentMode?:string;aliases?:string[];sourceLabel?:string;published?:string}
+interface CatalogRow {magical?:boolean;attunement?:boolean;weaponType?:string;damageType?:string;weaponProperties?:string[];hands?:string;armorType?:string;stealthDisadvantage?:boolean;concentration?:boolean;ritual?:boolean;castingTime?:string;key:string;name:string;type:string;sourceKey:string;source:string;cr?:string;rarity?:string;desc:string;pack:number;parentKey?:string;level?:number;classes?:string[];school?:string;edition?:string;status?:string;contentMode?:string;aliases?:string[];sourceLabel?:string;published?:string}
 interface CatalogIndex {rows:CatalogRow[];packs:string[];aliases:Record<string,string>}
 export interface CatalogManifest {
   audit?:{mechanicalChecks:number;conflicts:unknown[];corrections:Array<{key:string;field:string;source:string}>;excludedReferences:number;referenceRevision:string};
@@ -65,7 +66,27 @@ async function entry<T>(kind:'monsters'|'items'|'options'|'spells',key:string,ca
 }
 export const catalogApi={
   manifest,
+  async libraryFacets(kind:'items'|'spells') {
+    const {data}=await index(kind);
+    const unique=(values:string[])=>[...new Map(values.filter(Boolean).map(value=>[value.trim().toLowerCase(),value.trim()])).values()].sort((a,b)=>a.localeCompare(b));
+    const classRows=kind==='spells'?(await index('options')).data.rows.filter(row=>row.type==='class'):[];
+    const used=new Set(data.rows.flatMap(row=>row.classes||[]));
+    return {schools:unique(data.rows.map(row=>row.school||'')),classes:unique(classRows.filter(row=>used.has(row.key)).map(row=>row.name)),rarities:unique(data.rows.map(row=>row.rarity||''))};
+  },
+  async librarySearch(search:LibrarySearch){
+    const {config,data}=await index(search.kind);
+    const rows=search.query.trim()?rank(data.rows,search.query,config.sourceLabels):data.rows;
+    const classNames=new Map(search.kind==='spells'&&search.filters?.spellClass?(await index('options')).data.rows.filter(row=>row.type==='class').map(row=>[row.key,row.name] as const):[]);
+    return rows.filter(row=>(!search.source||row.sourceKey===search.source)&&(!search.type||row.type===search.type)&&(search.edition==='all'||config.sourceLabels[row.sourceKey]?.edition.includes(search.edition))&&(search.scope==='all'||config.sourceLabels[row.sourceKey]?.status===search.scope)&&matchesLibraryFilters(row,search.filters,classNames)).slice(0,60).map(row=>decorate(row,config));
+  },
   async credits() {const config=await manifest();return json<CatalogCredits>(config.sources);},
+  async searchInventoryItems(search:Omit<LibrarySearch,'kind'>):Promise<Open5eSearchResult> {
+    const [rows,config]=await Promise.all([catalogApi.librarySearch({...search,kind:'items'}),manifest()]);
+    return {count:rows.length,next:null,previous:null,results:rows.map(row=>({
+      slug:row.key,name:row.name,type:row.type,desc:row.desc,rarity:row.rarity,source:row.source,
+      catalogSource:config.sourceLabels[row.sourceKey]
+    }))};
+  },
   async sourceForItem(key:string):Promise<CatalogSource|null> {
     const {config,data}=await index('items');
     const row=data.rows.find(v=>v.key===key || ['magicitems','weapons','armor','gear'].some(category=>data.aliases[`${category}:${key}`]===v.key));

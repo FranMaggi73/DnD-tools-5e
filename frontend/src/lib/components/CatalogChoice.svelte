@@ -1,4 +1,6 @@
 <script lang="ts">
+ import LibraryOverlay from './LibraryOverlay.svelte';
+ let libraryOpen=false;
  import {createEventDispatcher,onDestroy} from 'svelte';
  import {catalogApi} from '$lib/api/catalog';
  import type {BuildRef} from '$lib/rules/characterBuilder';
@@ -11,6 +13,7 @@
  onDestroy(()=>{clearTimeout(timer);generation++;});
 </script>
 <div class="space-y-2 border border-primary/30 rounded-lg p-2">
+ <button type="button" class="link text-xs float-right ml-2" on:click={()=>libraryOpen=true}>Consultar biblioteca</button>
  <div class="flex gap-2 items-center"><span class="font-medieval font-bold flex-1">{label}</span><button type="button" class="btn btn-xs" on:click={()=>open=!open}>{open?'Cerrar':'Buscar'}</button><button type="button" class="btn btn-xs btn-outline text-neutral" on:click={()=>{value={key:'',name:''};open=false;dispatch('custom');}}>Custom</button></div>
  {#if value.key}<p class="text-sm font-semibold">{value.name}</p><button type="button" class="link text-xs" on:click={()=>{value={key:'',name:''};dispatch('clear');}}>Quitar selección</button>
  {:else}<input aria-label={`${label} personalizada`} class="input input-bordered input-sm w-full" bind:value={value.name} maxlength={type==='class'?50:100} placeholder="Nombre personalizado u opcional"/>{/if}
@@ -22,3 +25,5 @@
  {/if}
  {#if error}<p role="alert" class="text-error text-xs">{error}</p>{/if}
 </div>
+
+{#if libraryOpen}<LibraryOverlay on:close={()=>libraryOpen=false}/>{/if}

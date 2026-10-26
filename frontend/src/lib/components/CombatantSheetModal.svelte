@@ -6,10 +6,11 @@
   import { open5eApi } from '$lib/api/api';
   import type { Character, Combatant, Monster, MonsterSummary } from '$lib/types';
   import { characterInCombat, isLinkedCharacter } from '$lib/utils/combatSheet';
-  import CharacterCard from './CharacterCard.svelte';
+  import CombatCharacterPanel from './CombatCharacterPanel.svelte';
   import MonsterSheet from './MonsterSheet.svelte';
   import ConditionBadge from './ConditionBadge.svelte';
   export let combatant: Combatant;
+  export let currentId='';
   const dispatch = createEventDispatcher();
   let character: Character | null = null;
   let monster: Monster | null = null;
@@ -74,7 +75,8 @@
       {#if error}<p role="status" class="text-sm rounded border border-warning/40 bg-warning/10 p-3">{error}</p>{/if}
       {#if loading}<div class="flex items-center gap-2 py-6 justify-center" role="status"><span class="loading loading-spinner loading-sm"></span> Cargando ficha…</div>{/if}
       {#if sheetCharacter}
-        <CharacterCard character={sheetCharacter} isOwner={false} />
+        <CombatCharacterPanel character={sheetCharacter} fighter={combatant} {currentId}/>
+        <a class="btn btn-sm btn-outline text-neutral w-full" href={`/campaigns/${sheetCharacter.campaignId}/characters`}>Consultar personaje completo</a>
       {:else if monster}
         <MonsterSheet {monster} {combatant} />
       {:else if !loading}
@@ -95,10 +97,11 @@
           {/each}
         </div>
       {/if}
-      <div class="rounded border border-warning/30 bg-warning/10 p-3 space-y-2">
+      {#if !sheetCharacter}<div class="rounded border border-warning/30 bg-warning/10 p-3 space-y-2">
         <p class="text-sm">HP temporales: {combatant.temporaryHp} · Iniciativa del encuentro: {combatant.initiative}</p>
         <div class="flex flex-wrap items-center gap-1">{#each combatant.conditions as condition}<ConditionBadge {condition} />{:else}<span class="text-sm text-neutral/70">Sin condiciones</span>{/each}</div>
       </div>
+      {/if}
       {#if error}<button class="btn btn-sm" disabled={loading} on:click={load}>Reintentar</button>{/if}
     </div>
   </div>

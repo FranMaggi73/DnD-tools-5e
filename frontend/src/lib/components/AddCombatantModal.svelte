@@ -26,6 +26,7 @@
   $: selectedPlayer = players.find((p) => p.id === selectedPlayerId);
 
   // === MODO MONSTRUO ===
+  let count=1;let rollInitiative=false;let hideStats=false;let hidden=false;
   let searchQuery = '';
   let suggestions: MonsterSummary[] = [];
   let selectedMonster: Monster | null = null;
@@ -189,6 +190,7 @@
 
     dispatch('add', {
       type: 'creature',
+      count,rollInitiative,hideStats,hidden,initiativeBonus:selectedMonster?Math.floor((selectedMonster.dexterity-10)/2):0,notes:'',
       name,
       initiative,
       maxHp,
@@ -206,6 +208,7 @@
 
   function handleClose() {
     // reset total
+    count=1;rollInitiative=false;hideStats=false;hidden=false;
     selectedPlayerId = '';
     selectedMonster = null;
     searchQuery = '';
@@ -362,6 +365,8 @@
           </div>
 
           <!-- Loading indicator -->
+          <div class="grid grid-cols-2 gap-2 my-3"><label class="text-sm">Cantidad<input aria-label="Cantidad de criaturas" class="input input-bordered w-full bg-[#2d241c] text-base-content" type="number" min="1" max="20" bind:value={count}/></label><label class="flex items-center gap-2 text-sm"><input class="checkbox checkbox-sm border-neutral/70 text-primary bg-white/30 shrink-0" type="checkbox" bind:checked={rollInitiative}/>Tirar iniciativas</label></div>
+          <div class="flex flex-wrap gap-3 text-sm mb-3"><label class="flex items-center gap-2"><input class="checkbox checkbox-sm border-neutral/70 text-primary bg-white/30 shrink-0" type="checkbox" bind:checked={hidden}/>Ocultos al grupo</label><label class="flex items-center gap-2"><input class="checkbox checkbox-sm border-neutral/70 text-primary bg-white/30 shrink-0" type="checkbox" bind:checked={hideStats}/>Reservar vida y CA</label></div>
           {#if lookupError}<p class="text-error text-sm" role="alert">{lookupError}</p>{/if}
           {#if loading}
             <div class="flex justify-center items-center py-4">

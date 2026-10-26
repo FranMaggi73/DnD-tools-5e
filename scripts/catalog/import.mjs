@@ -1,4 +1,5 @@
 import {correctKnownTables} from './corrections.mjs';
+import {libraryFields} from './library-filters.mjs';
 import {referenceFacts,mergeReferences} from './reference.mjs';
 import {characterOption,characterSpell} from './characters.mjs';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
@@ -133,7 +134,7 @@ const attribution={catalogAudit,origin:'https://open5e.com; https://5e.tools',re
   modifications:'Datos normalizados para DnD Tools. Los textos abiertos proceden de Open5e. Las referencias adicionales incluyen solo identificadores y datos mecánicos; no se redistribuyen descripciones editoriales de los libros. No se incluyen ilustraciones ni se implica aprobación de los autores.',
   sources:[...sources.values()].filter(source=>[...monsters.values(),...items.values(),...options,...spells].some(v=>v.catalogSource.key===source.key)),
   licenses,legacyCopyrightNotices:v1Documents.map(v=>({title:v.title,copyright:v.copyright,license:v.license,url:v.url})),srd2024Attribution:legalInfo};
-const version=hash({options,spells,monsters:orderedMonsters,items:orderedItems,monsterAliases,itemAliases,attribution:{...attribution,importedAt:null}});
+const version=hash({libraryIndexVersion:1,options,spells,monsters:orderedMonsters,items:orderedItems,monsterAliases,itemAliases,attribution:{...attribution,importedAt:null}});
 const folder=join(output,version); await mkdir(folder,{recursive:true});
 async function publishDataset(kind,records,aliases) {
   const rows=[]; const packs=[];
@@ -142,7 +143,7 @@ async function publishDataset(kind,records,aliases) {
     const payload=Object.fromEntries(group.map(v=>[v.slug,v]));
     const name=`${kind}-${offset/50}-${hash(payload)}.json`;
     await writeFile(join(folder,name),JSON.stringify(payload)); packs.push(`/catalog/${version}/${name}`);
-    for(const v of group) rows.push({key:v.slug,name:v.name,type:v.catalogData?.type || v.catalogItemType || v.type,
+    for(const v of group) rows.push({...libraryFields(v,kind),key:v.slug,name:v.name,type:v.catalogData?.type || v.catalogItemType || v.type,
       sourceKey:v.catalogSource.key,source:v.source || '',cr:v.challenge_rating,rarity:v.rarity,parentKey:v.parentKey,level:v.level,classes:v.classes,school:v.school,edition:v.catalogSource.edition,status:v.catalogSource.status||sources.get(v.catalogSource.key)?.status,contentMode:v.contentMode||'open-text',aliases:v.name==='Artificer'?['Artificiero']:[],
       desc:(v.desc || '').replace(/<[^>]*>/g,'').replace(/\s+/g,' ').slice(0,180),pack:packs.length-1});
   }

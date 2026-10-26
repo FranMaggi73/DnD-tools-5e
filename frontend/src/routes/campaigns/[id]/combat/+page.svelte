@@ -1,4 +1,10 @@
 <script lang="ts">
+  import CharacterPlayModal from '$lib/components/CharacterPlayModal.svelte';
+  import PublicCombatCard from '$lib/components/PublicCombatCard.svelte';
+  import ActivityPanel from '$lib/components/ActivityPanel.svelte';
+  import EncounterTemplates from '$lib/components/EncounterTemplates.svelte';
+  import CombatVisibilityModal from '$lib/components/CombatVisibilityModal.svelte';
+  import type {PublicCombatant} from '$lib/rules/tablePlay';
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
   import { userStore } from '$lib/stores/authStore';
@@ -46,7 +52,11 @@
   let characters: Character[] = [];
   let loading = true;
   let error = '';
-  let processing = false;
+  let processing = false;let publicCombatants:PublicCombatant[]=[];let charactersUnsubscribe:(()=>void)|null=null;let visibilityCombatant:Combatant|null=null;let activityOpen=false;let migrationAttempted='';
+  let showOwnSheet=false;
+  $: myCharacter=characters.find(c=>c.userId===$userStore?.uid);
+  $: myFighter=publicCombatants.find(c=>c.characterId===myCharacter?.id)||(combatants.find(c=>c.characterId===myCharacter?.id) as unknown as PublicCombatant)||(myCharacter&&encounter?.characterIds?.includes(myCharacter.id)?{id:`${encounter.id}_${myCharacter.id}`,characterId:myCharacter.id} as PublicCombatant:null);
+  $: combatantCount=isDM?combatants.length:publicCombatants.length;
 
   let showAddCombatantModal = false;
   let showCreateEncounterModal = false;
@@ -65,9 +75,7 @@
   const db = getFirestore(app);
 
   $: isDM = campaign && $userStore && campaign.dmId === $userStore.uid;
-  $: currentTurnCombatant = encounter && combatants.length > 0 
-    ? combatants[encounter.turnIndex % combatants.length] 
-    : null;
+  $: currentTurnCombatant = isDM?(encounter&&combatants.length?combatants[encounter.turnIndex%combatants.length]:null):publicCombatants.find(c=>c.id===encounter?.activeCombatantId)||null;
 
   onMount(async () => {
     await loadCampaign();
@@ -77,6 +85,7 @@
 
   onDestroy(() => {
     // Limpiar listeners
+    charactersUnsubscribe?.();
     if (encounterUnsubscribe) encounterUnsubscribe();
     if (combatantsUnsubscribe) combatantsUnsubscribe();
   });
@@ -101,7 +110,7 @@
             sheetCombatant = null;
             encounter = null;
             listeningEncounterId = '';
-            combatants = [];
+            combatants = [];publicCombatants=[];
             if (combatantsUnsubscribe) {
               combatantsUnsubscribe();
               combatantsUnsubscribe = null;
@@ -109,6 +118,7 @@
           } else {
             const doc = snapshot.docs[0];
             encounter = fromDoc<Encounter>(doc);
+            if(isDM&&encounter.publicVersion!==1&&migrationAttempted!==encounter.id){migrationAttempted=encounter.id;api.syncPublicCombat(encounter.id).catch(cause=>error=cause.message);}
             
             // Setup listener para combatientes cuando hay encuentro activo
             if (encounter && encounter.id !== listeningEncounterId) {
@@ -135,7 +145,7 @@
   }
 
   function setupCombatantsListener(encounterId: string) {
-    const combatantsRef = collection(db, 'combatants');
+    const combatantsRef = collection(db, isDM?'combatants':'combat_public');
     const combatantsQuery = query(
       combatantsRef,
       where('encounterId', '==', encounterId),
@@ -145,6 +155,7 @@
     combatantsUnsubscribe = onSnapshot(
       combatantsQuery,
       (snapshot) => {
+        if(!isDM){publicCombatants=snapshot.docs.map(entry=>fromDoc<PublicCombatant>(entry)).sort((a,b)=>b.initiative-a.initiative||a.id.localeCompare(b.id));return;}
         combatants = snapshot.docs.map(entry => fromDoc<Combatant>(entry))
           .sort((a, b) => b.initiative - a.initiative || a.id.localeCompare(b.id));
 
@@ -156,7 +167,7 @@
       },
       (err) => {
         console.error('Error en listener de combatientes:', err);
-        combatants = [];
+        combatants = [];publicCombatants=[];error=err.message;
         selectedCombatant = null;
         sheetCombatant = null;
       }
@@ -171,11 +182,7 @@
   }
 
   async function loadCharacters() {
-    try {
-      characters = await api.getCampaignCharacters(campaignId);
-    } catch (err) {
-      console.error('Error loading characters:', err);
-    }
+    charactersUnsubscribe?.();charactersUnsubscribe=onSnapshot(query(collection(db,'characters'),where('campaignId','==',campaignId),...(!isDM?[where('userId','==',$userStore?.uid||'')]:[])),snapshot=>characters=snapshot.docs.map(d=>fromDoc<Character>(d)),cause=>error=cause.message);
   }
 
   async function createEncounter() {
@@ -211,7 +218,7 @@
   async function handleAddCombatant(event: CustomEvent) {
     if (!encounter) return;
     try {
-      await api.addCombatant(encounter.id, event.detail);
+      if(event.detail.type==='creature')await api.addCreatureGroup(encounter.id,event.detail);else await api.addCombatant(encounter.id,event.detail);
       showAddCombatantModal = false;
       // El listener actualizará automáticamente
     } catch (err: any) {
@@ -269,13 +276,13 @@
   function handleRemoveCondition(event: CustomEvent<string>) { return mutateSelected(id => api.removeCondition(id, event.detail)); }
 
   async function nextTurn() {
-    if (!encounter) return;
+    if (!encounter||processing) return;processing=true;
     try {
       await api.nextTurn(encounter.id);
       // El listener actualizará automáticamente
     } catch (err: any) {
       error = err.message;
-    }
+    } finally {processing=false;}
   }
 </script>
 
@@ -289,6 +296,10 @@
     </div>
   {/if}
 
+  {#if !loading}<div class="p-3 space-y-3">
+   {#if myCharacter}<button class="btn btn-sm btn-dnd" on:click={()=>showOwnSheet=true}>📋 Ver mi ficha · {myCharacter.name}</button>{/if}
+   {#if isDM}<EncounterTemplates {campaignId} {encounter} {combatants}/>{/if}
+  </div>{/if}
   <div class="flex flex-1">
     <div class="flex-1">
       {#if loading}
@@ -328,7 +339,7 @@
                 <h2 class="text-2xl md:text-3xl font-medieval text-neutral mb-2 sm:mb-0">{encounter.name}</h2>
                 <div class="flex flex-wrap gap-2 mt-2 sm:mt-0">
                   <div class="badge badge-ornate badge-md">🔄 Ronda {encounter.round}</div>
-                  <div class="badge bg-info/30 border-info/50 text-neutral badge-md">👥 {combatants.length} Combatientes</div>
+                  <div class="badge bg-info/30 border-info/50 text-neutral badge-md">👥 {combatantCount} Combatientes</div>
                 </div>
               </div>
 
@@ -344,7 +355,7 @@
                   <button 
                     class="btn btn-dnd btn-sm gap-2 flex-1 sm:flex-none"
                     on:click={nextTurn}
-                    disabled={combatants.length === 0}
+                    disabled={combatants.length === 0||processing}
                   >
                     <span class="text-lg">▶️</span> Siguiente Turno
                   </button>
@@ -368,7 +379,8 @@
           </div>
 
           <!-- COMBATIENTES -->
-          {#if combatants.length === 0}
+          {#if !isDM}<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">{#each publicCombatants as fighter}<PublicCombatCard {fighter} current={fighter.id===encounter.activeCombatantId} canViewSheet={!!myCharacter&&fighter.characterId===myCharacter.id} on:viewSheet={()=>showOwnSheet=true}/>{/each}{#if !publicCombatants.length}<div class="card-parchment p-4 text-neutral">No hay combatientes visibles. El DM puede abrir Combate para actualizar la vista compartida.</div>{/if}</div>
+          {:else if combatants.length === 0}
             <div class="card-parchment p-12 text-center">
               <div class="text-4xl mb-3">🎲</div>
               <p class="text-xl font-medieval text-neutral mb-2">Sin combatientes</p>
@@ -386,6 +398,7 @@
                   on:updateHP={openHPModal}
                   on:addCondition={openConditionModal}
                   on:viewSheet={openSheet}
+                  on:visibility={(event)=>visibilityCombatant=event.detail}
                   on:remove={handleRemoveCombatant}
                 />
               {/each}
@@ -395,8 +408,9 @@
       {/if}
     </div>
   </div>
+  {#if !loading}<details class="p-3" on:toggle={(event)=>activityOpen=event.currentTarget.open}><summary class="cursor-pointer font-medieval text-secondary">Bitácora de la campaña</summary>{#if activityOpen}<ActivityPanel {campaignId} isDM={!!isDM}/>{/if}</details>{/if}
 </div>
-
+{#if visibilityCombatant}{#key visibilityCombatant.id}<CombatVisibilityModal fighter={visibilityCombatant} on:close={()=>visibilityCombatant=null}/>{/key}{/if}
 
 {#if showCreateEncounterModal}
   <div class="modal modal-open z-50">
@@ -468,7 +482,7 @@
 />
 
 {#if sheetCombatant && isDM}
-  <CombatantSheetModal combatant={sheetCombatant} on:close={() => sheetCombatant = null} />
+  <CombatantSheetModal combatant={sheetCombatant} currentId={encounter?.activeCombatantId||currentTurnCombatant?.id||''} on:close={() => sheetCombatant = null} />
 {/if}
 
 <ConditionModal 
@@ -487,3 +501,7 @@
   on:add={handleAddCombatant}
   on:close={() => showAddCombatantModal = false}
 />
+
+{#if showOwnSheet&&myCharacter}
+ <CharacterPlayModal character={myCharacter} fighter={myFighter} currentId={encounter?.activeCombatantId||currentTurnCombatant?.id||''} on:close={()=>showOwnSheet=false}/>
+{/if}

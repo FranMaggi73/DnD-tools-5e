@@ -20,6 +20,8 @@ service cloud.firestore {
   }
   function encounterMember(id) { return member(get(/databases/$(database)/documents/encounters/$(id)).data.campaignId); }
   function encounterDM(id) { return dm(get(/databases/$(database)/documents/encounters/$(id)).data.campaignId); }
+  function encounterWriteDM(id) { return dm(getAfter(/databases/$(database)/documents/encounters/$(id)).data.campaignId); }
+  function activeEncounterAfter(id) { let e=getAfter(/databases/$(database)/documents/encounters/$(id)).data; return e.isActive == true && getAfter(eventPath(e.campaignId)).data.get('activeEncounterId','') == id; }
   function activeEncounter(id) {
    let e = get(/databases/$(database)/documents/encounters/$(id)).data;
    return e.isActive == true && get(eventPath(e.campaignId)).data.get('activeEncounterId', '') == id;
@@ -203,8 +205,8 @@ service cloud.firestore {
    allow delete: if owner(id);
   }
   function validEncounter(d) {
-   return d.keys().hasOnly(['id', 'campaignId', 'name', 'isActive', 'round', 'turnIndex', 'createdAt', 'updatedAt', 'rosterVersion']) && text(d.name, 3, 100) &&
-    d.isActive is bool && integer(d.get('rosterVersion', 0), 0, 1000000000) && integer(d.round, 1, 1000000) && integer(d.turnIndex, 0, 10000) && d.createdAt is timestamp && d.updatedAt is timestamp;
+   return d.keys().hasOnly(['id', 'campaignId', 'name', 'isActive', 'round', 'turnIndex', 'createdAt', 'updatedAt', 'rosterVersion', 'activeCombatantId', 'publicVersion', 'characterIds']) && d.get('characterIds',[]) is list && d.get('characterIds',[]).size() <= 500 && text(d.name, 3, 100) &&
+    text(d.get('activeCombatantId',''),0,200) && integer(d.get('publicVersion',0),0,1) && d.isActive is bool && integer(d.get('rosterVersion', 0), 0, 1000000000) && integer(d.round, 1, 1000000) && integer(d.turnIndex, 0, 10000) && d.createdAt is timestamp && d.updatedAt is timestamp;
   }
   match /encounters/{id} {
    allow read: if member(resource.data.campaignId);
@@ -218,23 +220,34 @@ service cloud.firestore {
    allow delete: if false;
   }
   function validCombatant(d) {
-   return d.keys().hasOnly(['id', 'encounterId', 'type', 'characterId', 'name', 'initiative', 'maxHp', 'currentHp', 'armorClass', 'conditions', 'imageUrl', 'isNpc', 'creatureSource', 'temporaryHp', 'deathSaves', 'createdAt', 'rules', 'characterInstanceId', 'monsterSlug']) &&
-    health(d) && (!('rules' in d) || validRules(d.rules, d.currentHp)) && text(d.name, 1, 100) && d.type in ['character', 'creature'] && d.isNpc is bool &&
+   return d.keys().hasOnly(['id', 'encounterId', 'type', 'characterId', 'name', 'initiative', 'maxHp', 'currentHp', 'armorClass', 'conditions', 'imageUrl', 'isNpc', 'creatureSource', 'temporaryHp', 'deathSaves', 'createdAt', 'rules', 'characterInstanceId', 'monsterSlug', 'hidden','hideStats','notes','initiativeBonus']) &&
+    d.get('hidden',false) is bool && d.get('hideStats',false) is bool && text(d.get('notes',''),0,4000) && integer(d.get('initiativeBonus',0),-30,30) && health(d) && (!('rules' in d) || validRules(d.rules, d.currentHp)) && text(d.name, 1, 100) && d.type in ['character', 'creature'] && d.isNpc is bool &&
     text(d.imageUrl, 0, 2000) && text(d.creatureSource, 0, 100) && d.createdAt is timestamp && text(d.get('characterInstanceId', ''), 0, 200) &&
     text(d.get('monsterSlug',''),0,200) && (d.get('monsterSlug','') == '' || d.monsterSlug.matches('[A-Za-z0-9_-]+'));
   }
   match /combatants/{id} {
-   allow read: if encounterMember(resource.data.encounterId);
-   allow create: if encounterDM(request.resource.data.encounterId) && request.resource.data.id == id && validCombatant(request.resource.data) &&
-    activeEncounter(request.resource.data.encounterId) && rosterChanged(request.resource.data.encounterId) &&
+   allow read: if encounterDM(resource.data.encounterId);
+   allow create: if encounterWriteDM(request.resource.data.encounterId) && request.resource.data.id == id && validCombatant(request.resource.data) &&
+    activeEncounterAfter(request.resource.data.encounterId) && ((!exists(/databases/$(database)/documents/encounters/$(request.resource.data.encounterId)) && getAfter(/databases/$(database)/documents/encounters/$(request.resource.data.encounterId)).data.rosterVersion == 1) || rosterChanged(request.resource.data.encounterId)) &&
     ((request.resource.data.type == 'creature' && request.resource.data.characterId == '') ||
      (request.resource.data.type == 'character' && get(/databases/$(database)/documents/characters/$(request.resource.data.characterId)).data.campaignId ==
       get(/databases/$(database)/documents/encounters/$(request.resource.data.encounterId)).data.campaignId &&
       request.resource.data.get('characterInstanceId', '') == get(/databases/$(database)/documents/characters/$(request.resource.data.characterId)).data.get('instanceId', request.resource.data.get('characterInstanceId', ''))));
    allow update: if encounterDM(resource.data.encounterId) && activeEncounter(resource.data.encounterId) && validCombatant(request.resource.data) &&
-    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentHp', 'conditions', 'initiative', 'temporaryHp', 'deathSaves', 'rules']) &&
+    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentHp', 'conditions', 'initiative', 'temporaryHp', 'deathSaves', 'rules', 'hidden','hideStats','notes']) &&
     (request.resource.data.initiative == resource.data.initiative || rosterChanged(resource.data.encounterId));
    allow delete: if encounterDM(resource.data.encounterId) && activeEncounter(resource.data.encounterId) && rosterChanged(resource.data.encounterId);
+  }
+  function validPublicCombatant(d,id) {
+   return d.keys().hasOnly(['id','encounterId','name','initiative','characterId','type','conditions','currentHp','maxHp','armorClass']) &&
+    d.id == id && text(d.name,1,100) && integer(d.initiative,-100,100) && d.type in ['character','creature'] && text(d.characterId,0,200) && d.conditions is list && d.conditions.size() <= 14 &&
+    (d.currentHp == null || integer(d.currentHp,0,9999)) && (d.maxHp == null || integer(d.maxHp,1,9999)) && (d.armorClass == null || integer(d.armorClass,1,99));
+  }
+  match /combat_public/{id} {
+   allow read: if encounterMember(resource.data.encounterId);
+   allow create: if encounterWriteDM(request.resource.data.encounterId) && validPublicCombatant(request.resource.data,id);
+   allow update: if encounterDM(resource.data.encounterId) && request.resource.data.encounterId == resource.data.encounterId && validPublicCombatant(request.resource.data,id);
+   allow delete: if (exists(/databases/$(database)/documents/combat_public/$(id)) && encounterDM(resource.data.encounterId)) || encounterDM(exists(/databases/$(database)/documents/combatants/$(id)) ? get(/databases/$(database)/documents/combatants/$(id)).data.encounterId : getAfter(/databases/$(database)/documents/combatants/$(id)).data.encounterId);
   }
   function validNote(d) {
    return d.keys().hasOnly(['id', 'campaignId', 'authorId', 'authorName', 'title', 'content', 'isShared', 'category', 'tags', 'createdAt', 'updatedAt']) &&
@@ -249,6 +262,38 @@ service cloud.firestore {
     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'content', 'isShared', 'category', 'tags', 'updatedAt']) &&
     (request.resource.data.isShared == false || dm(resource.data.campaignId));
    allow delete: if member(resource.data.campaignId) && resource.data.authorId == request.auth.uid;
+  }
+  match /catalog_preferences/{uid} {
+   allow read: if signed() && uid == request.auth.uid;
+   allow create, update: if signed() && uid == request.auth.uid && request.resource.data.keys().hasOnly(['savedJson','updatedAt']) && text(request.resource.data.savedJson,2,100000) && request.resource.data.updatedAt == request.time;
+   allow delete: if signed() && uid == request.auth.uid;
+  }
+  match /character_resources/{id} {
+   allow read: if owner(id);
+   allow create, update: if owner(id) &&
+    request.resource.data.keys().hasOnly(['characterId','campaignId','instanceId','poolsJson','revision','updatedAt']) &&
+    request.resource.data.characterId == id &&
+    request.resource.data.campaignId == get(/databases/$(database)/documents/characters/$(id)).data.campaignId &&
+    request.resource.data.instanceId == get(/databases/$(database)/documents/characters/$(id)).data.get('instanceId', '') &&
+    get(/databases/$(database)/documents/characters/$(id)).data.get('deleting',false) == false &&
+    text(request.resource.data.poolsJson,2,30000) && request.resource.data.updatedAt == request.time &&
+    integer(request.resource.data.revision,1,1000000000);
+   allow delete: if owner(id);
+  }
+  match /campaign_activity/{id} {
+   allow read: if member(resource.data.campaignId) && (resource.data.visibility == 'public' || dm(resource.data.campaignId));
+   allow create: if member(request.resource.data.campaignId) && request.resource.data.keys().hasOnly(['id','campaignId','actorId','actorName','message','visibility','createdAt']) &&
+    request.resource.data.id == id && request.resource.data.actorId == request.auth.uid && text(request.resource.data.actorName,1,200) &&
+    text(request.resource.data.message,1,1500) && request.resource.data.createdAt == request.time &&
+    (request.resource.data.visibility == 'public' || (request.resource.data.visibility == 'dm' && dm(request.resource.data.campaignId)));
+   allow update: if false;
+   allow delete: if dm(resource.data.campaignId);
+  }
+  match /encounter_templates/{id} {
+   allow read, delete: if dm(resource.data.campaignId);
+   allow create, update: if dm(request.resource.data.campaignId) && request.resource.data.keys().hasOnly(['id','campaignId','name','creaturesJson','updatedAt']) &&
+    request.resource.data.id == id && text(request.resource.data.name,3,100) && text(request.resource.data.creaturesJson,2,50000) && request.resource.data.updatedAt == request.time &&
+    (!exists(/databases/$(database)/documents/encounter_templates/$(id)) || request.resource.data.campaignId == resource.data.campaignId);
   }
   function validWeapon(w) {
    return w is map && w.keys().hasOnly(['weaponType','damageDice','damageType','properties','magicBonus','isMagical','requiresAttunement']) &&

@@ -34,7 +34,7 @@
     dispatch('addCondition', combatant);
   }
 
-  function selectMenu(event: MouseEvent, action: 'viewSheet' | 'remove') {
+  function selectMenu(event: MouseEvent, action: 'remove' | 'visibility') {
     (event.currentTarget as HTMLElement).closest('details')?.removeAttribute('open');
     dispatch(action, combatant);
   }
@@ -61,6 +61,7 @@
       {#if combatant.rules.exhaustion}<span class="badge badge-warning">Agotamiento {combatant.rules.exhaustion} · d20 −{2 * combatant.rules.exhaustion}</span>{/if}
       {#if combatant.rules.concentrationSaveDC !== null}<span class="badge badge-warning">Concentración pendiente CD {combatant.rules.concentrationSaveDC}</span>{/if}
     </div>
+<div class="flex gap-1 text-xs">{#if combatant.hidden}<span class="badge badge-warning">Oculto</span>{/if}{#if combatant.hideStats}<span class="badge badge-outline">Estadísticas reservadas</span>{/if}{#if combatant.notes}<span class="badge badge-outline" title={combatant.notes}>📝 Notas DM</span>{/if}</div>
     <!-- Header -->
     <div class="flex items-start gap-2 sm:gap-3">
       <div class="avatar flex-shrink-0">
@@ -96,7 +97,7 @@
             </svg>
           </summary>
           <ul class="dropdown-content z-20 menu p-2 shadow bg-neutral rounded-box w-44 sm:w-52 border-2 border-secondary text-sm">
-            <li><button type="button" on:click={(event) => selectMenu(event, 'viewSheet')} class="text-secondary">📋 Ver ficha</button></li>
+            <li><button type="button" on:click={(event) => selectMenu(event, 'visibility')} class="text-secondary">👁️ Visibilidad y notas</button></li>
             <li><button type="button" on:click={(event) => selectMenu(event, 'remove')} class="text-error">🗑️ Eliminar</button></li>
           </ul>
         </details>
@@ -171,6 +172,7 @@
         {/if}
       </div>
 
+    {#if isDM}<button type="button" class="btn btn-sm btn-outline border-primary/60 text-neutral w-full mt-2" aria-label={`Ver ficha de ${combatant.name}`} on:click={()=>dispatch('viewSheet',combatant)}>📋 Ver ficha</button>{/if}
     <!-- Actions (DM only) -->
     {#if isDM}
       <div class="flex gap-2 mt-3">

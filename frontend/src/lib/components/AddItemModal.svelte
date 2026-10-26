@@ -1,6 +1,9 @@
 <!-- frontend/src/lib/components/AddItemModal.svelte -->
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onDestroy, tick } from 'svelte';
+  import {catalogApi,type CatalogManifest} from '$lib/api/catalog';
+  import {libraryFilters,type LibraryFilters,type LibrarySearch} from '$lib/rules/library';
+  import LibrarySubfilters from './LibrarySubfilters.svelte';
   import debounce from 'lodash/debounce';
   import { open5eInventoryApi, type Open5eItem, type WeaponData, type ArmorData } from '$lib/api/inventory';
   import { validateCompleteItem, type CreateItemData } from '$lib/utils/validation';
@@ -23,8 +26,16 @@
   let noResults = false;
   let selectedTypeFilter: string = 'all';
 
-  // ✅ NUEVO: Controller para cancelar búsquedas
-  let searchController: AbortController | null = null;
+  let filters:LibraryFilters={};
+  let edition='all';let scope='all';let source='';
+  let manifest:CatalogManifest|null=null;let loadingManifest=false;
+  let resultsElement:HTMLDivElement|undefined;
+  let contentElement:HTMLDivElement|undefined;
+  let searchGeneration=0;let searchError='';let searched=false;let lastSignature='';
+  $: searchSignature=JSON.stringify([searchQuery.trim(),selectedTypeFilter,filters,edition,scope,source]);
+  $: if(searchSignature!==lastSignature){lastSignature=searchSignature;invalidateSearch();}
+  $: if(isOpen&&!manifest&&!loadingManifest)loadManifest();
+  async function loadManifest(){loadingManifest=true;try{manifest=await catalogApi.manifest();}catch{searchError='No se pudieron cargar las publicaciones. Podés reintentar con Buscar.';}}
 
   // Modo manual
   let manualMode = false;
@@ -49,51 +60,28 @@
   let validationError = '';
   let touched = false;
 
-  // ✅ NUEVO: Cache de búsquedas (usando el cache del API)
-  const DEBOUNCE_TIME = 150;
-
-  // ✅ MEJORADO: Búsqueda con cancelación
- const handleSearch = debounce(async () => {
-    const query = searchQuery.trim();
-    if (!query) {
-      suggestions = [];
-      noResults = false;
-      return;
-    }
-    
-    if (searchController) {
-      searchController.abort();
-    }
-    searchController = new AbortController();
-    
-    loading = true;
-    noResults = false;
-    
+  function criteria():Omit<LibrarySearch,'kind'> {
+    return {query:searchQuery.trim(),type:selectedTypeFilter==='all'?'':selectedTypeFilter,edition,scope,source,filters:libraryFilters(filters)};
+  }
+  function invalidateSearch(){searchGeneration++;loading=false;suggestions=[];noResults=false;searched=false;searchError='';}
+  const handleSearch=debounce(()=>{if(searchQuery.trim())runSearch();},150);
+  onDestroy(()=>{searchGeneration++;handleSearch.cancel();});
+  async function runSearch(showResults=false){
+    handleSearch.cancel();const generation=++searchGeneration;const requested=criteria();
+    loading=true;noResults=false;searchError='';searched=true;
     try {
-      // ✅ NUEVO: Pasar tipo al API
-      const filter = selectedTypeFilter;
-      const type = filter === 'all' ? undefined : filter;
-      const result = await open5eInventoryApi.searchItems(query, type);
-      if (searchQuery.trim() !== query || selectedTypeFilter !== filter || !isOpen || manualMode) return;
-      
-      suggestions = (result.results || []).slice(0, 20);
-      noResults = suggestions.length === 0;
-      
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
-        return;
-      }
-      console.error('Error buscando items:', err);
-      suggestions = [];
-      noResults = true;
-    } finally {
-      loading = false;
-      searchController = null;
-    }
-  }, DEBOUNCE_TIME);
+      const result=await catalogApi.searchInventoryItems(requested);
+      if(generation!==searchGeneration||JSON.stringify(requested)!==JSON.stringify(criteria())||!isOpen||manualMode)return;
+      suggestions=result.results;noResults=suggestions.length===0;
+      if(!manifest)manifest=await catalogApi.manifest();
+      if(showResults){await tick();if(generation===searchGeneration)resultsElement?.scrollIntoView({block:'start'});}
+    }catch(cause){if(generation===searchGeneration){suggestions=[];searchError=cause instanceof Error?cause.message:'No se pudo buscar. Volvé a intentar.';}}
+    finally {if(generation===searchGeneration)loading=false;}
+  }
 
   // ✅ MEJORADO: Selección de item con mejor manejo de errores
   async function selectItem(item: Open5eItem) {
+    handleSearch.cancel();const generation=++searchGeneration;
     loading = true;
     noResults = false;
 
@@ -105,6 +93,7 @@
       if ((item as any).source) {
         fullItem = await open5eInventoryApi.getItem(item.slug, category);
       }
+      if(generation!==searchGeneration||!isOpen||manualMode)return;
 
       fullItem = { ...fullItem, source: category };
       selectedItem = fullItem;
@@ -128,11 +117,13 @@
       suggestions = [];
       searchQuery = '';
       manualMode = true;
+      await tick();contentElement?.scrollTo({top:0});
     } catch (err) {
+      if(generation!==searchGeneration)return;
       console.error('Error selecting item:', err);
       validationError = 'Error al cargar el item. Por favor intenta de nuevo.';
     } finally {
-      loading = false;
+      if(generation===searchGeneration)loading = false;
     }
   }
 
@@ -199,11 +190,8 @@
   }
 
   function resetForm() {
-    // ✅ Cancelar búsquedas pendientes
-    if (searchController) {
-      searchController.abort();
-      searchController = null;
-    }
+    searchGeneration++;handleSearch.cancel();
+    filters={};edition='all';scope='all';source='';selectedTypeFilter='all';searchError='';searched=false;
     
     searchQuery = '';
     suggestions = [];
@@ -231,6 +219,7 @@
   $: if (!isOpen) resetForm();
 
   function startManualMode() {
+    searchGeneration++;handleSearch.cancel();loading=false;
     manualMode = true;
     suggestions = [];
     searchQuery = '';
@@ -300,7 +289,7 @@
       </div>
 
       <!-- Content -->
-      <div class="flex-1 min-h-0 overflow-y-auto p-3 sm:p-6">
+      <div class="flex-1 min-h-0 overflow-y-auto p-3 sm:p-6" bind:this={contentElement}>
         {#if validationError && !manualMode}<p class="text-error text-sm mb-3" role="alert">{validationError}</p>{/if}
         
         {#if !manualMode}
@@ -313,15 +302,17 @@
               </label>
               <select 
                 bind:value={selectedTypeFilter}
-                on:change={() => { if (searchQuery) handleSearch(); }}
+                on:change={() => {filters={};if(searchQuery.trim())handleSearch();}}
+                aria-label="Filtrar por tipo"
                 class="select select-bordered bg-[#2d241c] text-base-content border-primary/50"
               >
                 <option value="all">🔍 Buscar en todo</option>
                 <option value="weapon">⚔️ Solo Armas</option>
-                <option value="armor">🛡️ Solo Armaduras</option>
+                <option value="armor">🛡️ Armaduras y escudos</option>
                 <option value="consumable">🧪 Solo Consumibles</option>
                 <option value="tool">🔧 Solo Herramientas</option>
                 <option value="treasure">💎 Solo Tesoros</option>
+                <option value="other">📦 Otros objetos</option>
               </select>
             </div>
             <!-- Búsqueda -->
@@ -331,6 +322,8 @@
                   type="text" 
                   bind:value={searchQuery}
                   on:input={handleSearch}
+                  on:keydown={(event)=>{if(event.key==='Enter'){event.preventDefault();runSearch(true);}}}
+                  aria-label="Nombre del objeto"
                   placeholder="Buscar: plate armor, longsword, rope, health potion..."
                   class="input input-bordered bg-[#2d241c] text-base-content border-primary/50 w-full pr-10"
                   autofocus
@@ -345,11 +338,22 @@
               </div>
               <label class="label">
                 <span class="label-text-alt text-neutral/60 italic">
-                  💡 Busca armas, armaduras y equipo de aventurero
+                  💡 El nombre es opcional; podés buscar solo con filtros
                 </span>
               </label>
             </div>
 
+            <details class="border border-primary/30 rounded p-2 text-neutral">
+              <summary class="cursor-pointer text-sm font-semibold">Edición y publicación</summary>
+              <div class="grid grid-cols-2 gap-2 mt-2">
+                <label class="text-sm">Edición<select class="select select-bordered select-sm w-full bg-[#2d241c] text-base-content" bind:value={edition}><option value="all">Todas / A5E</option><option value="2024">Reglas 2024</option><option value="2014">Reglas 2014</option></select></label>
+                <label class="text-sm">Contenido<select class="select select-bordered select-sm w-full bg-[#2d241c] text-base-content" bind:value={scope}><option value="all">Todos</option><option value="official">Oficial</option><option value="third-party">Terceros</option><option value="homebrew">Homebrew</option><option value="playtest">Pruebas</option></select></label>
+                <label class="text-sm col-span-2">Publicación<select class="select select-bordered select-sm w-full bg-[#2d241c] text-base-content" bind:value={source}><option value="">Todos los libros</option>{#each Object.values(manifest?.sourceLabels||{}).sort((a,b)=>a.name.localeCompare(b.name)) as book}<option value={book.key}>{book.name}</option>{/each}</select></label>
+              </div>
+            </details>
+            <LibrarySubfilters kind="items" type={selectedTypeFilter==='all'?'':selectedTypeFilter} bind:filters/>
+            {#if searchError}<p class="text-error text-sm" role="alert">{searchError}</p>{/if}
+            <div bind:this={resultsElement}>
             <!-- Loading - Más compacto -->
             {#if loading && !suggestions.length}
               <div class="flex justify-center items-center py-8">
@@ -373,20 +377,20 @@
             {#if suggestions.length > 0}
               <div class="space-y-2">
                 <p class="text-xs font-medieval text-neutral/70">
-                  📖 {suggestions.length} item{suggestions.length !== 1 ? 's' : ''} encontrado{suggestions.length !== 1 ? 's' : ''}
+                  📖 {suggestions.length} item{suggestions.length !== 1 ? 's' : ''} encontrado{suggestions.length !== 1 ? 's' : ''} · máximo 60
                 </p>
                 
-                <div class="grid grid-cols-1 gap-2 max-h-96 overflow-y-auto">
+                <div class="grid grid-cols-1 gap-2 max-h-96 overflow-y-auto overflow-x-hidden">
                   {#each suggestions as item}
                     <button
                       on:click={() => selectItem(item)}
                       class="btn btn-ghost text-left border border-primary/30 hover:bg-primary/20 
-                             flex flex-col items-start w-full p-4 h-auto min-h-[6rem]"
+                             flex flex-col items-start w-full min-w-0 p-4 h-auto min-h-[6rem]"
                       disabled={loading}
                     >
                       <div class="flex justify-between items-start w-full mb-2">
-                        <div class="flex-1">
-                          <span class="font-bold text-neutral text-lg block">{item.name}</span>
+                        <div class="flex-1 min-w-0">
+                          <span class="font-bold text-neutral text-lg block break-words">{item.name}</span>
                         </div>
                         {#if item.rarity}
                           <span class="badge badge-sm {getRarityColor(item.rarity)} ml-2 flex-shrink-0">
@@ -413,12 +417,13 @@
               </div>
             {/if}
 
+            </div>
             <!-- Sin búsqueda activa -->
-            {#if !searchQuery && !loading && suggestions.length === 0}
+            {#if !searched && !loading && suggestions.length === 0}
               <div class="text-center py-12">
                 <div class="text-6xl mb-4">📦</div>
                 <p class="text-neutral/70 font-body mb-4">
-                  Escribí para buscar objetos en el catálogo
+                  Elegí filtros y presioná Buscar. El nombre es opcional.
                 </p>
                 <div class="flex flex-wrap gap-2 justify-center text-xs text-neutral/50">
                   <span class="bg-neutral/10 px-3 py-1 rounded">plate armor</span>
@@ -532,7 +537,7 @@
         {/if}
       </div>
 
-      <!-- Footer -->
+      <!-- Footer: la búsqueda queda accesible al desplazarse por los filtros. -->
       <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2 p-3 sm:p-6 border-t-2 border-secondary flex-shrink-0">
         <button 
           on:click={handleClose}
@@ -550,6 +555,8 @@
             <span class="text-xl">➕</span>
             Agregar al Inventario
           </button>
+        {:else}
+          <button type="button" class="btn btn-dnd min-w-0" disabled={loading||busy} on:click={()=>runSearch(true)}>{loading?'Buscando…':'Buscar'}</button>
         {/if}
       </div>
     </div>
@@ -557,6 +564,7 @@
 {/if}
 
 <style>
+  .btn:disabled {color:#594c39;background:#d8c9aa;border-color:#9e8a69;opacity:1;}
   .line-clamp-2 {
     display: -webkit-box;
     -webkit-line-clamp: 2;
